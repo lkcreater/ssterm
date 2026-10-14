@@ -15,7 +15,7 @@
 
 **บริบทของหน้าจอ:** มี sidebar รายชื่อเซิร์ฟเวอร์ พื้นที่ terminal เป็นจุดหลัก และหน้าจัดการไฟล์หรือการตั้งค่าอยู่รอบ ๆ ต้องรองรับข้อมูลจำนวนมาก ตัวอักษร monospace และสถานะหลาย sessions โดยยังอ่านง่าย แยก active target, focus, error และสถานะการเชื่อมต่อได้ชัดเจน
 
-**โจทย์สำหรับ visual brand direction:** สร้างเอกลักษณ์ของ ssterm ที่สื่อถึงการเชื่อมต่อ ความเป็นระเบียบ และการควบคุม พร้อมนำไปใช้กับ app icon, typography, color system และ desktop UI สีและรูปแบบภาพยังเปิดให้สำรวจ
+**Visual brand direction:** ใช้ Signal Blue — พื้น deep navy กับ electric blue สำหรับ focus/action, dark-first, Inter สำหรับ UI และ JetBrains Mono สำหรับ terminal ใช้ SST-style monogram และ wordmark `ssterm` จาก [artwork ที่ส่งมา](logo/README.md); production icon exports/QA และ light theme ยังต้องเตรียม ดู [Design System v1.0](termius/design-system.md)
 
 **UI stack:** React + TypeScript บน Electron ใช้ shadcn/ui และ Tailwind CSS
 

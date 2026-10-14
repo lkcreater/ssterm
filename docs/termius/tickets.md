@@ -4,6 +4,8 @@
 
 Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะทุก MVP ticket คือ `AWAITING_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
+UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope หรืออนุมัติเริ่ม implementation
+
 ## Backlog index
 
 | ID | Title | Phase | Priority | Effort | Depends on |
@@ -11,7 +13,7 @@ Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Ef
 | SST-001 | Scope / platform / stack ADR | M0 | P0 | S | Confirm |
 | SST-002 | SSH/SFTP/backend compatibility spike | M0 | P0 | L | 001 |
 | SST-003 | Domain / privacy / storage specification | M1 | P0 | M | 001 |
-| SST-004 | Desktop shell and typed IPC boundary | M1 | P0 | M | 001 |
+| SST-004 | Desktop shell / design system / typed IPC | M1 | P0 | M | 001 |
 | SST-005 | Versioned local repository / migrations | M1 | P0 | M | 003,004 |
 | SST-006 | OS secrets and encrypted sensitive content | M1 | P0 | L | 003,004,005 |
 | SST-007 | Groups inheritance / tags / catalog domain | M1 | P0 | M | 003,005 |
@@ -59,6 +61,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 **Validation:** reviewer อ่าน ADR และตรวจ requirement coverage กับ ticket index. **Tasks:** ตัดสิน default auth/known-host/Paste semantics; กำหนด app ID และ repo layout; ระบุ deviations จาก Termius.
 
+**Design handoff — DS01/T047:** บันทึก Signal Blue v1.0, dark-first/light-later, Inter/JetBrains Mono, semantic state colors, shadcn base/style/icon library/registry, Tailwind compatibility, density และ remaining contrast/ANSI/artwork decisions ตาม [design plan](design-system-implementation.md) โดยยังไม่สร้าง assets หรือ scaffold ก่อน confirm
+
 ### SST-002 — SSH/SFTP/backend compatibility spike
 
 **Outcome:** ลดความเสี่ยง engine ก่อนสร้าง application services. **Evidence:** S03/S05, N01/N06/N07, N-T02.
@@ -77,13 +81,19 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 **Validation:** schema walkthrough กับ create/edit/delete/inherit examples. **Tasks:** ER diagram/data dictionary; field protection matrix; migration/version strategy.
 
-### SST-004 — Desktop shell and typed IPC boundary
+**Design metadata:** เพิ่ม optional `Host.environment` สำหรับ target context/PROD label ตาม design spec; กำหนด validation/default unspecified และไม่ใช้ display label เป็น authorization policy
+
+### SST-004 — Desktop shell / design system / typed IPC
 
 **Outcome:** app shell ที่มี narrow application API. **Evidence:** S01/S02, Electron primary docs; ใหม่เป็น Proposed.
 
 **Acceptance:** React + TypeScript renderer ใน Electron; shadcn/ui application components และ Tailwind CSS/theme tokens พร้อม shared component conventions; isolated renderer, no arbitrary require/IPC passthrough; validate sender/payload/session ownership; local app navigation/CSP และ URL allowlist; UI/bridge types ไม่ส่ง persistent secrets และ backend errors sanitized.
 
 **Validation:** malformed/unauthorized IPC rejected; packaged React/shadcn/ui/Tailwind screen renders without account/network; privileged calls ผ่าน typed boundary. **Tasks:** scaffold หลัง confirm; React app shell/shared components/theme; command/event contracts.
+
+**Design acceptance — DS02–DS03/T048–T049:** map Signal Blue semantic tokens รวม sidebar/status/interactive states; typography/spacing/radius/control heights เป็น shared variants; fonts offline/Thai fallback; shadcn primitives และ internal fixture showcase ตาม inventory โดยแยก blue focus จาก green connected และ terminal theme จาก app CSS ตรวจ component APIs ตาม actual installed version ก่อนใช้
+
+**Design validation:** token coverage/computed theme, state matrix default/hover/pressed/focus/disabled/loading/error และ selected+connection combinations; source palette ยังไม่ถือว่าผ่าน rendered contrast โดยอัตโนมัติ
 
 ### SST-005 — Versioned local repository / migrations
 
@@ -201,6 +211,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 **Validation:** multiple live fixtures + resize/focus/close interactions, keyboard navigation. **Tasks:** layout tree; tab controls; settings/preferences.
 
+**Design acceptance — DS04/T050:** terminal-first Signal Blue shell; resizable/collapsible sidebar และ auxiliary panels; traffic-light/drag/no-drag regions ไม่ทับ controls; active pane มี server/environment/user@host:port/state; blue selection/focus ต่างจาก connection health; long labels ดู/copy ได้เต็ม; terminal ANSI/font preferences แยกจาก dark application theme Light mode ยังไม่เป็น MVP requirement
+
 ## M4 — File transfer / commands / tunnels
 
 ### SST-019 — SFTP capability / ownership
@@ -277,6 +289,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 **Validation:** meaningful domain/integration/E2E suite และ manual macOS Thai IME; record deviations และ unresolved lower-priority issues. **Tasks:** traceability report; regression fixture suite; UX/performance fixes.
 
+**Design gate — DS05/T051:** ผ่าน [design-system.md §11](design-system.md#11-release-quality-checklist) สำหรับ dark MVP: contrast เป้าหมาย 4.5:1 normal text/3:1 essential graphics, focus/selection/status/PROD differentiation, reduced motion, window resize/scaling, dialogs focus-return และ Thai/IME เก็บ rendered screenshots/state matrix; structural border ที่ contrast ต่ำต้องไม่เป็น sole essential control indicator
+
 ### SST-028 — macOS package / release readiness
 
 **Outcome:** reviewable local packaged MVP. **Evidence:** target platform + independent packaging ADR.
@@ -284,6 +298,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Acceptance:** packaged artifact works on supported macOS arm64 clean fixture; secrets/storage identifiers stable across upgrades; native bindings load when packaged; install/upgrade/uninstall data semantics documented; checksums/version/release notes; signing/notarization หากมี credentials เป็น separate release gate มิฉะนั้นระบุ unsigned limitation.
 
 **Validation:** packaged smoke for SSH/SFTP/tunnel and upgrade fixture. **Tasks:** build/package; release guide; artifact review. Publishing/upload/signing ที่ใช้ external credentials ต้องมี authorization ตาม scope ในอนาคต ไม่รวมใน confirm implementation อัตโนมัติ.
+
+**Design package gate — DS06/T052:** fonts/license/fallback ทำงาน offline ใน package; ใช้ supplied [icon-logo.png](../logo/icon-logo.png) ตาม [logo/icon handoff](../logo/README.md) เป็น source สำหรับ derived icons 16/32/64/128/256/512/1024 px และ macOS package format; ตรวจ alpha/edges/padding/legibility/Dock/Finder และ brand lockup ใน About หาก production exports/QA ยังไม่ครบให้ระบุ limitation และไม่อ้างว่า release branding ผ่าน
 
 ## Later — ต้องยืนยัน scope เพิ่ม
 

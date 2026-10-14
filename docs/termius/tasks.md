@@ -13,6 +13,7 @@
 - [x] แยก Observed / Published / Inferred / Proposed / Unknown
 - [x] จัด architecture proposal, tickets, task dependencies และ phase gates
 - [x] บันทึก UI stack ที่ผู้ใช้เลือก: React + Electron + shadcn/ui + Tailwind CSS; ยังไม่เริ่ม implementation
+- [x] เชื่อม Signal Blue design spec กับ implementation plan, parent tickets และงานย่อย DS01–DS06; ยังไม่เริ่ม implementation
 - [ ] ผู้ใช้ confirm ขอบเขต MVP / baseline ก่อนเริ่ม SST-001
 
 ## M0 — ตัดสินใจและพิสูจน์ feasibility
@@ -81,6 +82,17 @@
 - [ ] **T044 / SST-038:** residual runtime/native/Mosh/FIDO focused investigations and ADRs
 - [ ] **T045 / SST-035:** own backend/device enrollment/encrypted sync/conflict/tombstones
 - [ ] **T046 / SST-037:** team ACL/membership/enforcement/revocation/rekey/audit
+
+## Design system — งานย่อยเพิ่มตาม Signal Blue spec
+
+อ้างอิง [design-system.md](design-system.md) และ [design-system-implementation.md](design-system-implementation.md) งานทั้งหมดด้านล่างยังรอ confirm และต้องผ่าน dependencies ของ parent ticket เดิม
+
+- [ ] **T047 / SST-001:** DS01 — design integration ADR: spec version, Tailwind compatibility, shadcn base/style/icons/registry, density defaults และ open contrast/ANSI/artwork decisions
+- [ ] **T048 / SST-004:** DS02 — semantic token mappings, typography/fonts/Thai fallback, geometry/motion, app/terminal theme separation และ missing generated-component slots
+- [ ] **T049 / SST-004:** DS03 — shared shadcn variants/domain primitives และ development-only showcase พร้อม deterministic state matrix/edge cases
+- [ ] **T050 / SST-018:** DS04 — Signal Blue terminal-first shell, target/environment/status recipes, resize/collapse/titlebar/overflow และ independent terminal preferences
+- [ ] **T051 / SST-027:** DS05 — rendered contrast/focus/status/PROD matrix, keyboard/reduced-motion/Thai/IME/window scaling และ visual evidence ตาม spec §11
+- [ ] **T052 / SST-028:** DS06 — offline fonts/licenses/fallback; derived icon sizes/macOS format จาก supplied `docs/logo/icon-logo.png`, brand lockup ตาม [asset handoff](../logo/README.md); ตรวจ alpha/edges/padding/Dock/Finder และระบุ limitations ของ exports/QA ที่ยังไม่ครบ
 
 ## Task bookkeeping
 

@@ -6,6 +6,8 @@
 
 **UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ดู [stack decision](proposed-architecture.md#baseline--stack-decision) การเลือก stack ยังไม่ใช่ confirmation ให้เริ่ม implement
 
+**Visual spec สำหรับวางแผน:** [Signal Blue v1.0](design-system.md) — dark-first, Inter + JetBrains Mono, terminal-first layout และแยก blue focus จาก operational status ดู [design implementation plan](design-system-implementation.md); งานยังรอ confirm
+
 ## เอกสาร
 
 | เอกสาร | ใช้ทำอะไร |
@@ -14,6 +16,9 @@
 | [official-features.md](official-features.md) | ฟีเจอร์และ workflow จาก official docs พร้อม sources W01–W12 |
 | [native-boundary.md](native-boundary.md) | native wrappers, linkage, symbols, ข้อจำกัด และ input สำหรับ backlog |
 | [proposed-architecture.md](proposed-architecture.md) | architecture และ contracts ที่เสนอสำหรับ ssterm; แยกจาก Termius implementation |
+| [design-system.md](design-system.md) | Signal Blue brand/UI specification, semantic colors, typography, layout และ release quality checklist |
+| [Logo & app icon](../logo/README.md) | supplied SST artwork, brand lockup/icon/presentation usage, ขนาดไฟล์ และ production export/QA handoff |
+| [design-system-implementation.md](design-system-implementation.md) | แผน DS01–DS06, token/component contracts, task mapping และเกณฑ์ตรวจรับก่อนพัฒนา |
 | [tickets.md](tickets.md) | ticket พร้อม priority, dependency, acceptance criteria และ validation |
 | [tasks.md](tasks.md) | checklist งานย่อยที่เชื่อม ticket; ยังไม่เริ่มงานพัฒนา |
 | [implementation-plan.md](implementation-plan.md) | phases, gates, ลำดับงาน, effort ranges และ scope ที่รอยืนยัน |

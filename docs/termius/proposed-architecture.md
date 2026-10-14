@@ -24,6 +24,19 @@ SST-001 บันทึก UI stack นี้ใน ADR และเลือก
 
 เอกสารสำหรับ UI stack: [React](https://react.dev/learn), [shadcn/ui setup](https://ui.shadcn.com/docs/installation/vite) และ [Tailwind CSS setup](https://tailwindcss.com/docs/installation/using-vite) ใช้อ้างอิง integration ในอนาคต; exact versions/build tooling ยังไม่ pin ในรอบเอกสารนี้
 
+## Design system integration
+
+ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification และ [design-system-implementation.md](design-system-implementation.md) เป็นแผน DS01–DS06; ยังรอ confirm implementation โดยคง React/Electron/shadcn/ui/Tailwind stack เดิม
+
+- Application tokens/theme ใช้ semantic CSS variables: navy canvas, blue focus/selection/action และ operational status แยกกัน; Inter สำหรับ UI และ JetBrains Mono สำหรับ code/terminal พร้อม Thai fallback
+- เสนอ Tailwind v4 mapping ที่ compatible กับ generated shadcn config; global stylesheet/component paths อยู่ใต้ renderer ของ `apps/desktop` และ resolve ตาม `components.json` หลัง bootstrap
+- Shared primitives/variants อยู่ `components/ui`; domain recipes แยก connection identity/status, server tree, session tabs/panes, SFTP และ tunnels; presentation แปล typed session state แต่ไม่เปลี่ยน ownership/auth policy
+- Dark-first สำหรับ MVP; light palette เป็น later proposal; terminal foreground/background/cursor/selection/ANSI/font settings แยกจาก app theme และไม่ใช้ application CSS override terminal output
+- `Host.environment?` เป็น optional display metadata สำหรับ DEV/STAGING/PROD context; แสดง PROD ชัดทุก target-sensitive surface โดยไม่ตีความเป็น access-control rule
+- Development-only showcase ใช้ fixture states สำหรับ review tokens/components/recipes; real service/packaged acceptance ยังต้องผ่าน tickets เดิม
+
+Foundation/ADR: SST-001/004; composition: SST-018; visual/accessibility gate: SST-027; fonts/icon package: SST-028 ไม่เพิ่ม agent auth, remote/dynamic tunnels หรือ future patterns จาก spec เป็น MVP capabilities
+
 ## Module boundaries
 
 ```mermaid
@@ -64,7 +77,7 @@ flowchart TD
 |---|---|
 | LocalVault | stable UUID, label, schemaVersion; MVP มีหนึ่ง vault ไม่ต้องมี account |
 | Group | id, parentId?, label, field overrides; parent เดียว, ไม่มี cycle, vault เดียวกัน |
-| Host | id, groupId?, label, address, tags, connection overrides, identityRef?; port 1–65535 |
+| Host | id, groupId?, label, address, tags, environment?, connection overrides, identityRef?; port 1–65535; environment เป็น display metadata |
 | Identity | id, label, username, auth preference, SecretRefs/keyRef; ใช้ร่วมได้หลาย hosts |
 | KeyMetadata | id, public key/fingerprint/type, secretRef?; private key/passphrase ไม่อยู่ใน metadata |
 | KnownHost | normalized endpoint(host+port), algorithm, key/fingerprint, firstAcceptedAt, lastVerifiedAt |

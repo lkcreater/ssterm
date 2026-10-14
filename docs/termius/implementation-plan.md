@@ -8,6 +8,10 @@
 
 **UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ส่วน terminal renderer, independent SSH adapter, versioned structured storage/OS Keychain และ exact versions/build tooling ยังต้อง validate/pin ใน SST-001–002 การเลือก UI stack เป็นการอัปเดตข้อกำหนด ยังไม่ใช่ confirmation ให้เริ่ม implementation
 
+**Visual specification:** ใช้ [Design System v1.0 — Signal Blue](design-system.md): dark-first, deep navy + electric blue สำหรับ focus/action, operational status colors แยก, Inter + JetBrains Mono และ terminal-first layout แผนย่อย [DS01–DS06](design-system-implementation.md) อยู่ใน SST-001/004/018/027/028 ผ่าน tasks T047–T052 และยังรอ confirm implementation; light theme เป็น later proposal
+
+Logo/icon ใช้ supplied SST-style artwork ใน [docs/logo](../logo/README.md) เป็น reference: `brand-logo.png` สำหรับ brand lockup, `icon-logo.png` สำหรับ derived app icons และ `design-logo.png` สำหรับ presentation; exports/alpha-edge QA/macOS packaging อยู่ DS06/T052 ยังไม่เริ่มทำ
+
 **Later SST-029–038:** local PTY/additional OS, host chaining/proxy, remote/dynamic forwarding, advanced SFTP, templates/broadcast/multi-host snippets, logs/autocomplete/AI, own cloud sync/teams/crypto และ Mosh/FIDO แยก scope confirmation เพิ่ม
 
 MVP ใช้ original UI/branding ของ ssterm; published workflow เป็น reference และ proposals อาจต่างจาก Termius เช่น explicit save และ Paste composer; ไม่รับประกัน pixel match, database/API/cloud compatibility หรือ remote process continuity
@@ -29,17 +33,17 @@ Phase order เป็น milestone view ภายในแต่ละ phase ใ
 
 | Milestone | Tickets | Deliverable | Exit gate |
 |---|---|---|---|
-| M0 | 001–002 | ADR บันทึก selected UI stack/versions/tooling + backend fixture results | React/Electron/shadcn/ui/Tailwind compatibility และ auth/trust/PTY/SFTP/forwarding/package feasibility ผ่าน; blocker มี revised backend/scope decision |
-| M1 | 003–007 | Electron + React shell, shadcn/ui/Tailwind theme, versioned catalog, protected secrets/content, config resolver, app boundary | restart/migration/secret denial/inheritance/IPC validation tests และ renderer component/theme smoke checks ผ่าน |
+| M0 | 001–002 | ADR บันทึก UI stack/Signal Blue integration/versions/tooling + backend fixture results | DS01 decisions และ React/Electron/shadcn/ui/Tailwind compatibility/auth/trust/PTY/SFTP/forwarding/package feasibility ผ่าน; blocker มี revised backend/scope decision |
+| M1 | 003–007 | Electron + React shell, DS02–DS03 semantic tokens/shared components/showcase, versioned catalog, secrets, resolver, app boundary | token/component state coverage และ restart/migration/secret denial/inheritance/IPC checks ผ่าน |
 | M2 | 008–015 | real SSH terminal with prompts/trust/flow control/cleanup | password/key/interactive, changed-key rejection, resize/Unicode, cancel/loss/no leaks ผ่าน |
-| M3 | 016–018 | usable catalog/keychain/tabs/splits/preferences | F01–F03 และ focus/split/session independence เดินครบ |
+| M3 | 016–018 | usable catalog/keychain/tabs/splits/preferences + DS04 terminal-first composition | F01–F03, target/PROD/status visibility และ focus/split/session independence เดินครบ |
 | M4 | 019–026 | working SFTP/snippets/local tunnels | F04–F06 พร้อม conflicts/cancel/target capture/port collision/teardown ผ่าน |
-| M5 | 027–028 | reviewable packaged MVP + evidence of checks | E2E/accessibility/performance/package/upgrade matrix ผ่าน; material limitations documented |
+| M5 | 027–028 | reviewable packaged MVP + DS05 visual/accessibility evidence + DS06 font/icon packaging | E2E/contrast/focus/reduced-motion/performance/package/upgrade matrix ผ่าน; material limitations/artwork status documented |
 
 ## Suggested work order
 
 1. หลัง confirm ทำ SST-001/002 และ SST-003 spec ก่อนลงลึก UI อย่าให้ฟอร์มสร้าง assumptions ที่ backend/library ทำไม่ได้
-2. M1 split งานเป็น Electron/React typed shell/IPC + shadcn/ui/Tailwind shared components/theme, repository/secret adapters และ pure catalog/config rules; schema/protection decisions ต้องพร้อมก่อน persistence code
+2. M1 split งานเป็น Electron/React typed shell/IPC + Signal Blue DS02–DS03 tokens/shared components/showcase, repository/secret adapters และ pure catalog/config rules; schema/protection decisions ต้องพร้อมก่อน persistence code
 3. M2 เริ่ม session contract → known-host policy → auth/prompts → real byte-stream/resize → flow control/cleanup ทุกขั้นต้องใช้ fixture จริงประกอบ ไม่มี terminal mock ที่ทำให้ถือว่าเชื่อม SSH ได้แล้ว
 4. M3 เติม user flows ที่ผ่าน domain/session contracts; บันทึก UI/behavior deviations อย่างชัดเจน
 5. M4 SFTP, snippets และ local tunnels เป็น independent capabilities แต่ reuse trust/auth/resource contracts ผ่าน deps ไม่ต้องเพิ่ม cloud account
@@ -61,6 +65,8 @@ Phase order เป็น milestone view ภายในแต่ละ phase ใ
 
 หนึ่งคนเต็มเวลาประมาณ 10–17 working weeks ก่อน contingency; กันเพิ่มราว 20% เป็น 12–21 working weeks เพื่อ planning เท่านั้น หลายคนช่วยทำ capabilities/UI ขนานได้ แต่ไม่ได้หารเวลาเป็นสัดส่วนตรงเพราะ dependencies Gates และผล spike ใช้แก้ estimate ก่อน commitment
 
+DS01–DS06 ทำให้รายละเอียด UI/QA/artwork packaging ชัดขึ้น ช่วงเวลาข้างต้นยังเป็น baseline เบื้องต้น ต้องประเมินงาน showcase, contrast adjustments และ production asset preparation จาก supplied artwork ใน M0 ก่อน commitment ไม่ถือว่าการเพิ่ม checklist คือการรับรอง effort เดิม
+
 ## Test / acceptance matrix
 
 | Area | Required validation | Tickets |
@@ -68,6 +74,7 @@ Phase order เป็น milestone view ภายในแต่ละ phase ใ
 | Catalog/config | parent-child-host overrides, auth bundle, tags AND, cycles, deletion impacts | 003,007,016,017 |
 | Storage/secrets | restart/migrate/failure/recovery, fixture Keychain namespace, no secrets in metadata/logs | 005,006,023 |
 | App boundary | unauthorized/malformed IPC, session ownership, late-event isolation, URL handling | 004,008,013 |
+| Design system | Signal Blue token/component state coverage, blue focus ต่างจาก connection state, target/PROD labels, contrast/reduced motion/resize, offline fonts และ confirmed artwork | 001,004,018,027,028; DS01–DS06 |
 | SSH/auth/trust | password/key/encrypted key/interactive prompt, reject/change key, DNS/timeout/denied/cancel | 002,009–011 |
 | Terminal | real PTY resize/full-screen/exit, Thai/IME, paste/focus, slow consumer/ordering/memory | 012–014,018 |
 | Lifecycle | connect/cancel race, lost network, repeat close/reconnect, app quit/no leaked handles | 008,015 |
@@ -97,6 +104,6 @@ Fixtures ต้องเป็น project-owned local lab data ไม่ใช�
 
 ขณะนี้ stop ที่เอกสาร reviewable เหล่านี้ตามคำขอผู้ใช้ การตอบ confirm MVP จะอนุญาตเริ่ม SST-001–028 รวม spike/build/tests/local packaging; optional later work, deployment/publishing และการแก้ account/config ภายนอกไม่ได้รวมโดยอัตโนมัติ
 
-UI stack ที่เลือกแล้วคือ React + Electron + shadcn/ui + Tailwind CSS ส่วน default scope ที่ยังรอยืนยันคือ macOS arm64 + local-first + account-free + explicit save/Paste semantics + no cloud/team in MVP; backend/versions/tooling ผ่าน ADR/spike ผู้ใช้สามารถแก้ requirement ก่อนเริ่มได้ โดยปรับไฟล์ที่เกี่ยวข้องพร้อมกัน
+UI stack ที่เลือกแล้วคือ React + Electron + shadcn/ui + Tailwind CSS และ visual spec คือ Signal Blue v1.0 ส่วน default scope ที่ยังรอยืนยันคือ macOS arm64 + local-first + account-free + explicit save/Paste semantics + no cloud/team in MVP รวม design tasks DS01–DS06 ตาม parent ticket; backend/versions/tooling ผ่าน ADR/spike ผู้ใช้สามารถแก้ requirement ก่อนเริ่มได้ โดยปรับไฟล์ที่เกี่ยวข้องพร้อมกัน
 
 เมื่อมี confirmation บันทึกข้อความ/scope/date ในส่วนนี้และเปลี่ยน ticket ที่เริ่มจริงเป็น `IN_PROGRESS` ก่อนทำงาน ไม่ทำเครื่องหมาย approved/completed จากการส่งเอกสารหรือเวลาที่ผ่านไป
