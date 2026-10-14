@@ -1,0 +1,522 @@
+[
+  {
+    "id": "S01",
+    "type": "ordinary-shell-static-observation",
+    "logical_path": "main-process/main-process.js",
+    "sha256": "3a721b4013a8d4bfde444069c5b3ddc82afd3565e7b558b2b7448552db4c6c63",
+    "size_bytes": 1628494,
+    "anchors": [
+      {
+        "literal": "nodeIntegration:!0,contextIsolation:!1",
+        "match_count": 2,
+        "first_ranges": [
+          {
+            "byte_start": 1444071,
+            "byte_end_exclusive": 1444109
+          },
+          {
+            "byte_start": 1445719,
+            "byte_end_exclusive": 1445757
+          }
+        ]
+      },
+      {
+        "literal": "nodeIntegration:!1,contextIsolation:!0",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 1407561,
+            "byte_end_exclusive": 1407599
+          }
+        ]
+      },
+      {
+        "literal": "init-redux",
+        "match_count": 2,
+        "first_ranges": [
+          {
+            "byte_start": 1444229,
+            "byte_end_exclusive": 1444239
+          },
+          {
+            "byte_start": 1447058,
+            "byte_end_exclusive": 1447068
+          }
+        ]
+      },
+      {
+        "literal": "redux-action",
+        "match_count": 6,
+        "first_ranges": [
+          {
+            "byte_start": 816957,
+            "byte_end_exclusive": 816969
+          },
+          {
+            "byte_start": 817693,
+            "byte_end_exclusive": 817705
+          },
+          {
+            "byte_start": 819160,
+            "byte_end_exclusive": 819172
+          }
+        ]
+      },
+      {
+        "literal": "background-process/src/background-process/main.html",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 1444477,
+            "byte_end_exclusive": 1444528
+          }
+        ]
+      }
+    ],
+    "scope": "Selected shipped bytes only; literal matches are not proof of runtime execution."
+  },
+  {
+    "id": "S02",
+    "type": "ordinary-shell-static-observation",
+    "logical_path": "preload/preload.js",
+    "sha256": "6986eae3318a4d6b206454aef4c39b37498ceb48616eff593caba4386aeb9eb0",
+    "size_bytes": 828214,
+    "anchors": [
+      {
+        "literal": "window.api[e]=t",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 827510,
+            "byte_end_exclusive": 827525
+          }
+        ]
+      },
+      {
+        "literal": "@termius/libtermius",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 827726,
+            "byte_end_exclusive": 827745
+          }
+        ]
+      },
+      {
+        "literal": "fs/promises",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 827903,
+            "byte_end_exclusive": 827914
+          }
+        ]
+      },
+      {
+        "literal": "child_process",
+        "match_count": 2,
+        "first_ranges": [
+          {
+            "byte_start": 430,
+            "byte_end_exclusive": 443
+          },
+          {
+            "byte_start": 827964,
+            "byte_end_exclusive": 827977
+          }
+        ]
+      }
+    ],
+    "scope": "Selected shipped bytes only; literal matches are not proof of runtime execution."
+  },
+  {
+    "id": "S03",
+    "type": "ordinary-shell-static-observation",
+    "logical_path": "utilities-process/service-process.js",
+    "sha256": "deae26718816ec1ae424a32d4056fe320a10e81540dd5fad286e6ed30114be78",
+    "size_bytes": 374654,
+    "anchors": [
+      {
+        "literal": "shell.sendData",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 128469,
+            "byte_end_exclusive": 128483
+          }
+        ]
+      },
+      {
+        "literal": "shell.sendSize",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 128800,
+            "byte_end_exclusive": 128814
+          }
+        ]
+      },
+      {
+        "literal": "shell.close",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 128910,
+            "byte_end_exclusive": 128921
+          }
+        ]
+      },
+      {
+        "literal": "portForwarding.close",
+        "match_count": 2,
+        "first_ranges": [
+          {
+            "byte_start": 129205,
+            "byte_end_exclusive": 129225
+          },
+          {
+            "byte_start": 334183,
+            "byte_end_exclusive": 334203
+          }
+        ]
+      },
+      {
+        "literal": "callback.hostVerifier",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 129570,
+            "byte_end_exclusive": 129591
+          }
+        ]
+      },
+      {
+        "literal": "callback.requestKeyboardInteractive",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 130280,
+            "byte_end_exclusive": 130315
+          }
+        ]
+      },
+      {
+        "literal": "callback.requestPassphrase",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 129967,
+            "byte_end_exclusive": 129993
+          }
+        ]
+      },
+      {
+        "literal": "callback.requestSignature",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 130550,
+            "byte_end_exclusive": 130575
+          }
+        ]
+      },
+      {
+        "literal": "new H.SshClient",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 330366,
+            "byte_end_exclusive": 330381
+          }
+        ]
+      },
+      {
+        "literal": "this.client.sftp(t)",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 331311,
+            "byte_end_exclusive": 331330
+          }
+        ]
+      }
+    ],
+    "scope": "Selected shipped bytes only; literal matches are not proof of runtime execution."
+  },
+  {
+    "id": "S04",
+    "type": "ordinary-shell-static-observation",
+    "logical_path": "background-process/assets/main-ddc24e5b.js",
+    "sha256": "331e784b7789766d1f476a52a91320502087a6750086cdb64281d48153587ea0",
+    "size_bytes": 3437013,
+    "anchors": [
+      {
+        "literal": "get entityName(){return\"Host\"}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2710858,
+            "byte_end_exclusive": 2710888
+          }
+        ]
+      },
+      {
+        "literal": "get entityName(){return\"Identity\"}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2701605,
+            "byte_end_exclusive": 2701639
+          }
+        ]
+      },
+      {
+        "literal": "get entityName(){return\"Group\"}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2707958,
+            "byte_end_exclusive": 2707989
+          }
+        ]
+      },
+      {
+        "literal": "get entityName(){return\"KnownHost\"}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2713426,
+            "byte_end_exclusive": 2713461
+          }
+        ]
+      },
+      {
+        "literal": "get entityName(){return\"Snippet\"}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2712150,
+            "byte_end_exclusive": 2712183
+          }
+        ]
+      },
+      {
+        "literal": "get entityName(){return\"PortForwardingRule\"}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2713961,
+            "byte_end_exclusive": 2714005
+          }
+        ]
+      },
+      {
+        "literal": "get dbName(){return\"known_hosts\"}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2713582,
+            "byte_end_exclusive": 2713615
+          }
+        ]
+      },
+      {
+        "literal": "get dbName(){return\"keys\"}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2713252,
+            "byte_end_exclusive": 2713278
+          }
+        ]
+      },
+      {
+        "literal": "get cryptoFields(){return[\"label\",\"password\",\"username\"]}",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 2701639,
+            "byte_end_exclusive": 2701696
+          }
+        ]
+      },
+      {
+        "literal": "++local_id,&local_id,&id,status",
+        "match_count": 14,
+        "first_ranges": [
+          {
+            "byte_start": 2616695,
+            "byte_end_exclusive": 2616726
+          },
+          {
+            "byte_start": 2700489,
+            "byte_end_exclusive": 2700520
+          },
+          {
+            "byte_start": 2700559,
+            "byte_end_exclusive": 2700590
+          }
+        ]
+      }
+    ],
+    "scope": "Selected shipped bytes only; literal matches are not proof of runtime execution."
+  },
+  {
+    "id": "S05",
+    "type": "ordinary-shell-static-observation",
+    "logical_path": "ui-process/assets/ui-process-835545d7.js",
+    "sha256": "37c6c3da25e9b994a3b8bcac3ed8243d0a2533aafe36b74249f13d9751ae8edc",
+    "size_bytes": 2273924,
+    "anchors": [
+      {
+        "literal": "case\"local\":a=s.localPortForwarding",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 84331,
+            "byte_end_exclusive": 84366
+          }
+        ]
+      },
+      {
+        "literal": "case\"remote\":a=s.remotePortForwarding",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 84373,
+            "byte_end_exclusive": 84410
+          }
+        ]
+      },
+      {
+        "literal": "case\"dynamic\":a=s.dynamicPortForwarding",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 84417,
+            "byte_end_exclusive": 84456
+          }
+        ]
+      },
+      {
+        "literal": "SFTP Subsystem is not available",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 85143,
+            "byte_end_exclusive": 85174
+          }
+        ]
+      },
+      {
+        "literal": "getMergedSshConfig",
+        "match_count": 16,
+        "first_ranges": [
+          {
+            "byte_start": 14806,
+            "byte_end_exclusive": 14824
+          },
+          {
+            "byte_start": 28788,
+            "byte_end_exclusive": 28806
+          },
+          {
+            "byte_start": 57471,
+            "byte_end_exclusive": 57489
+          }
+        ]
+      }
+    ],
+    "scope": "Selected shipped bytes only; literal matches are not proof of runtime execution."
+  },
+  {
+    "id": "S06",
+    "type": "ordinary-shell-static-observation",
+    "logical_path": "ui-process/src/ui-process/main.html",
+    "sha256": "ea089adaa9532b2c4db04099ebd73b8da42b2f8b85b9809925209d703b6a2ef3",
+    "size_bytes": 3826,
+    "anchors": [
+      {
+        "literal": "preload",
+        "match_count": 33,
+        "first_ranges": [
+          {
+            "byte_start": 168,
+            "byte_end_exclusive": 175
+          },
+          {
+            "byte_start": 176,
+            "byte_end_exclusive": 183
+          },
+          {
+            "byte_start": 720,
+            "byte_end_exclusive": 727
+          }
+        ]
+      },
+      {
+        "literal": "ui-process-835545d7.js",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 665,
+            "byte_end_exclusive": 687
+          }
+        ]
+      }
+    ],
+    "scope": "Selected shipped bytes only; literal matches are not proof of runtime execution."
+  },
+  {
+    "id": "S07",
+    "type": "ordinary-shell-static-observation",
+    "logical_path": "ui-process/assets/reconnectSaga-f6e8938e.js",
+    "sha256": "dac3256f52a912d75490738695e5aeaf8ce946a4dc21a4e6de87be214cb3d48f",
+    "size_bytes": 5850221,
+    "anchors": [
+      {
+        "literal": "request-fido-process",
+        "match_count": 2,
+        "first_ranges": [
+          {
+            "byte_start": 2228495,
+            "byte_end_exclusive": 2228515
+          },
+          {
+            "byte_start": 2228609,
+            "byte_end_exclusive": 2228629
+          }
+        ]
+      },
+      {
+        "literal": "dialog.showOpenDialog",
+        "match_count": 3,
+        "first_ranges": [
+          {
+            "byte_start": 2413280,
+            "byte_end_exclusive": 2413301
+          },
+          {
+            "byte_start": 2416632,
+            "byte_end_exclusive": 2416653
+          },
+          {
+            "byte_start": 3664419,
+            "byte_end_exclusive": 3664440
+          }
+        ]
+      },
+      {
+        "literal": "known_hosts",
+        "match_count": 1,
+        "first_ranges": [
+          {
+            "byte_start": 1048943,
+            "byte_end_exclusive": 1048954
+          }
+        ]
+      }
+    ],
+    "scope": "Selected shipped bytes only; literal matches are not proof of runtime execution."
+  }
+]

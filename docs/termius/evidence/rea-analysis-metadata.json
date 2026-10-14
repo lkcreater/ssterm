@@ -1,0 +1,500 @@
+{
+  "evidence_id": "ev_6a67d56d861c986c02de1c40c8bcc97a7caf5bbb752ed0d839dcb874741e8c87",
+  "source_sha256": "404ec37b5b00867eea47c6e99f2fffb9ea013e00fbb7df16c5cb85ee64ff5bff",
+  "canonical_json_file_sha256": "7ed1c0ebeb3724a46a526cd020724d0c4b0d2aa02311c17c0c74bb51c3a3275d",
+  "parent_complete_record": "rea-application-evidence.json.gz",
+  "uncompressed_size_bytes": 112424719,
+  "compressed_size_bytes": 19873697,
+  "view_record": "rea-summary-view.json",
+  "source_selection": {
+    "requested_paths": [
+      "package.json",
+      "utilities-process/service-process.js",
+      "utilities-process/fido-process.js",
+      "background-process/src/background-process/main.html",
+      "ui-process/src/ui-process/main.html",
+      "ui-process/assets/HostsScreenSidebar-d767a523.js",
+      "node_modules/@termius/libtermius/index.js",
+      "node_modules/@termius/libtermius/package.json",
+      "node_modules/@termius/keytar/lib/keytar.js",
+      "node_modules/@termius/node-pty/lib/unixTerminal.js"
+    ],
+    "unselected_files": 5768
+  },
+  "statistics": {
+    "relevant_files": 5778,
+    "nested_asar_containers": 0,
+    "text_bytes_read": 449011,
+    "invalid_utf8_files": 0,
+    "parsed_javascript_files": 6,
+    "visited_ast_nodes": 123520,
+    "findings": 320,
+    "modules": 0,
+    "parse_failures": 0
+  },
+  "application_coverage": {
+    "status": "partial",
+    "truncated": false,
+    "omitted_count": null,
+    "limits": []
+  },
+  "semantic_coverage": {
+    "status": "partial",
+    "truncated": true,
+    "omitted_nodes": null,
+    "omitted_relations": null,
+    "limits": [
+      {
+        "name": "semantic_graph_file_node_ceiling",
+        "value": 1000,
+        "unit": "items"
+      },
+      {
+        "name": "semantic_graph_node_ceiling",
+        "value": 8000,
+        "unit": "items"
+      }
+    ],
+    "families": [
+      {
+        "family": "boundary",
+        "status": "partial",
+        "retained_relations": 0,
+        "omitted_relations": null,
+        "unknown_count": 3818,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "call-flow",
+        "status": "partial",
+        "retained_relations": 60,
+        "omitted_relations": null,
+        "unknown_count": 9430,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "child-process",
+        "status": "partial",
+        "retained_relations": 0,
+        "omitted_relations": null,
+        "unknown_count": 3818,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "closure",
+        "status": "partial",
+        "retained_relations": 1443,
+        "omitted_relations": null,
+        "unknown_count": 3818,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "configuration",
+        "status": "partial",
+        "retained_relations": 0,
+        "omitted_relations": null,
+        "unknown_count": 3818,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "data-flow",
+        "status": "partial",
+        "retained_relations": 542,
+        "omitted_relations": null,
+        "unknown_count": 5372,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "event",
+        "status": "partial",
+        "retained_relations": 0,
+        "omitted_relations": null,
+        "unknown_count": 3818,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "object-flow",
+        "status": "partial",
+        "retained_relations": 163,
+        "omitted_relations": null,
+        "unknown_count": 15274,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "promise-ownership",
+        "status": "partial",
+        "retained_relations": 0,
+        "omitted_relations": null,
+        "unknown_count": 3818,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "request",
+        "status": "partial",
+        "retained_relations": 0,
+        "omitted_relations": null,
+        "unknown_count": 3818,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "resource-lifecycle",
+        "status": "partial",
+        "retained_relations": 0,
+        "omitted_relations": null,
+        "unknown_count": 3818,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      },
+      {
+        "family": "timer",
+        "status": "partial",
+        "retained_relations": 0,
+        "omitted_relations": null,
+        "unknown_count": 3819,
+        "unknown_ids_location": "complete parent normalized_result.semantic_graph.coverage.families by family name"
+      }
+    ]
+  },
+  "limitations": [
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/keytar/mac-arm64/keytar.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/libfido2/mac-arm64/libcbor.0.8.dylib; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/libfido2/mac-arm64/libcrypto.1.1.dylib; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/libfido2/mac-arm64/libfido2.1.10.0.dylib; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/libfido2/mac-arm64/libssl.1.1.dylib; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/libfido2/mac-arm64/libz.1.dylib; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/libtermius/mac-arm64/libssh2.1.dylib; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/libtermius/mac-arm64/termius.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/mac-single-sign-in/mac-arm64/mac-single-sign-in.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/minidump-parser/target/minidump-parser.darwin-arm64.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/minidump-parser/target/minidump-parser.darwin-x64.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/mosh/mac-arm64/moshclient.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/node-pty/mac-arm64/pty.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/node-pty/mac-arm64/spawn-helper; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/restore-mas-purchase/mac-arm64/restore-mas-purchase.node; the observed bytes are untrusted.",
+    "Artifact integrity metadata contradicts observed bytes at node_modules/@termius/serialport-bindings/mac-arm64/bindings.node; the observed bytes are untrusted.",
+    "Caller-selected source analysis leaves 5768 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+    "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+    "Electron relationships are derived from inert syntax; runtime registration, reachability, defaults, and enforcement remain unproven.",
+    "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+    "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+    "Native member names are requested by JavaScript syntax and are not verified binary exports in this workflow.",
+    "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+    "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+    "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+  ],
+  "integrity_contradictions": [
+    {
+      "contradiction_id": "ic_0129e84c246629ec00f88f76410456495850d8f60d1d74c87af3b78f94153f7e",
+      "occurrence_id": "occ_e468722a67895481cea0b0636ec9da7f48083c80b3a244124da21e1d727e05a0",
+      "parent_artifact_id": "art_f4fb86374502bc63ee60231d729094f84b729502088a2ba80b259037403a89d0",
+      "logical_path": "node_modules/@termius/keytar/mac-arm64/keytar.node",
+      "declared_sha256": "9e020eadd89d61b1203dfd4c4ba7b28ccb817b3ad910711f51bf65a0a6b3d2d7",
+      "observed_sha256": "4f096052c2be5b9a8e63f94eaf03181436e87b79b203edfc929555766956190e",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_d76a9e95f5584ca15cd37e9deadc7749dd304890a7bfd6a7fe311110d91e66e4",
+      "occurrence_id": "occ_153d2a3b2719eb4ba462634b0586c08e7a2b764726c53e8a1791aa648c32ea79",
+      "parent_artifact_id": "art_c51561cbab12a22244e6d31bddb0bcc33bb0d21b61c8a05c2e88a509a5938c78",
+      "logical_path": "node_modules/@termius/libfido2/mac-arm64/libcbor.0.8.dylib",
+      "declared_sha256": "9c9cb4a513e4cb18973b9a6fe169b0590f93f2432b50bc5dbbe4f52c903cf44e",
+      "observed_sha256": "01ddbd2549c865d160a79a5a39cdd848480546b6ea10eff0f6c97ec12820796f",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_723f8084eb2d9192d9124f3d9f927b4f36d878bb2ca4059ba1584fb79b52531b",
+      "occurrence_id": "occ_a75e475dc7d90d760c1d241b5cbb7364e7c3d1dbfcb96178b8f0205e1a2fad2a",
+      "parent_artifact_id": "art_c51561cbab12a22244e6d31bddb0bcc33bb0d21b61c8a05c2e88a509a5938c78",
+      "logical_path": "node_modules/@termius/libfido2/mac-arm64/libcrypto.1.1.dylib",
+      "declared_sha256": "84fe2fe37113e28a255ae15ab74fc6ca8c43709d8265fa7867bbf6e032b32b5b",
+      "observed_sha256": "1399dd4305722790106ac2f512b4b009e40f4153608121646deb87541b4c06ef",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_d5c032239f3cc988505054b3c311318bb5be08bc3ff2f6e54c7f30bad752304a",
+      "occurrence_id": "occ_7baba74fa922bdda1de071139f517124a159dde38fdeaa45dc46d5851d7bf92e",
+      "parent_artifact_id": "art_c51561cbab12a22244e6d31bddb0bcc33bb0d21b61c8a05c2e88a509a5938c78",
+      "logical_path": "node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node",
+      "declared_sha256": "b4a9260711654b034ff950b9f33ebac8002f35e10f1113b62b3f985506d76059",
+      "observed_sha256": "c9c0c2e2fd387887ccd3a4d3c33334b3c0dafab8ce714000715495209134791c",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_8f27f65173aff0d4c695abfa522c1c9cedc1598273e4667d23acf3416028293a",
+      "occurrence_id": "occ_203e2d24c703bd58f4177fe31186de43e23b4967cbb3b404d2789a6e64c1da11",
+      "parent_artifact_id": "art_c51561cbab12a22244e6d31bddb0bcc33bb0d21b61c8a05c2e88a509a5938c78",
+      "logical_path": "node_modules/@termius/libfido2/mac-arm64/libfido2.1.10.0.dylib",
+      "declared_sha256": "b5bb2f1d108c20026f05021534c4fe4c2fb7e8b70a71e745f004a2f3a20a73c1",
+      "observed_sha256": "ddd5bdb4e5645103047253ffea0e15094c1e335556d12cb02f6316af9833a58a",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_327721160df12571667b335089a92f3c3b8ea84cd1517e077adf75d3db5178f8",
+      "occurrence_id": "occ_560ed715bd289aee13b7b3f0de049aa8b69942559e7a3b461ee94a80245b5ce2",
+      "parent_artifact_id": "art_c51561cbab12a22244e6d31bddb0bcc33bb0d21b61c8a05c2e88a509a5938c78",
+      "logical_path": "node_modules/@termius/libfido2/mac-arm64/libssl.1.1.dylib",
+      "declared_sha256": "a0fe80c67a0baf9b655e8eddffb13ec2e4252103db218e008dac0e668e9b19c0",
+      "observed_sha256": "38baf8ff505d58d84b0b4d10b70a47990d3aff1f66ccf80a50470f8678dbf1bc",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_52d844327688d6f4ffbe765b32d612efcad2f517d63e994ee34fb08eee5b5861",
+      "occurrence_id": "occ_34b295b42d5003a40a4bf77696abd79a4932fb601a5627c69d3f959a64eea70f",
+      "parent_artifact_id": "art_c51561cbab12a22244e6d31bddb0bcc33bb0d21b61c8a05c2e88a509a5938c78",
+      "logical_path": "node_modules/@termius/libfido2/mac-arm64/libz.1.dylib",
+      "declared_sha256": "41eb1aa03df802dfdba781e63e7e368146ca16eb169d4ee3a89d8e4df93a5353",
+      "observed_sha256": "19b0f5da29c8856801b1d26335d11e4fae5551b3704daab9740776d4c01dc24e",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_972fcda69ceaa9e5506fb060be6378c264c16c2688443f5660d5e22dc641fddf",
+      "occurrence_id": "occ_b2e45f161ed59c81498afbcf0ad62a57bbd6d51fad00b44a2bfed785670f93d0",
+      "parent_artifact_id": "art_0901c8e080c64654db9c68bd3464c7fe89643a4f694dda5ad8d65e893e599969",
+      "logical_path": "node_modules/@termius/libtermius/mac-arm64/libssh2.1.dylib",
+      "declared_sha256": "db1339b8a5aec9c5e9e19e3927a6dbdbe2d54c0337434c1b557e589305c7a93e",
+      "observed_sha256": "2db2964befb95f6b906ef17735685c63853849160635371dbe9ff3b87207a9ec",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_bcc92058b8d84f167b170b092b129d42a085c86a1094ed0b65fe3d341312aa3f",
+      "occurrence_id": "occ_b2e67dc72858a38b13059c4b69c8a848bd354cf7bcba2314b11ea51163a9c828",
+      "parent_artifact_id": "art_0901c8e080c64654db9c68bd3464c7fe89643a4f694dda5ad8d65e893e599969",
+      "logical_path": "node_modules/@termius/libtermius/mac-arm64/termius.node",
+      "declared_sha256": "a3e92f40841320218308114e90bad7d935868312ed039251f012d4ad2606cd3c",
+      "observed_sha256": "9d177d1d474191b59b87f55ded5a497079633a16f62cdb4349049590ed70b2c7",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_6269e4d52b7f89f0eb7ca18b87619ce96a8fbbeffb4a28fe07f6a90e08665782",
+      "occurrence_id": "occ_0f86c0567307abf106ab8b2c04b4b52b0adcaa4b379b40967578b3f4f66d724e",
+      "parent_artifact_id": "art_bfada3caf3a2bee4e24753b1af9967e682d96441f443d455147066da3ee23836",
+      "logical_path": "node_modules/@termius/mac-single-sign-in/mac-arm64/mac-single-sign-in.node",
+      "declared_sha256": "0c34b5f06e7afaf5d6202011b3aaaa3b48b75fb8ea734bd41afcf77dfb345115",
+      "observed_sha256": "ce7bb99f8da23765170dd6e146e34a8dde02f37cf25a5f22662b211f9f347c64",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_a3088231aee292b8cca0ca3f10153bbf2dad5c700cc5853508e99f35a1f5c33b",
+      "occurrence_id": "occ_713d428560ebd238efa5b8ebd36b12cacffb3451dbeb090a0afde7e8fe87beed",
+      "parent_artifact_id": "art_1966a9f96472916395fc706e2e38e3a6d9a9d0ae0cacfbf8c9ebb47164b7dc8d",
+      "logical_path": "node_modules/@termius/minidump-parser/target/minidump-parser.darwin-arm64.node",
+      "declared_sha256": "282ff66ebd3e2efb520d9a412e7805dea79a6590c0cced8f85f02247a78787a2",
+      "observed_sha256": "0cffc400f083ae42f84aafc8aa04e947339112da7b59dfc3d2c1146a1799c252",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_da101b546ade1e6383eaa0a783a0230d1c213c56776dee30053ff1ca79b86385",
+      "occurrence_id": "occ_38f47b48354a92dbe3c2238d7df61196e4ba3e684433fba8ecde715be6c1ca0c",
+      "parent_artifact_id": "art_1966a9f96472916395fc706e2e38e3a6d9a9d0ae0cacfbf8c9ebb47164b7dc8d",
+      "logical_path": "node_modules/@termius/minidump-parser/target/minidump-parser.darwin-x64.node",
+      "declared_sha256": "df6f734edc9d2119a3de3d040a3217027cba5a4f3042da37c7f73b0348617f55",
+      "observed_sha256": "35914c1897720cdab1db33d3f1fb84ff63eba7b858809ec014f895807eb95441",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_0053eef7a1925822c7adba7ba971e0d3d1b17b6d9b858f4a197004fbb4ff13a4",
+      "occurrence_id": "occ_0c091c64c8faa67e0fc25ed427a716136656967346172523659229a3ae580d01",
+      "parent_artifact_id": "art_d89f6f9962d992cd18164ab2345b31737ed62a374f8fbbe05c7ddf3c5414f7bd",
+      "logical_path": "node_modules/@termius/mosh/mac-arm64/moshclient.node",
+      "declared_sha256": "40be52f5641c166294ec92525098683d3e6f806f56a6e657f61b9f749b2fc94b",
+      "observed_sha256": "4af9a0789068021f636446d190c078a9cf8443a796cc914ca9ae50ab182c5a7a",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_e9430920038252567ebdcbe98a5695801bfadbe7b595111c5166f4e6ada21418",
+      "occurrence_id": "occ_39c16b141b87b734f806f489a8ba3c28c137ae909904a4f7d9352459bf5da2f2",
+      "parent_artifact_id": "art_17a5ca726fd63b4a2284f8b0ad96bd93fbcc86a2d2561f05fdc9858531020ec0",
+      "logical_path": "node_modules/@termius/node-pty/mac-arm64/pty.node",
+      "declared_sha256": "f8432f52a719742c4b738fc603b668e9cf76a127965c888a96de9c62055b8bac",
+      "observed_sha256": "9f4c2537431733c7c925c0032758b0b961fc36e6fe2f5ef7e5f1f90d884ed415",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_000354f8fbe41ae80bbb2dae1fc8a5b0c511d78ac861a3d8568e2776dc9641a5",
+      "occurrence_id": "occ_b0efe58685f857707864ba0a3d8e075aec8557b57515e049640b3a3467fbed04",
+      "parent_artifact_id": "art_17a5ca726fd63b4a2284f8b0ad96bd93fbcc86a2d2561f05fdc9858531020ec0",
+      "logical_path": "node_modules/@termius/node-pty/mac-arm64/spawn-helper",
+      "declared_sha256": "126651b1b57cb30b1971c8f4fea78f4f69e75b18017061f1b71600e7bdd7e050",
+      "observed_sha256": "a81c5e35f995fad44144903e2f02e9bf137deec27ee7492763068c97c713b261",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_5cd5aefea6a3bc26d61ee8ab14d955a758f28cc468364218bdf5853f944af673",
+      "occurrence_id": "occ_8b8aa19bab3c912500bc05944dee97c5f75cedc5f84f3543af4ecfd244238e2c",
+      "parent_artifact_id": "art_577ba469d2d9f397f52da32775cc41ba42f985fd4ddacdaa2de42f198ea8f7f4",
+      "logical_path": "node_modules/@termius/restore-mas-purchase/mac-arm64/restore-mas-purchase.node",
+      "declared_sha256": "c7ac84411e4707c54f6ac233befce9a2ee33d745011e8265c1caab8920a34968",
+      "observed_sha256": "e834d0c3140ced9ad57143efa41dfa275c83601895be71c0ca2c496e397e63f7",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    },
+    {
+      "contradiction_id": "ic_348232c59c77e2eb982f73a3d559441a8aee93bc4bd556c34ac85dcad5c98944",
+      "occurrence_id": "occ_b101a4e75853426498a9e2f82515168c719268239318816d4c4f5531080052b4",
+      "parent_artifact_id": "art_715bb6d118944866184ea71f822f1fff49f9878b0d6e78307e78341ebd5b0662",
+      "logical_path": "node_modules/@termius/serialport-bindings/mac-arm64/bindings.node",
+      "declared_sha256": "bf9b7e662ac842b70d73e45bece96a793c2c347a9c6302cfc2c80266117cfc9e",
+      "observed_sha256": "8bfcbe03ecfd5ecfb4baf839d33ff69f5f9d24eb467f38b19b311ddcad960a57",
+      "entry_kind": "file",
+      "unpacked": true,
+      "trust": "observed-untrusted",
+      "provenance": "container-integrity-metadata-versus-observed-bytes",
+      "limitations": [
+        "Observed bytes contradict declared integrity metadata and cannot support equivalence."
+      ]
+    }
+  ],
+  "reproduction_arguments": [
+    "analyze-javascript-application",
+    "/Applications/Termius.app/Contents/Resources/app.asar",
+    "--integrity-policy",
+    "record-and-continue",
+    "--max-semantic-nodes",
+    "8000",
+    "--max-semantic-nodes-per-file",
+    "1000",
+    "--max-heap-mb",
+    "1536",
+    "--analysis-timeout-ms",
+    "90000",
+    "--format",
+    "json",
+    "--source-path",
+    "package.json",
+    "--source-path",
+    "utilities-process/service-process.js",
+    "--source-path",
+    "utilities-process/fido-process.js",
+    "--source-path",
+    "background-process/src/background-process/main.html",
+    "--source-path",
+    "ui-process/src/ui-process/main.html",
+    "--source-path",
+    "ui-process/assets/HostsScreenSidebar-d767a523.js",
+    "--source-path",
+    "node_modules/@termius/libtermius/index.js",
+    "--source-path",
+    "node_modules/@termius/libtermius/package.json",
+    "--source-path",
+    "node_modules/@termius/keytar/lib/keytar.js",
+    "--source-path",
+    "node_modules/@termius/node-pty/lib/unixTerminal.js"
+  ],
+  "environment_overrides": {
+    "REA_DARWIN_MODULE_CACHE_PATH": "/private/tmp/ssterm-termius-analysis/swift-module-cache"
+  },
+  "earlier_attempts": [
+    {
+      "result": "artifact_integrity_mismatch",
+      "remedy": "record-and-continue; contradictions retained as observed-untrusted"
+    },
+    {
+      "result": "execution_failure",
+      "reason": "ownership helper compiler cache outside sandbox",
+      "remedy": "REA_DARWIN_MODULE_CACHE_PATH points to writable temporary directory"
+    },
+    {
+      "result": "cleanup_incomplete",
+      "reason": "768 MiB worker OOM on large bundle; sandbox ps EPERM",
+      "remedy": "verified worker PID 44703 exited; reduced selected sources; 1536 MiB worker; authorized escalation for helpers"
+    }
+  ],
+  "metadata_projection_notes": [
+    "Semantic coverage families replace large unknown_ids arrays with counts; exact arrays and every unknown record remain in the complete compressed parent Evidence. All status, truncation, limits, retained/omitted relation fields are preserved."
+  ]
+}

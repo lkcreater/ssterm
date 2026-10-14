@@ -1,0 +1,87 @@
+# Task checklist
+
+**สถานะงานพัฒนา: ยังไม่เริ่ม — รอ confirm implementation.** Checklist นี้เป็นงานย่อยของ [tickets](tickets.md), ไม่ใช่รายการที่อนุมัติแล้ว `[x]` ด้านล่างหมายถึงการเตรียมเอกสารสำเร็จเท่านั้น ไม่ได้หมายถึง feature implementation
+
+## งานเตรียมการที่ทำแล้ว
+
+- [x] ระบุ installed Termius 9.43.1, bundle ID/platform และ ASAR SHA256
+- [x] อ่าน skill `reverse-engineer-anything` และเลือก REA CLI fallback
+- [x] ทำ focused REA analysis; เก็บ complete parent, summary, coverage/unknowns/integrity contradictions
+- [x] ตรวจ shipped process bundles, domain definitions, service callbacks แบบ bounded static inspection
+- [x] ตรวจ native wrappers/linkage/symbol candidates พร้อม source identities
+- [x] สรุป published feature/workflow และ official source register
+- [x] แยก Observed / Published / Inferred / Proposed / Unknown
+- [x] จัด architecture proposal, tickets, task dependencies และ phase gates
+- [x] บันทึก UI stack ที่ผู้ใช้เลือก: React + Electron + shadcn/ui + Tailwind CSS; ยังไม่เริ่ม implementation
+- [ ] ผู้ใช้ confirm ขอบเขต MVP / baseline ก่อนเริ่ม SST-001
+
+## M0 — ตัดสินใจและพิสูจน์ feasibility
+
+- [ ] **T001 / SST-001:** finalize MVP/platform/app ID/original UX ADR; บันทึก React + Electron + shadcn/ui + Tailwind CSS และเลือก compatible dependency versions/build tooling
+- [ ] **T002 / SST-002:** สร้าง project-owned SSH/SFTP fixture พร้อม key/password/host-key cases
+- [ ] **T003 / SST-002:** prove PTY/resize/auth/interactive prompts/SFTP/tunnel/packaging, record limits และเลือก backend
+
+## M1 — Foundation
+
+- [ ] **T004 / SST-003:** data dictionary/relations/inherit/delete rules และ field protection matrix
+- [ ] **T005 / SST-003:** lock/key loss/recovery/backup/schema migration semantics
+- [ ] **T006 / SST-004:** bootstrap Electron + React/TypeScript renderer, shadcn/ui components, Tailwind CSS/theme tokens และ narrow typed command/events หลัง confirm
+- [ ] **T007 / SST-004:** IPC validation/sender ownership/CSP/navigation/URL policy
+- [ ] **T008 / SST-005:** transactional repository, indexes, versioned migrations และ storage failure handling
+- [ ] **T009 / SST-006:** Keychain SecretRef adapter + fixture provider + denied/missing/error cases
+- [ ] **T010 / SST-006:** sensitive-content encryption, cache lifetime และ redaction
+- [ ] **T011 / SST-007:** groups/host CRUD, inheritance/provenance/cycle/move/delete consistency
+- [ ] **T012 / SST-007:** tags/search/AND filters และ shared identity impacts
+
+## M2 — SSH terminal
+
+- [ ] **T013 / SST-008:** connection/session registry, state/error/prompt contracts, generation IDs
+- [ ] **T014 / SST-008:** resource ownership/idempotent dispose/delayed-event race tests
+- [ ] **T015 / SST-009:** KnownHost repository/policy และ accept-once/remember/reject/changed-key UI
+- [ ] **T016 / SST-010:** password/imported key connection, error translation, supported format list
+- [ ] **T017 / SST-011:** passphrase/keyboard-interactive prompt broker, cancel/retry/timeout/lifetime
+- [ ] **T018 / SST-012:** terminal renderer, ordered stream, input routing, PTY resize, EOF/exit
+- [ ] **T019 / SST-013:** Thai/Unicode/IME, clipboard/paste, focus/shortcuts/search/URL behavior
+- [ ] **T020 / SST-014:** bounded queues/scrollback/concurrency, backpressure และ measured performance budget
+- [ ] **T021 / SST-015:** unexpected disconnect/manual reconnect/cancel/app quit cleanup
+
+## M3 — Catalog/workspace UX
+
+- [ ] **T022 / SST-016:** hosts/groups/tree/drafts/validation/inherited values/connect/empty states
+- [ ] **T023 / SST-017:** identity/key CRUD/import/bind/detach/reassign UX
+- [ ] **T024 / SST-018:** tabs/layout tree/basic splits/focus/close และ persistent terminal settings
+
+## M4 — SFTP / snippets / forwarding
+
+- [ ] **T025 / SST-019:** SFTP capability/read/stat/list/write/handle ownership and errors
+- [ ] **T026 / SST-020:** local/remote browser/path/hidden files/symlink navigation/selection
+- [ ] **T027 / SST-021:** bounded transfer queue/progress/cancel/disconnect and checksum fixture checks
+- [ ] **T028 / SST-022:** overwrite/skip/rename, temp/partial files, permissions/quota/path failure
+- [ ] **T029 / SST-023:** protected snippet persistence/editor/list/search
+- [ ] **T030 / SST-024:** Paste composer/explicit Run, target capture และ sent/error status
+- [ ] **T031 / SST-025:** local tunnel adapter/registry/bind conflicts/stop/resource cleanup
+- [ ] **T032 / SST-026:** tunnel rule CRUD/validation/start-stop-state and restart policy
+
+## M5 — MVP acceptance และ package
+
+- [ ] **T033 / SST-027:** integration/E2E requirement coverage F01–F06 และ failure/teardown matrix
+- [ ] **T034 / SST-027:** macOS Thai IME/accessibility/keyboard/performance walkthrough + release-blocker fixes
+- [ ] **T035 / SST-028:** local packaged artifact/clean fixture/upgrade/storage and native binding checks
+- [ ] **T036 / SST-028:** checksums/release notes/known limitations/signing gate และ installation guide
+
+## Later — ยังไม่รวมใน MVP confirmation
+
+- [ ] **T037 / SST-029:** local PTY and additional OS capability/packaging matrix
+- [ ] **T038 / SST-030:** jump host/multi-hop/proxy resolver, per-hop auth/trust/cleanup
+- [ ] **T039 / SST-031:** remote/dynamic tunnel capabilities and UI
+- [ ] **T040 / SST-032:** remote editing/stale version/temp cleanup/advanced transfers
+- [ ] **T041 / SST-033:** workspace templates/explicit broadcast/multi-host snippet target orchestration
+- [ ] **T042 / SST-034:** logs/history/autocomplete/AI privacy and implementation scope
+- [ ] **T043 / SST-036:** threat model/independent crypto key lifecycle/test vectors/review
+- [ ] **T044 / SST-038:** residual runtime/native/Mosh/FIDO focused investigations and ADRs
+- [ ] **T045 / SST-035:** own backend/device enrollment/encrypted sync/conflict/tombstones
+- [ ] **T046 / SST-037:** team ACL/membership/enforcement/revocation/rekey/audit
+
+## Task bookkeeping
+
+เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement

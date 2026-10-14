@@ -1,0 +1,888 @@
+{
+  "created_utc": "2026-10-14T14:06:00.632453+00:00",
+  "target": "Installed Termius selected by parent task; static mac-arm64 addon boundary",
+  "tool_category": "Ordinary shell inspection; NOT REA Evidence",
+  "execution": "No target execution, profile/credentials or runtime/network observation",
+  "records": [
+    {
+      "id": "N01",
+      "kind": "ordinary-shell-source-inspection",
+      "rea_evidence": false,
+      "method": "Read text statically; no require/import/execution",
+      "files": [
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/index.js",
+          "sha256": "d87f0c77ab587a7714d760f7f5759b229c5fc2b3c0fde3b2f16d3db4c27d4312",
+          "line_count": 17
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/package.json",
+          "sha256": "dc42b9abafa7415665d91d25d02f00f595716abd567aa6465cbe39fb47014c35",
+          "line_count": 11
+        }
+      ]
+    },
+    {
+      "id": "N02",
+      "kind": "ordinary-shell-source-inspection",
+      "rea_evidence": false,
+      "method": "Read text statically; no require/import/execution",
+      "files": [
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/lib/keytar.js",
+          "sha256": "e858194902d632e217b60b913829865749568fd43aee2d65bf7ffcefd7b1d6ae",
+          "line_count": 43
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/build/Release/keytar.node/index.js",
+          "sha256": "83675a6e76853196f742a0186b7425c6cb6a31ce76306ff7336a16b060dc96a9",
+          "line_count": 16
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/package.json",
+          "sha256": "ea79928e741e832f84738b80bb4eeaeff5ada4604d3c80b412b9c8abf6ce99ee",
+          "line_count": 12
+        }
+      ]
+    },
+    {
+      "id": "N03",
+      "kind": "ordinary-shell-source-inspection",
+      "rea_evidence": false,
+      "method": "Read text statically; no require/import/execution",
+      "files": [
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/index.js",
+          "sha256": "c1b82c92c4c63aaa8e8441fc5a291c4727cd3f3550666d2fec7250e0f6d4b173",
+          "line_count": 52
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/utils.js",
+          "sha256": "f75ad341c13fbf1a9a6605d7ee42dff5bbc5d43b7b381e413fb97eb1b8300beb",
+          "line_count": 39
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/unixTerminal.js",
+          "sha256": "5e3860d49c7d69f8c4758cc2623337d0f37be865433cfdab9d484acd8c6a6973",
+          "line_count": 346
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/terminal.js",
+          "sha256": "5ed5cd66a766afba4a04093284e999f8516d41936501839055800b10eca5d304",
+          "line_count": 190
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/build/Release/pty.node/index.js",
+          "sha256": "d7869728efdef2dfbe1ea824025d986019185a3fafa2d6099e2c8c0ef6ac4a34",
+          "line_count": 16
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/package.json",
+          "sha256": "8e52a8e25a40299d09315890acc3a6d303d3b4a888aa40fca2d53d3b505732b2",
+          "line_count": 15
+        }
+      ]
+    },
+    {
+      "id": "N04",
+      "kind": "ordinary-shell-source-inspection",
+      "rea_evidence": false,
+      "method": "Read text statically; no require/import/execution",
+      "files": [
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/index.js",
+          "sha256": "34210db8dc4f1dba249f9268dffdab6ceae44c03ff65845e3cd1e088e3180baf",
+          "line_count": 17
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/package.json",
+          "sha256": "966cd16aa471d3163edf5027e4d8ce1d688ab4f4283167de159131ea7a70c6d8",
+          "line_count": 11
+        }
+      ]
+    },
+    {
+      "id": "N05",
+      "kind": "ordinary-shell-source-inspection",
+      "rea_evidence": false,
+      "method": "Read text statically; no require/import/execution",
+      "files": [
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/index.js",
+          "sha256": "7823e992fe7f6c4e8951b3ef32302fcd1c719bd8301511e36b9781cbac50b05e",
+          "line_count": 17
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/package.json",
+          "sha256": "13f78ea73f024910f1621a35ee4b21a0fc3ee6c995f20d1de3f59e1f6e00e575",
+          "line_count": 12
+        }
+      ]
+    },
+    {
+      "id": "N06",
+      "kind": "ordinary-shell-native-identity-and-linkage",
+      "rea_evidence": false,
+      "files": [
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node",
+          "sha256": "9d177d1d474191b59b87f55ded5a497079633a16f62cdb4349049590ed70b2c7",
+          "size_bytes": 3684512,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node:\n\t@rpath/termius.node (compatibility version 0.0.0, current version 0.0.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 3502.1.255)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 3502.1.255)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 1.0.0, current version 61439.120.27)\n\t/usr/lib/libz.1.dylib (compatibility version 1.0.0, current version 1.2.12)\n\t@loader_path/libssh2.1.dylib (compatibility version 1.0.0, current version 1.0.1)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1900.180.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n\t/usr/lib/libobjc.A.dylib (compatibility version 1.0.0, current version 228.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/libssh2.1.dylib",
+          "sha256": "2db2964befb95f6b906ef17735685c63853849160635371dbe9ff3b87207a9ec",
+          "size_bytes": 2695632,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/libssh2.1.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/libssh2.1.dylib: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/libssh2.1.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/libssh2.1.dylib:\n\t@loader_path/libssh2.1.dylib (compatibility version 1.0.0, current version 1.0.1)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1900.180.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/mac-arm64/keytar.node",
+          "sha256": "4f096052c2be5b9a8e63f94eaf03181436e87b79b203edfc929555766956190e",
+          "size_bytes": 129840,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/mac-arm64/keytar.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/mac-arm64/keytar.node: Mach-O 64-bit bundle arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/mac-arm64/keytar.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/mac-arm64/keytar.node:\n\t/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit (compatibility version 45.0.0, current version 2685.60.104)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2100.43.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 5026.5.4)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/mac-arm64/moshclient.node",
+          "sha256": "4af9a0789068021f636446d190c078a9cf8443a796cc914ca9ae50ab182c5a7a",
+          "size_bytes": 451584,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/mac-arm64/moshclient.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/mac-arm64/moshclient.node: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/mac-arm64/moshclient.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/mac-arm64/moshclient.node:\n\t@rpath/moshclient.node (compatibility version 0.0.0, current version 0.0.0)\n\t/usr/lib/libz.1.dylib (compatibility version 1.0.0, current version 1.2.12)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1900.180.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/pty.node",
+          "sha256": "9f4c2537431733c7c925c0032758b0b961fc36e6fe2f5ef7e5f1f90d884ed415",
+          "size_bytes": 102800,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/pty.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/pty.node: Mach-O 64-bit bundle arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/pty.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/pty.node:\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2100.43.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/spawn-helper",
+          "sha256": "a81c5e35f995fad44144903e2f02e9bf137deec27ee7492763068c97c713b261",
+          "size_bytes": 69296,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/spawn-helper"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/spawn-helper: Mach-O 64-bit executable arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/spawn-helper"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/spawn-helper:\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2100.43.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node",
+          "sha256": "c9c0c2e2fd387887ccd3a4d3c33334b3c0dafab8ce714000715495209134791c",
+          "size_bytes": 175632,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node:\n\t@rpath/libfido2-nodejs.node (compatibility version 0.0.0, current version 0.0.0)\n\t@loader_path/libssl.1.1.dylib (compatibility version 1.1.0, current version 1.1.0)\n\t@loader_path/libcrypto.1.1.dylib (compatibility version 1.1.0, current version 1.1.0)\n\t@loader_path/libcbor.0.8.dylib (compatibility version 0.8.0, current version 0.8.0)\n\t@loader_path/libfido2.1.10.0.dylib (compatibility version 1.0.0, current version 1.10.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 3502.1.255)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1900.180.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2.1.10.0.dylib",
+          "sha256": "ddd5bdb4e5645103047253ffea0e15094c1e335556d12cb02f6316af9833a58a",
+          "size_bytes": 236288,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2.1.10.0.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2.1.10.0.dylib: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2.1.10.0.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2.1.10.0.dylib:\n\t@loader_path/libfido2.1.10.0.dylib (compatibility version 1.0.0, current version 1.10.0)\n\t@loader_path/libcbor.0.8.dylib (compatibility version 0.8.0, current version 0.8.0)\n\t@loader_path/libcrypto.1.1.dylib (compatibility version 1.1.0, current version 1.1.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 3502.1.255)\n\t/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit (compatibility version 1.0.0, current version 275.0.0)\n\t@loader_path/libz.1.dylib (compatibility version 1.0.0, current version 1.3.1)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcrypto.1.1.dylib",
+          "sha256": "1399dd4305722790106ac2f512b4b009e40f4153608121646deb87541b4c06ef",
+          "size_bytes": 2287520,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcrypto.1.1.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcrypto.1.1.dylib: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcrypto.1.1.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcrypto.1.1.dylib:\n\t@loader_path/libcrypto.1.1.dylib (compatibility version 1.1.0, current version 1.1.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1311.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libssl.1.1.dylib",
+          "sha256": "38baf8ff505d58d84b0b4d10b70a47990d3aff1f66ccf80a50470f8678dbf1bc",
+          "size_bytes": 540192,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libssl.1.1.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libssl.1.1.dylib: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libssl.1.1.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libssl.1.1.dylib:\n\t@loader_path/libssl.1.1.dylib (compatibility version 1.1.0, current version 1.1.0)\n\t@loader_path/libcrypto.1.1.dylib (compatibility version 1.1.0, current version 1.1.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1311.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcbor.0.8.dylib",
+          "sha256": "01ddbd2549c865d160a79a5a39cdd848480546b6ea10eff0f6c97ec12820796f",
+          "size_bytes": 99584,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcbor.0.8.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcbor.0.8.dylib: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcbor.0.8.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcbor.0.8.dylib:\n\t@loader_path/libcbor.0.8.dylib (compatibility version 0.8.0, current version 0.8.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libz.1.dylib",
+          "sha256": "19b0f5da29c8856801b1d26335d11e4fae5551b3704daab9740776d4c01dc24e",
+          "size_bytes": 175872,
+          "commands": [
+            {
+              "argv": [
+                "/usr/bin/file",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libz.1.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libz.1.dylib: Mach-O 64-bit dynamically linked shared library arm64\n",
+              "stderr": ""
+            },
+            {
+              "argv": [
+                "/usr/bin/otool",
+                "-L",
+                "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libz.1.dylib"
+              ],
+              "returncode": 0,
+              "stdout": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libz.1.dylib:\n\t@loader_path/libz.1.dylib (compatibility version 1.0.0, current version 1.3.1)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1351.0.0)\n",
+              "stderr": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "N07",
+      "kind": "ordinary-shell-selected-symbols",
+      "rea_evidence": false,
+      "queries": [
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node",
+          "sha256": "9d177d1d474191b59b87f55ded5a497079633a16f62cdb4349049590ed70b2c7",
+          "argv": [
+            "/usr/bin/nm",
+            "-gU",
+            "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "selection_regex": "InitNode|OBJC_CLASS_\\$_SecureEnclave|OBJC_CLASS_\\$_SepKey",
+          "total_stdout_lines": 2159,
+          "selected_lines": [
+            "0000000000245118 S _OBJC_CLASS_$_SecureEnclave",
+            "0000000000245168 S _OBJC_CLASS_$_SepKey",
+            "000000000006c104 T __Z11InitNodeSEPN4Napi3EnvENS_6ObjectE",
+            "0000000000055fe8 T __Z11InitNodeSRPN4Napi3EnvENS_6ObjectE",
+            "00000000000224bc T __Z12InitNodeFileN4Napi3EnvENS_6ObjectE",
+            "000000000005d20c T __Z14InitNodeCryptoN4Napi3EnvENS_6ObjectE",
+            "0000000000045ab8 T __Z14InitNodeKeygenN4Napi3EnvENS_6ObjectE",
+            "000000000004ee80 T __Z14InitNodeSystemN4Napi3EnvENS_6ObjectE",
+            "000000000004e360 T __Z15InitNodeLoggingN4Napi3EnvENS_6ObjectE",
+            "0000000000070c88 T __Z16InitNodeWebauthnN4Napi3EnvENS_6ObjectE",
+            "000000000002131c T __Z17InitNodeFileAttrsN4Napi3EnvENS_6ObjectE",
+            "0000000000008bec T __Z17InitNodeSshClientN4Napi3EnvENS_6ObjectE",
+            "0000000000021b9c T __Z18InitNodeFileReaderN4Napi3EnvENS_6ObjectE",
+            "0000000000020b30 T __Z18InitNodeFileSystemN4Napi3EnvENS_6ObjectE",
+            "000000000002202c T __Z18InitNodeFileWriterN4Napi3EnvENS_6ObjectE",
+            "0000000000063e2c T __Z20InitNodeCryptoModuleN4Napi3EnvENS_6ObjectE",
+            "0000000000037194 T __Z20InitNodeTelnetClientN4Napi3EnvENS_6ObjectE",
+            "000000000007323c T __Z20InitNodeWindowsHelloN4Napi3EnvENS_6ObjectE",
+            "00000000000047b0 T __Z22InitNodePortForwardingN4Napi3EnvENS_6ObjectE",
+            "0000000000006d6c T __Z22InitNodeRemoteTerminalN4Napi3EnvENS_6ObjectE",
+            "0000000000040618 T __Z22InitNodeSshCertificateN4Napi3EnvENS_6ObjectE",
+            "0000000000073248 T __Z22InitNodeTerminalOutputN4Napi3EnvENS_6ObjectE",
+            "000000000003b714 T __Z23InitNodeSshAgentStorageN4Napi3EnvENS_6ObjectE",
+            "0000000000053b78 T __Z28InitNodeAgentMessagingClientN4Napi3EnvENS_6ObjectE",
+            "0000000000051790 T __Z28InitNodeAgentMessagingServerN4Napi3EnvENS_6ObjectE"
+          ],
+          "selection_complete": true,
+          "limitations": "Static symbol selection; symbol names do not establish JavaScript exports, reachable callers or runtime behavior."
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node",
+          "sha256": "9d177d1d474191b59b87f55ded5a497079633a16f62cdb4349049590ed70b2c7",
+          "argv": [
+            "/usr/bin/nm",
+            "-u",
+            "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "selection_regex": "libssh2_|^_Sec|^_kSec",
+          "total_stdout_lines": 574,
+          "selected_lines": [
+            "_SecAccessControlCreateWithFlags",
+            "_SecCopyErrorMessageString",
+            "_SecItemCopyMatching",
+            "_SecItemDelete",
+            "_SecKeyCopyExternalRepresentation",
+            "_SecKeyCopyPublicKey",
+            "_SecKeyCreateRandomKey",
+            "_SecKeyCreateSignature",
+            "_kSecAttrAccessControl",
+            "_kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly",
+            "_kSecAttrIsPermanent",
+            "_kSecAttrKeyClass",
+            "_kSecAttrKeyClassPrivate",
+            "_kSecAttrKeySizeInBits",
+            "_kSecAttrKeyType",
+            "_kSecAttrKeyTypeECSECPrimeRandom",
+            "_kSecAttrLabel",
+            "_kSecAttrTokenID",
+            "_kSecAttrTokenIDSecureEnclave",
+            "_kSecClass",
+            "_kSecClassKey",
+            "_kSecKeyAlgorithmECDSASignatureMessageX962SHA256",
+            "_kSecMatchLimit",
+            "_kSecMatchLimitAll",
+            "_kSecMatchLimitOne",
+            "_kSecPrivateKeyAttrs",
+            "_kSecReturnAttributes",
+            "_kSecReturnData",
+            "_kSecReturnRef",
+            "_kSecValueRef",
+            "_libssh2_agent_forwarding_abstract",
+            "_libssh2_agent_forwarding_callback_set",
+            "_libssh2_agent_forwarding_free_ex",
+            "_libssh2_agent_forwarding_handle_message",
+            "_libssh2_agent_forwarding_init_ex",
+            "_libssh2_agent_forwarding_setup_identity",
+            "_libssh2_certificate_set_default_params",
+            "_libssh2_certificate_sign",
+            "_libssh2_certificate_verify_signature",
+            "_libssh2_channel_close",
+            "_libssh2_channel_direct_tcpip_ex",
+            "_libssh2_channel_eof",
+            "_libssh2_channel_forward_accept",
+            "_libssh2_channel_forward_cancel",
+            "_libssh2_channel_forward_listen_ex",
+            "_libssh2_channel_free",
+            "_libssh2_channel_get_exit_status",
+            "_libssh2_channel_open_ex",
+            "_libssh2_channel_process_startup",
+            "_libssh2_channel_read_ex",
+            "_libssh2_channel_request_auth_agent",
+            "_libssh2_channel_request_pty_ex",
+            "_libssh2_channel_request_pty_size_ex",
+            "_libssh2_channel_setenv_ex",
+            "_libssh2_channel_write_ex",
+            "_libssh2_create_channel_opener",
+            "_libssh2_dynamic_forwarding_create_access_granted_reply",
+            "_libssh2_dynamic_forwarding_get_protocol_version",
+            "_libssh2_dynamic_forwarding_parse_connect_request",
+            "_libssh2_dynamic_forwarding_parse_socks5_auth_request",
+            "_libssh2_exit",
+            "_libssh2_free",
+            "_libssh2_free_channel_opener",
+            "_libssh2_hostkey_hash",
+            "_libssh2_init",
+            "_libssh2_keepalive_config",
+            "_libssh2_keepalive_send",
+            "_libssh2_keygen_cert_get_critical_options",
+            "_libssh2_keygen_cert_get_extensions",
+            "_libssh2_keygen_cert_get_key_id",
+            "_libssh2_keygen_cert_get_key_type",
+            "_libssh2_keygen_cert_get_key_type_name",
+            "_libssh2_keygen_cert_get_principals",
+            "_libssh2_keygen_cert_get_public_key_hash",
+            "_libssh2_keygen_cert_get_serial",
+            "_libssh2_keygen_cert_get_signature_key_blob",
+            "_libssh2_keygen_cert_get_signature_key_hash",
+            "_libssh2_keygen_cert_get_signature_key_type",
+            "_libssh2_keygen_cert_get_type_name",
+            "_libssh2_keygen_cert_get_validity_period",
+            "_libssh2_keygen_cert_keytype_to_key_name",
+            "_libssh2_keygen_extract_sk_key_info_from_private_key",
+            "_libssh2_keygen_free_ctx",
+            "_libssh2_keygen_generate_mldsa_key_pair",
+            "_libssh2_keygen_generate_new_dsa_key",
+            "_libssh2_keygen_generate_new_ec_key",
+            "_libssh2_keygen_generate_new_ed25519_key",
+            "_libssh2_keygen_generate_new_rsa_key",
+            "_libssh2_keygen_get_key_type",
+            "_libssh2_keygen_get_key_type_from_public_key",
+            "_libssh2_keygen_get_public_key_blob",
+            "_libssh2_keygen_get_public_key_blob_hash",
+            "_libssh2_keygen_get_public_key_from_blob",
+            "_libssh2_keygen_get_public_key_hash",
+            "_libssh2_keygen_get_type_private_key",
+            "_libssh2_keygen_new_ctx_from_der_public_key",
+            "_libssh2_keygen_new_ctx_from_key_pair",
+            "_libssh2_keygen_new_ctx_from_ppk_ex",
+            "_libssh2_keygen_new_ctx_from_private_key",
+            "_libssh2_keygen_private_key_encrypted",
+            "_libssh2_keygen_private_key_from_sk_info",
+            "_libssh2_keygen_private_key_with_passphrase_and_comment",
+            "_libssh2_keygen_public_key_is_certificate",
+            "_libssh2_keygen_public_key_with_comment",
+            "_libssh2_knownhost_checkp",
+            "_libssh2_knownhost_free",
+            "_libssh2_knownhost_init",
+            "_libssh2_knownhost_methods",
+            "_libssh2_knownhost_readline",
+            "_libssh2_openssl_version_compiled",
+            "_libssh2_openssl_version_runtime",
+            "_libssh2_rncryptor_decrypt",
+            "_libssh2_rncryptor_encrypt",
+            "_libssh2_rncryptor_password_hash",
+            "_libssh2_session_abstract",
+            "_libssh2_session_banner_get",
+            "_libssh2_session_banner_set",
+            "_libssh2_session_block_directions",
+            "_libssh2_session_callback_set",
+            "_libssh2_session_disconnect_ex",
+            "_libssh2_session_flag",
+            "_libssh2_session_free",
+            "_libssh2_session_get_last_userauth_attempt_info",
+            "_libssh2_session_get_server_methods",
+            "_libssh2_session_handshake",
+            "_libssh2_session_hostkey",
+            "_libssh2_session_init_ex",
+            "_libssh2_session_last_errno",
+            "_libssh2_session_last_error",
+            "_libssh2_session_method_negotiated",
+            "_libssh2_session_method_pref",
+            "_libssh2_session_methods",
+            "_libssh2_session_proxy_handshake",
+            "_libssh2_session_set_blocking",
+            "_libssh2_session_set_channel_opener",
+            "_libssh2_session_set_hostkey_prefs",
+            "_libssh2_session_set_http_proxy_settings",
+            "_libssh2_session_set_socket_is_available",
+            "_libssh2_session_set_socks4_proxy_settings",
+            "_libssh2_session_set_socks5_proxy_settings",
+            "_libssh2_session_supported_algs",
+            "_libssh2_sftp_close_handle",
+            "_libssh2_sftp_create_external_context",
+            "_libssh2_sftp_free_external_context",
+            "_libssh2_sftp_fstat_ex",
+            "_libssh2_sftp_init",
+            "_libssh2_sftp_last_error",
+            "_libssh2_sftp_mkdir_ex",
+            "_libssh2_sftp_open_ex",
+            "_libssh2_sftp_read",
+            "_libssh2_sftp_read_concurrent",
+            "_libssh2_sftp_readdir_ex",
+            "_libssh2_sftp_rename_ex",
+            "_libssh2_sftp_reset_external_context",
+            "_libssh2_sftp_rmdir_ex",
+            "_libssh2_sftp_set_context_for_next_command",
+            "_libssh2_sftp_shutdown",
+            "_libssh2_sftp_shutdown_ex",
+            "_libssh2_sftp_stat_ex",
+            "_libssh2_sftp_symlink_ex",
+            "_libssh2_sftp_unlink_ex",
+            "_libssh2_sftp_write_concurrent",
+            "_libssh2_sk_key_info_create",
+            "_libssh2_sk_key_info_free",
+            "_libssh2_userauth_authenticated",
+            "_libssh2_userauth_banner",
+            "_libssh2_userauth_banner_free",
+            "_libssh2_userauth_is_partial_success",
+            "_libssh2_userauth_keyboard_interactive_ex",
+            "_libssh2_userauth_none",
+            "_libssh2_userauth_password_ex",
+            "_libssh2_userauth_publickey",
+            "_libssh2_userauth_publickey_frommemory",
+            "_libssh2_version"
+          ],
+          "selection_complete": true,
+          "limitations": "Static symbol selection; symbol names do not establish JavaScript exports, reachable callers or runtime behavior."
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/mac-arm64/keytar.node",
+          "sha256": "4f096052c2be5b9a8e63f94eaf03181436e87b79b203edfc929555766956190e",
+          "argv": [
+            "/usr/bin/nm",
+            "-u",
+            "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/mac-arm64/keytar.node"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "selection_regex": "^_Sec|^_kSec|^_napi_",
+          "total_stdout_lines": 103,
+          "selected_lines": [
+            "_SecCopyErrorMessageString",
+            "_SecItemCopyMatching",
+            "_SecKeychainAddGenericPassword",
+            "_SecKeychainFindGenericPassword",
+            "_SecKeychainItemDelete",
+            "_SecKeychainItemFreeContent",
+            "_SecKeychainItemModifyAttributesAndData",
+            "_kSecAttrAccount",
+            "_kSecAttrService",
+            "_kSecClass",
+            "_kSecClassGenericPassword",
+            "_kSecMatchLimit",
+            "_kSecMatchLimitAll",
+            "_kSecMatchLimitOne",
+            "_kSecReturnAttributes",
+            "_kSecReturnData",
+            "_kSecReturnRef",
+            "_napi_add_finalizer",
+            "_napi_call_function",
+            "_napi_close_escapable_handle_scope",
+            "_napi_close_handle_scope",
+            "_napi_create_array_with_length",
+            "_napi_create_async_work",
+            "_napi_create_error",
+            "_napi_create_function",
+            "_napi_create_object",
+            "_napi_create_promise",
+            "_napi_create_reference",
+            "_napi_create_string_latin1",
+            "_napi_create_string_utf8",
+            "_napi_create_type_error",
+            "_napi_delete_async_work",
+            "_napi_delete_reference",
+            "_napi_escape_handle",
+            "_napi_fatal_error",
+            "_napi_get_and_clear_last_exception",
+            "_napi_get_boolean",
+            "_napi_get_cb_info",
+            "_napi_get_last_error_info",
+            "_napi_get_named_property",
+            "_napi_get_null",
+            "_napi_get_reference_value",
+            "_napi_get_undefined",
+            "_napi_get_value_string_utf8",
+            "_napi_is_exception_pending",
+            "_napi_module_register",
+            "_napi_open_escapable_handle_scope",
+            "_napi_open_handle_scope",
+            "_napi_queue_async_work",
+            "_napi_reject_deferred",
+            "_napi_resolve_deferred",
+            "_napi_set_element",
+            "_napi_set_named_property",
+            "_napi_throw",
+            "_napi_typeof"
+          ],
+          "selection_complete": true,
+          "limitations": "Static symbol selection; symbol names do not establish JavaScript exports, reachable callers or runtime behavior."
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/mac-arm64/moshclient.node",
+          "sha256": "4af9a0789068021f636446d190c078a9cf8443a796cc914ca9ae50ab182c5a7a",
+          "argv": [
+            "/usr/bin/nm",
+            "-gU",
+            "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/mac-arm64/moshclient.node"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "selection_regex": "InitNodeMoshClient|TMoshClient[0-9]+(?:send|stop|start|resize)",
+          "total_stdout_lines": 521,
+          "selected_lines": [
+            "0000000000001778 T __Z18InitNodeMoshClientN4Napi3EnvENS_6ObjectE",
+            "0000000000025c58 T __ZN11TMoshClient4sendENSt3__112basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEE",
+            "0000000000025c4c T __ZN11TMoshClient4stopEv",
+            "0000000000025bb4 T __ZN11TMoshClient5startEv",
+            "0000000000025cec T __ZN11TMoshClient6resizeEmm"
+          ],
+          "selection_complete": true,
+          "limitations": "Static symbol selection; symbol names do not establish JavaScript exports, reachable callers or runtime behavior."
+        },
+        {
+          "path": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node",
+          "sha256": "c9c0c2e2fd387887ccd3a4d3c33334b3c0dafab8ce714000715495209134791c",
+          "argv": [
+            "/usr/bin/nm",
+            "-gU",
+            "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "selection_regex": "InitNodeFido2|GetDevices|GetDetailedDevice|SignData|ssh_sk_",
+          "total_stdout_lines": 41,
+          "selected_lines": [
+            "0000000000002cc0 T __Z13InitNodeFido2N4Napi3EnvENS_6ObjectE",
+            "000000000000c1b8 T __Z14GetDevicesInfov",
+            "000000000000c1b4 T __Z16GetDevicesAmountv",
+            "000000000000c624 T __Z21GetDetailedDeviceInfoRKNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE",
+            "000000000000b6d8 T __Z8SignDataRK10SKDataInfo",
+            "000000000000d828 T __ssh_sk_device_amount",
+            "000000000000f164 T __ssh_sk_enroll",
+            "000000000000dde0 T __ssh_sk_free_options",
+            "000000000000d7e0 T __ssh_sk_free_sk_device",
+            "000000000000f128 T __ssh_sk_free_sk_enroll_response",
+            "000000000000ec24 T __ssh_sk_free_sk_resident_key",
+            "000000000000d9cc T __ssh_sk_load_detail_device_info",
+            "000000000000d884 T __ssh_sk_load_devices_info",
+            "000000000000ec74 T __ssh_sk_load_resident_keys",
+            "000000000000f78c T __ssh_sk_metadata_create",
+            "000000000000dfa8 T __ssh_sk_sign"
+          ],
+          "selection_complete": true,
+          "limitations": "Static symbol selection; symbol names do not establish JavaScript exports, reachable callers or runtime behavior."
+        }
+      ]
+    },
+    {
+      "id": "N08",
+      "kind": "ordinary-shell-bounded-file-inventory",
+      "rea_evidence": false,
+      "search_root": "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius",
+      "paths": [
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/build/Release/keytar.node/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/lib/keytar.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/mac-arm64/keytar.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/keytar/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcbor.0.8.dylib",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libcrypto.1.1.dylib",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2-nodejs.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libfido2.1.10.0.dylib",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libssl.1.1.dylib",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/mac-arm64/libz.1.dylib",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libfido2/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/libssh2.1.dylib",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/mac-arm64/termius.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/libtermius/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mac-single-sign-in/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mac-single-sign-in/mac-arm64/mac-single-sign-in.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mac-single-sign-in/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/minidump-parser/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/minidump-parser/target/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/minidump-parser/target/minidump-parser.darwin-arm64.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/minidump-parser/target/minidump-parser.darwin-x64.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/minidump-parser/target/minidump-parser.linux-arm64-gnu.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/minidump-parser/target/minidump-parser.linux-x64-gnu.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/minidump-parser/target/minidump-parser.win32-ia32-msvc.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/minidump-parser/target/minidump-parser.win32-x64-msvc.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/mac-arm64/moshclient.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/mosh/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/build/Release/pty.node/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/conpty_console_list_agent.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/eventEmitter2.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/interfaces.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/shared/conout.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/terminal.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/types.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/unixTerminal.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/utils.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/windowsConoutConnection.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/windowsPtyAgent.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/windowsTerminal.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/lib/worker/conoutSocketWorker.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/pty.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/mac-arm64/spawn-helper",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/node-pty/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/registry-js/build/Release/registry.node/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/registry-js/dist/lib/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/registry-js/dist/lib/registry.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/registry-js/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/restore-mas-purchase/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/restore-mas-purchase/mac-arm64/restore-mas-purchase.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/restore-mas-purchase/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/build/Release/bindings.node/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/darwin.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/legacy.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/linux-list.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/linux.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/poller.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/unix-read.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/unix-write.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/win32-sn-parser.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/lib/win32.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/mac-arm64/bindings.node",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/serialport-bindings/package.json",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/windows-iap-bridge/build/Release/binding.node/index.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/windows-iap-bridge/lib/main.js",
+        "/Applications/Termius.app/Contents/Resources/app.asar.unpacked/node_modules/@termius/windows-iap-bridge/package.json"
+      ],
+      "scope": "Only files beneath selected @termius unpacked module tree. Does not establish contents absent from ASAR."
+    }
+  ]
+}

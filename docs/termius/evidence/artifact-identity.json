@@ -1,0 +1,46 @@
+{
+  "observed_on": "2026-10-14",
+  "application_path": "/Applications/Termius.app",
+  "bundle_identifier": "com.termius-dmg.mac",
+  "version": "9.43.1",
+  "asar_path": "/Applications/Termius.app/Contents/Resources/app.asar",
+  "asar_sha256": "404ec37b5b00867eea47c6e99f2fffb9ea013e00fbb7df16c5cb85ee64ff5bff",
+  "asar_size_bytes": 161627133,
+  "asar_entry_count": 6568,
+  "asar_entry_source_map_count": 1727,
+  "manifest": {
+    "name": "Termius",
+    "version": "9.43.1",
+    "main": "main-process/main-process.js",
+    "description": "Desktop SSH Client",
+    "homepage": "https://termius.com/",
+    "author": "Termius Corporation <support@termius.com>",
+    "dependencies": {
+      "@azure/arm-compute": "19.2.0",
+      "@azure/arm-network": "30.2.0",
+      "@azure/arm-subscriptions": "5.1.0",
+      "@azure/identity": "3.2.4",
+      "@termius/keytar": "7.4.0-electron-22.3.27",
+      "@termius/libfido2": "0.3.1-electron-22.3.27",
+      "@termius/libtermius": "1.10.0-electron-22.3.27",
+      "@termius/mac-single-sign-in": "0.3.0-electron-22.3.27",
+      "@termius/minidump-parser": "0.4.3",
+      "@termius/mosh": "1.2.0-electron-22.3.27",
+      "@termius/node-pty": "0.13.0-electron-22.3.27",
+      "@termius/registry-js": "1.16.0-electron-22.3.27",
+      "@termius/restore-mas-purchase": "0.2.0-electron-22.3.27",
+      "@termius/serialport-bindings": "10.2.0-electron-22.3.27",
+      "@termius/windows-iap-bridge": "0.0.3-electron-22.3.27",
+      "iconv-lite": "^0.6.3"
+    },
+    "engines": {
+      "node": ">=0.8.0"
+    }
+  },
+  "rea_cli_version": "6.5.0",
+  "repository_base_commit": "79087c5",
+  "notes": [
+    "Info.plist ElectronAsarIntegrity hash is distinct from whole-file SHA256; do not equate them.",
+    "No app launch, live network capture, personal profile or secret database inspection performed."
+  ]
+}

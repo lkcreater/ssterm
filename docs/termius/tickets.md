@@ -1,0 +1,354 @@
+# Tickets สำหรับ ssterm
+
+**ทุก ticket เป็น draft ใน repo; ยังไม่ได้ implement และไม่ได้เปิด external issue.** SST-001–028 รอ confirm MVP; SST-029–038 เป็น later scope ต้องยืนยันเพิ่ม Owner/assignee ยังไม่กำหนด
+
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะทุก MVP ticket คือ `AWAITING_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+
+## Backlog index
+
+| ID | Title | Phase | Priority | Effort | Depends on |
+|---|---|---|---|---|---|
+| SST-001 | Scope / platform / stack ADR | M0 | P0 | S | Confirm |
+| SST-002 | SSH/SFTP/backend compatibility spike | M0 | P0 | L | 001 |
+| SST-003 | Domain / privacy / storage specification | M1 | P0 | M | 001 |
+| SST-004 | Desktop shell and typed IPC boundary | M1 | P0 | M | 001 |
+| SST-005 | Versioned local repository / migrations | M1 | P0 | M | 003,004 |
+| SST-006 | OS secrets and encrypted sensitive content | M1 | P0 | L | 003,004,005 |
+| SST-007 | Groups inheritance / tags / catalog domain | M1 | P0 | M | 003,005 |
+| SST-008 | Connection/session state and ownership | M2 | P0 | L | 002,004,006,007 |
+| SST-009 | Known-host verification and trust replacement | M2 | P0 | M | 005,008 |
+| SST-010 | SSH password / imported key auth | M2 | P0 | L | 006,008,009 |
+| SST-011 | Passphrase / keyboard-interactive prompts | M2 | P0 | M | 010 |
+| SST-012 | Terminal byte stream / resize / exit | M2 | P0 | L | 010,011 |
+| SST-013 | Terminal input / Unicode / clipboard | M2 | P1 | M | 012 |
+| SST-014 | Flow control / bounded resources | M2 | P0 | M | 012,013 |
+| SST-015 | Cancel / disconnect / manual reconnect | M2 | P0 | M | 008,011,014 |
+| SST-016 | Hosts / groups / search UI | M3 | P1 | M | 004,007,010 |
+| SST-017 | Identity and key management UI | M3 | P1 | M | 006,007,011 |
+| SST-018 | Session tabs / split / settings | M3 | P1 | L | 013,015,016,017 |
+| SST-019 | SFTP capability / ownership | M4 | P1 | M | 002,009,010,015 |
+| SST-020 | SFTP local/remote browser UI | M4 | P1 | M | 018,019 |
+| SST-021 | Transfer jobs / progress / cancel | M4 | P0 | L | 019,020 |
+| SST-022 | Transfer conflicts / partial files / errors | M4 | P0 | M | 021 |
+| SST-023 | Snippet persistence / CRUD | M4 | P1 | S | 005,006,018 |
+| SST-024 | Snippet Paste / Run on active session | M4 | P1 | M | 013,023 |
+| SST-025 | Local tunnel service | M4 | P1 | M | 002,009,010,015 |
+| SST-026 | Tunnel rules and status UI | M4 | P1 | S | 005,018,025 |
+| SST-027 | End-to-end / accessibility / regression gate | M5 | P0 | L | 018,022,024,026 |
+| SST-028 | macOS package / release readiness | M5 | P0 | M | 027 |
+| SST-029 | Local PTY / additional platforms | Later | P2 | L | 028 |
+| SST-030 | Jump host / multi-hop / proxy | Later | P2 | L | 015,028 |
+| SST-031 | Remote and dynamic forwarding | Later | P2 | M | 025,026,028 |
+| SST-032 | Remote editing / advanced transfers | Later | P2 | L | 022,028 |
+| SST-033 | Templates / broadcast / multi-host snippets | Later | P2 | L | 018,024,028 |
+| SST-034 | Logs / history / autocomplete / AI scope | Later | P2 | L | 028 |
+| SST-035 | Independent cloud sync | Later | P2 | L | 036,038 |
+| SST-036 | Crypto protocol / key lifecycle review | Later | P2 | L | 028 |
+| SST-037 | Team vault / ACL / revocation | Later | P2 | L | 035,036 |
+| SST-038 | Remaining evidence / Mosh / hardware capability spikes | Later | P2 | L | 028 |
+
+Dependency numbers ย่อหมายถึง `SST-` prefix งานบาง phase ทำคู่ขนานได้เมื่อ dependency พร้อม; phase ไม่ใช่คำสั่งให้เริ่มก่อน confirm
+
+## M0 — Decisions และ feasibility
+
+### SST-001 — Scope / platform / stack ADR
+
+**Outcome:** บันทึก scope, original UX, platform และ stack ก่อน bootstrap โดย UI ใช้ React + Electron + shadcn/ui + Tailwind CSS ตามที่ผู้ใช้เลือก. **Evidence:** artifact/R01, W01–W12 สำหรับ target/workflows; UI stack เป็น user requirement ของ ssterm.
+
+**Acceptance:** ยืนยัน MVP/later boundary และ macOS arm64; ADR บันทึก React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS; เลือก compatible versions/build tooling และระบุ Keychain/packaging approach; การเปรียบเทียบ SSH backends อยู่ใน SST-002. หาก spike ไม่ผ่านให้เสนอ revised backend/scope โดยคง UI stack ที่ผู้ใช้เลือก เว้นแต่ผู้ใช้เปลี่ยน requirement.
+
+**Validation:** reviewer อ่าน ADR และตรวจ requirement coverage กับ ticket index. **Tasks:** ตัดสิน default auth/known-host/Paste semantics; กำหนด app ID และ repo layout; ระบุ deviations จาก Termius.
+
+### SST-002 — SSH/SFTP/backend compatibility spike
+
+**Outcome:** ลดความเสี่ยง engine ก่อนสร้าง application services. **Evidence:** S03/S05, N01/N06/N07, N-T02.
+
+**Acceptance:** isolated server fixture ผ่าน password + encrypted key auth, host-key reject/change, interactive PTY/resize/exit, SFTP และ local forwarding; record API/lifecycle/algorithm limitations และ package ได้บน target OS; ไม่มี Termius native/cloud dependency. แยก throwaway spike จาก production service.
+
+**Validation:** real integration fixture, disconnect/timeout/teardown checks. **Tasks:** สร้าง lab identity/server keys; capability matrix; เลือก backend หรือ revise ADR.
+
+## M1 — Foundation
+
+### SST-003 — Domain / privacy / storage specification
+
+**Outcome:** versioned entity schema และ protection matrix. **Evidence:** S04, W02/W03/W10; schema ใหม่เป็น Proposed.
+
+**Acceptance:** ระบุ relations/IDs/delete rules/inheritance/empty semantics; classify metadata/credentials/snippet bodies/settings; ระบุ lock/key loss/backup/recovery/migration และไม่มี plaintext private keys/passwords ใน metadata. Sync fields ไม่กลายเป็น MVP obligation.
+
+**Validation:** schema walkthrough กับ create/edit/delete/inherit examples. **Tasks:** ER diagram/data dictionary; field protection matrix; migration/version strategy.
+
+### SST-004 — Desktop shell and typed IPC boundary
+
+**Outcome:** app shell ที่มี narrow application API. **Evidence:** S01/S02, Electron primary docs; ใหม่เป็น Proposed.
+
+**Acceptance:** React + TypeScript renderer ใน Electron; shadcn/ui application components และ Tailwind CSS/theme tokens พร้อม shared component conventions; isolated renderer, no arbitrary require/IPC passthrough; validate sender/payload/session ownership; local app navigation/CSP และ URL allowlist; UI/bridge types ไม่ส่ง persistent secrets และ backend errors sanitized.
+
+**Validation:** malformed/unauthorized IPC rejected; packaged React/shadcn/ui/Tailwind screen renders without account/network; privileged calls ผ่าน typed boundary. **Tasks:** scaffold หลัง confirm; React app shell/shared components/theme; command/event contracts.
+
+### SST-005 — Versioned local repository / migrations
+
+**Outcome:** catalog/settings persistence ที่เชื่อถือได้. **Evidence:** S04; independent storage design.
+
+**Acceptance:** writes transactional, durable across restart; schemaVersion/migration rollback or recoverable failure; handle corrupt/unwritable storage โดยไม่ silent-reset ข้อมูล; FK/unique constraints ตรง domain spec.
+
+**Validation:** temp database fixtures สำหรับ CRUD/restart/migration failure. **Tasks:** driver/repository adapters; migration runner; diagnostic/recovery paths.
+
+### SST-006 — OS secrets and encrypted sensitive content
+
+**Outcome:** SecretRef adapter และ sensitive-content protection. **Evidence:** N02, S04, N-T03.
+
+**Acceptance:** credential CRUD อยู่ใน project Keychain namespace; metadata เก็บ references; missing/denied/locked provider ส่ง typed outcomes; transient input/passphrase cache มี lifetime และ app-local encrypted content ใช้ provider ตาม ADR; secret/key loss ไม่ทำ silent replacement.
+
+**Validation:** memory provider contract tests และ macOS fixture namespace integration; metadata/log inspection ไม่มี fixture secret. **Tasks:** secure provider; protection implementation; redaction/cache/cleanup.
+
+### SST-007 — Groups inheritance / tags / catalog domain
+
+**Outcome:** effective connection config ที่อธิบาย provenance ได้. **Evidence:** W02/S04.
+
+**Acceptance:** nested groups และ descendants visibility; per-field explicit inherit/value พร้อม auth bundle consistency; cycle prevention; tag AND filter; identity deletion/reassignment และ group move เป็น deterministic; live config snapshot ไม่เปลี่ยนจาก catalog edit.
+
+**Validation:** meaningful parent/child/host override, move/cycle, duplicate reference fixtures. **Tasks:** resolver; catalog CRUD; tags/search; deletion impact logic.
+
+## M2 — SSH terminal
+
+### SST-008 — Connection/session state and ownership
+
+**Outcome:** engine-independent lifecycle contract. **Evidence:** S03, N-T01.
+
+**Acceptance:** states/prompts/errors ตาม architecture; session IDs/generations ทำให้ late events ถูกละทิ้ง; cancellation ทุก nonterminal state; one owner ต่อ resources/capabilities; close/dispose idempotent; events ไม่ serialize secrets.
+
+**Validation:** fake delayed adapter ทดสอบ cancel/auth/close/reconnect races และ real fixture smoke. **Tasks:** session registry; typed command/events; teardown ownership.
+
+### SST-009 — Known-host verification and trust replacement
+
+**Outcome:** SSH ทุก capability ใช้ policy เดียวกัน. **Evidence:** S03/S04, W01; prompts เป็น Proposed requirement.
+
+**Acceptance:** unknown endpoint แสดง fingerprint/algorithm พร้อม accept-once/remember/reject; remembered key match ผ่าน; changed key block จน explicit replacement; rejected/cancelled prompt ไม่สร้าง authenticated channel; host+port normalization มี tests.
+
+**Validation:** fixture สลับ server keys และ catalog labels; trust survives restart; reject ไม่เขียน trust. **Tasks:** repository/policy; prompt UI; replace/revoke flow.
+
+### SST-010 — SSH password / imported key auth
+
+**Outcome:** connection จริงจาก saved host/identity. **Evidence:** S03/N01/W03/W04.
+
+**Acceptance:** password และ selected supported key formats ผ่านจริง; resolve latest catalog+SecretRefs ที่ connect; bad credential/DNS/timeout มี sanitized typed error; failure ไม่เปิด terminal และ cleanup; library negotiation defaults ตาม ADR.
+
+**Validation:** real server password/key/bad auth fixtures. **Tasks:** adapter wiring; credential resolution; error translation.
+
+### SST-011 — Passphrase / keyboard-interactive prompts
+
+**Outcome:** auth prompts ไม่ค้างหรือ cross-session. **Evidence:** S03, published auth W04.
+
+**Acceptance:** encrypted key prompt มี retry/cancel; keyboard-interactive รองรับหลาย prompt พร้อม echo flags; response ผูก prompt/session/generation; timeout/cancel disconnect และล้าง transient data; secrets ไม่อยู่ใน logs/history.
+
+**Validation:** fixture auth challenge + delayed response + cancel; simultaneous sessions แยก prompts. **Tasks:** prompt broker/UI; auth response adapter; lifetime/cache handling.
+
+### SST-012 — Terminal byte stream / resize / exit
+
+**Outcome:** interactive remote PTY ใน terminal renderer. **Evidence:** S03/S05, N03 surface analogy; xterm candidate.
+
+**Acceptance:** input/output ordered, supports PTY rows/columns; resize updates remote TTY; remote EOF/exit signal/status แยกจาก local close; reconnect ไม่ replay input; output ใช้ terminal parser ผ่าน declared trust boundary.
+
+**Validation:** real shell + `stty`/full-screen fixture/known exit status. **Tasks:** renderer binding; stream framing; resize/exit routing.
+
+### SST-013 — Terminal input / Unicode / clipboard
+
+**Outcome:** typing/copy/paste/search ที่ใช้ได้บน macOS. **Evidence:** W06; behavior details Proposed.
+
+**Acceptance:** Thai/UTF-8/combining/wide characters/IME; copy selection และ multiline paste มี active-target feedback/bracketed paste where supported; shortcuts/focus/search ไม่ส่ง input ผิด pane; clipboard/URL actions explicit.
+
+**Validation:** manual IME/input matrix + fixture captures; nontrivial terminal parser tests ของ integration layer. **Tasks:** shortcuts/focus; paste policy; Unicode/search checks.
+
+### SST-014 — Flow control / bounded resources
+
+**Outcome:** large output/input ไม่ทำ memory โตไม่จำกัด. **Evidence:** N03, no measured target performance.
+
+**Acceptance:** queue/scrollback/concurrency limits explicit และ configurable within bounds; preserve output order ไม่มี silent loss; renderer slow/paused ทำให้ producer throttle หรือ explicit resource-limit outcome; metrics ไม่มี content/secret.
+
+**Validation:** slow-consumer + sustained output/large paste; define memory/latency target from spike and record measured results. **Tasks:** byte acknowledgements; backpressure; performance instrumentation.
+
+### SST-015 — Cancel / disconnect / manual reconnect
+
+**Outcome:** session teardown/reconnect predictably. **Evidence:** S03, N-T01/N-T05.
+
+**Acceptance:** cancel during DNS/host trust/auth/ready; unexpected loss เป็น error state; manual reconnect creates generation/PTY ใหม่; no command replay; tab/app close ปิด channels/jobs/listeners ไม่มี leaked ownership; independent sessions ไม่ถูกปิดตาม.
+
+**Validation:** network break/fixture timeout/repeated open-close + race checks. **Tasks:** lifecycle controller; retry UX; resource cleanup.
+
+## M3 — Catalog และ workspace UX
+
+### SST-016 — Hosts / groups / search UI
+
+**Outcome:** create/edit/find/connect hosts ได้ครบ. **Evidence:** W02/W04/W12.
+
+**Acceptance:** validated drafts/explicit save semantics; nested groups/descendant hosts/tag AND search; inherited values/provenance แสดงชัด; connect uses selected host; errors/empty states keyboard accessible; delete แสดง effects.
+
+**Validation:** F01/F02 walkthrough กับ persistence restart. **Tasks:** catalog navigation/forms; search/filter; connection entrypoint.
+
+### SST-017 — Identity and key management UI
+
+**Outcome:** reusable credentials สร้าง/แก้/import/assign ได้. **Evidence:** W03/N02.
+
+**Acceptance:** hosts/groups bind identity; import supported key formats พร้อม encrypted-key outcome; no automatic secret reveal/export; update affects next connections; detach/reassign workflow เมื่อ delete; denied secure store แจ้ง actionable error.
+
+**Validation:** F03 shared identity + denied provider/import failure. **Tasks:** identity forms; key import; references/delete impacts.
+
+### SST-018 — Session tabs / split / settings
+
+**Outcome:** multi-session workspace ขั้นพื้นฐาน. **Evidence:** W06.
+
+**Acceptance:** tabs + horizontal/vertical splits ขั้นพื้นฐาน อย่างน้อยสอง sessions; Focus/Split เปลี่ยน layout ไม่ disconnect; active pane/focus/resize ถูกต้อง; close prompt ตาม active resources; font/theme/scrollback persist; ไม่มี automatic command restore/broadcast ใน MVP.
+
+**Validation:** multiple live fixtures + resize/focus/close interactions, keyboard navigation. **Tasks:** layout tree; tab controls; settings/preferences.
+
+## M4 — File transfer / commands / tunnels
+
+### SST-019 — SFTP capability / ownership
+
+**Outcome:** authenticated file API ที่แยกจาก terminal rendering. **Evidence:** S03/S05, W05/N-T05.
+
+**Acceptance:** browse/stat/read/write primitives ตาม backend contract; known-host/auth policy shared; subsystem unavailable เป็น typed result; close transfer capability ไม่ปิด session อื่น; session end คืน handles และ invalidate late replies.
+
+**Validation:** isolated SFTP server + unavailable subsystem + teardown. **Tasks:** adapter/capability; resource ownership; error mapping.
+
+### SST-020 — SFTP local/remote browser UI
+
+**Outcome:** local↔remote dual pane file browser. **Evidence:** W05.
+
+**Acceptance:** directory/path navigation, hidden-file toggle, names/types/size, loading/error; symlinks แสดงชัด; target path captured ที่ action time; open from current host uses correct identity; no broad filesystem grants beyond declared desktop access.
+
+**Validation:** F04 with unicode names, permissions, symlink navigation. **Tasks:** local provider; remote pane; selection/path controls.
+
+### SST-021 — Transfer jobs / progress / cancel
+
+**Outcome:** upload/download queue ที่มี bounded concurrency. **Evidence:** W05/S03; job semantics Proposed.
+
+**Acceptance:** queue state/bytes/unknown-total; cancel active/queued jobs; 100% หลัง successful destination close; transfer failures ไม่ทำ job อื่นเสีย; file/folder scope และ recursion behavior ระบุใน spec; no recursive-follow symlink by default.
+
+**Validation:** real transfer hash compare, cancel mid-write, multiple jobs, disconnect. **Tasks:** job engine; progress events; cancel/cleanup UI.
+
+### SST-022 — Transfer conflicts / partial files / errors
+
+**Outcome:** users รู้ผลของ overwrite/failure/cancel. **Evidence:** W05; destructive/atomicity policies Proposed.
+
+**Acceptance:** explicit overwrite/skip/rename decision; partial file cleanup/retention policy visible; atomic replacement ใช้เมื่อ backend capability รองรับและไม่อ้าง universal atomicity; handle permission/quota/path/disconnect errors; failed overwrite ไม่ silent-destroy unrelated file.
+
+**Validation:** conflict/cancel/permission fixtures + file integrity check. **Tasks:** conflict resolver; temp/partial naming; retry/error UX.
+
+### SST-023 — Snippet persistence / CRUD
+
+**Outcome:** labeled reusable script เก็บใน local vault. **Evidence:** S04/W07.
+
+**Acceptance:** create/edit/delete/search with restart persistence; body protection ตาม SST-003/006; multiline preserved; ไม่มี implicit run เมื่อ save/edit; invalid/empty input feedback.
+
+**Validation:** round-trip multiline/Unicode + sensitive-content storage check. **Tasks:** repository; editor/list; encryption integration.
+
+### SST-024 — Snippet Paste / Run on active session
+
+**Outcome:** explicit target-safe command dispatch. **Evidence:** W07; Paste implementation choice Proposed.
+
+**Acceptance:** Paste เข้าสู่ editable pending-input composer ไม่ส่ง terminal byte จนผู้ใช้ตัดสินใจ; Run explicit action ส่งไป captured active ready session; no active session แจ้ง error; multiline/line endings specified; sent status ไม่อ้าง remote command success.
+
+**Validation:** fixture observes no bytes on Paste until submission; Run captured-target test ระหว่าง focus switch. **Tasks:** composer/action UI; target capture; dispatch feedback.
+
+### SST-025 — Local tunnel service
+
+**Outcome:** local forwarding ของ SSH host. **Evidence:** S05/W08/N-T05.
+
+**Acceptance:** valid bind/destination config; loopback default; started เมื่อ bind+SSH ready; occupied port/error typed; stop/cancel/quit closes listener และ active sockets; failed start คืน resources; config save ไม่ autostart.
+
+**Validation:** fixture HTTP over tunnel + port collision + connection loss + listener absence after stop. **Tasks:** tunnel registry; bind adapter; teardown/status.
+
+### SST-026 — Tunnel rules and status UI
+
+**Outcome:** rules CRUD/start/stop และ state visible. **Evidence:** S04/W08.
+
+**Acceptance:** save/restart persistence; distinguish stopped/starting/running/stopping/error; validate ports/address; destination อธิบายว่า resolve จาก SSH server; duplicate/failed rules ไม่แสดง running; edit running rule มี explicit restart semantics.
+
+**Validation:** F06 walkthrough and restart without autostart. **Tasks:** rule editor/list; status/events; stop/edit handling.
+
+## M5 — MVP gate
+
+### SST-027 — End-to-end / accessibility / regression gate
+
+**Outcome:** release checklist ที่พิสูจน์ required workflows. **Evidence:** F01–F06/W01–W12 และ investigation gaps.
+
+**Acceptance:** E2E flows create/inherit/auth/terminal/SFTP/snippet/tunnel ผ่าน own fixtures; keyboard/focus/contrast checks; unknown/changed host key, encrypted auth, cancel/loss, malformed IPC, storage denial and transfer conflict pass; memory/latency budgets จาก SST-014 measured; no critical correctness/secret/resource-leak issue open.
+
+**Validation:** meaningful domain/integration/E2E suite และ manual macOS Thai IME; record deviations และ unresolved lower-priority issues. **Tasks:** traceability report; regression fixture suite; UX/performance fixes.
+
+### SST-028 — macOS package / release readiness
+
+**Outcome:** reviewable local packaged MVP. **Evidence:** target platform + independent packaging ADR.
+
+**Acceptance:** packaged artifact works on supported macOS arm64 clean fixture; secrets/storage identifiers stable across upgrades; native bindings load when packaged; install/upgrade/uninstall data semantics documented; checksums/version/release notes; signing/notarization หากมี credentials เป็น separate release gate มิฉะนั้นระบุ unsigned limitation.
+
+**Validation:** packaged smoke for SSH/SFTP/tunnel and upgrade fixture. **Tasks:** build/package; release guide; artifact review. Publishing/upload/signing ที่ใช้ external credentials ต้องมี authorization ตาม scope ในอนาคต ไม่รวมใน confirm implementation อัตโนมัติ.
+
+## Later — ต้องยืนยัน scope เพิ่ม
+
+### SST-029 — Local PTY / additional platforms
+
+**Evidence:** N03/N-T04/W04. **Outcome:** optional local terminal adapter และ platform roadmap.
+
+**Acceptance:** spawn/write/resize/exit/dispose + Unicode/backpressure/child cleanup ผ่าน local fixtures; Windows/Linux secure-store/PTY/package capability declared per platform; unsupported features มี explicit message. **Validation:** OS-specific integration matrix. **Tasks:** local adapter; platform parity ADR; packaging matrices.
+
+### SST-030 — Jump host / multi-hop / proxy
+
+**Evidence:** W04/S03. **Outcome:** per-hop authenticated transport chain.
+
+**Acceptance:** one-hop ก่อน multi-hop; cycle/depth limits, per-hop trust/auth, cancel/failure cleanup; HTTP/SOCKS5 optional capability; no credential leak across hops. **Validation:** bastion fixture + failed intermediate hop. **Tasks:** chain resolver; transport composition; progress/errors.
+
+### SST-031 — Remote and dynamic forwarding
+
+**Evidence:** S05/W08. **Outcome:** additional tunnel types.
+
+**Acceptance:** server bind restrictions/remote assigned port surfaced; SOCKS behavior specified; ownership/stop/resources ตาม local contract; capability unavailable explicit. **Validation:** dedicated forwarding/SOCKS lab. **Tasks:** adapters; rule form; network tests.
+
+### SST-032 — Remote editing / advanced transfers
+
+**Evidence:** W05. **Outcome:** remote-edit และ optional remote↔remote/resume workflows.
+
+**Acceptance:** temp download/editor/change/upload decision; stale remote version detection; temp cleanup; resume และ remote↔remote transport semantics explicit ไม่อ้าง server-side direct copy โดยไม่มี capability. **Validation:** concurrent editor/remote-change/cancel fixtures. **Tasks:** external editor integration; version conflict; transfer capabilities.
+
+### SST-033 — Templates / broadcast / multi-host snippets
+
+**Evidence:** W06/W07. **Outcome:** saved layouts และ explicit multi-target operations.
+
+**Acceptance:** template restores configuration/layout; commands restore ต้อง opt-in with visible targets; broadcast visibly armed; multi-host snippet semantics แยก existing vs new sessions; cancellation/partial results visible; no assumption remote processes survive client restart. **Validation:** multiple host fixtures and focus/target race scenarios. **Tasks:** template schema; broadcast UI; execution orchestration.
+
+### SST-034 — Logs / history / autocomplete / AI scope
+
+**Evidence:** W01. **Outcome:** separate privacy/UX spec ก่อน feature code.
+
+**Acceptance:** local opt-in capture, retention/export/delete และ sensitive-data handling; shell integration supported shells declared; AI provider/data transmission/user consent/cost scope reviewed separately; no hidden external requests. **Validation:** fixture log/redaction/lifecycle and shell matrix. **Tasks:** privacy spec; local log/history; later shell/AI spike.
+
+### SST-035 — Independent cloud sync
+
+**Evidence:** S04/W09/W10; internals Unknown. **Outcome:** own account/device/encrypted sync protocol.
+
+**Acceptance:** approved protocol/versioning; conflict/tombstone/offline merge/device enrollment; selective secret policy explicit; encrypted payload/metadata boundaries verified with test vectors; no Termius cloud compatibility claim. **Validation:** own multi-device lab/recovery/migration/merge tests. **Tasks:** sync spec/backend/client; encrypted envelope; reconciliation.
+
+### SST-036 — Crypto protocol / key lifecycle review
+
+**Evidence:** N07/N-T08/W09. **Outcome:** threat model และ reviewed independent construction.
+
+**Acceptance:** key derivation/envelopes/device keys/rotation/recovery/version migration documented; established libraries/constructions + known-answer vectors; logout/lock/key loss defined; published Termius claims ไม่ถูกใช้แทน verification. **Validation:** protocol review and test-vector suite before cloud work. **Tasks:** crypto ADR; key lifecycle; review findings.
+
+### SST-037 — Team vault / ACL / revocation
+
+**Evidence:** W11. **Outcome:** team access model of own backend.
+
+**Acceptance:** roles/membership enforcement backend+client; revoke/offline cached access limitations explicit; rekey/shared credential lifecycle and audit trail; view/connect/edit permissions tested; tenant boundaries validated. **Validation:** multi-user ACL/revocation/cached-device tests. **Tasks:** authorization spec; team services/UI; revocation/rekey.
+
+### SST-038 — Remaining evidence / Mosh / hardware capability spikes
+
+**Evidence:** N04/N05/N-T06–08, original unanswered questions. **Outcome:** residual unknowns แยกเป็น bounded investigations.
+
+**Acceptance:** each investigation เลือก explicit artifact/device/scenario; report observation/inference/unknown พร้อม identity/source; Mosh bootstrap/network recovery and FIDO PIN/touch/cancel tested on authorized fixture/device; native decompilation ใช้ engine เมื่อพร้อมและไม่เปลี่ยน setup โดยไม่มี approved scope. **Validation:** focused evidence + capability matrix. **Tasks:** runtime UI evidence if requested; native/API tracing; Mosh/hardware ADRs.
+
+## Definition of done ร่วม
+
+เมื่อ ticket เริ่มหลัง confirm: acceptance criteria ผ่าน, error/cancel paths ที่เกี่ยวข้องตรวจแล้ว, evidence/ADR/spec references อัปเดต, tests ที่ตรวจพฤติกรรมจริงผ่าน, ไม่มี secret ใน committed artifacts/logs และ reviewable diff พร้อม known limitations ห้ามปิด ticket เพียงเพราะมี mock UI หรือ adapter stub
+
+Native document N-T01–08 เป็น investigation inputs ไม่ใช่ duplicate delivery backlog: map N-T01→008/012/015, N-T02→002, N-T03→006, N-T04→029, N-T05→019/025, N-T06–07→038, N-T08→036/035.

@@ -1,0 +1,134 @@
+# Architecture ที่เสนอสำหรับ ssterm
+
+**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; ส่วน implementation ยังรอ confirm.** รายละเอียด architecture อื่นเป็น Proposed design อิงปัญหา/workflow จาก [system analysis](system-analysis.md) และ [official features](official-features.md) ไม่ถือว่าเป็น architecture ภายใน Termius ที่ยืนยันแล้ว
+
+## Baseline / stack decision
+
+เสนอ macOS arm64 desktop, local-first, account-free, vault เดียวก่อน ใช้ original UI/branding ของ ssterm และ implementation ของโครงการเอง ขอบเขต MVP อยู่ใน SST-001–028
+
+**UI stack ที่ผู้ใช้กำหนด:** Electron เป็น desktop runtime, React + TypeScript เป็น renderer UI, shadcn/ui สำหรับ application components และ Tailwind CSS สำหรับ styling/theme tokens การเลือกนี้เป็นข้อกำหนดของ ssterm ไม่ใช่ผล reverse engineering ของ Termius และเป็นการยืนยัน stack เท่านั้น ยังไม่อนุมัติเริ่ม implementation
+
+| Layer | Stack / responsibility | Decision status |
+|---|---|---|
+| Desktop runtime | Electron; privileged services อยู่ main/service layer | ผู้ใช้เลือกแล้ว |
+| Renderer UI | React + TypeScript | React ผู้ใช้เลือกแล้ว; คง TypeScript ตาม baseline |
+| Components | shadcn/ui สำหรับ forms/dialogs/menus/tabs/sidebar และ shared UI primitives | ผู้ใช้เลือกแล้ว |
+| Styling / theme | Tailwind CSS และ shared theme tokens | ผู้ใช้เลือกแล้ว |
+| Terminal renderer | xterm.js ใน React-owned container; แยก terminal rendering จาก app components | Proposed; validate lifecycle/resize ใน SST-002/012 |
+| SSH / SFTP / tunnels | independent SSH adapter; ssh2 เป็น candidate | เลือก backend หลัง SST-002 |
+| Metadata / secrets | SQLite candidate + OS credential-store adapter | validate driver/protection/packaging ใน SST-001–006 |
+
+SST-001 บันทึก UI stack นี้ใน ADR และเลือก compatible versions/build tooling โดยไม่เปิดเลือก UI framework ใหม่ SST-002 เปรียบเทียบเฉพาะ SSH backend ที่ทำงานร่วมกับ Electron ได้ เช่น Node library, native adapter หรือ managed OpenSSH process; ต้องตรวจ packaging/ABI, authentication, PTY, SFTP และ forwarding
+
+แหล่งทางเทคนิคที่ตรวจวันที่ 2026-10-14: [Electron security](https://www.electronjs.org/docs/latest/tutorial/security) สนับสนุน isolated renderer/validated IPC; [ssh2 upstream](https://github.com/mscdex/ssh2) เป็น candidate client library; [xterm.js security](https://xtermjs.org/docs/guides/security/) ใช้กำหนด terminal trust boundary; [SQLite transactional behavior](https://www.sqlite.org/transactional.html) ใช้ประกอบ persistence choice ไม่ได้สรุปว่าทางเลือกนี้ดีที่สุดก่อน spike
+
+เอกสารสำหรับ UI stack: [React](https://react.dev/learn), [shadcn/ui setup](https://ui.shadcn.com/docs/installation/vite) และ [Tailwind CSS setup](https://tailwindcss.com/docs/installation/using-vite) ใช้อ้างอิง integration ในอนาคต; exact versions/build tooling ยังไม่ pin ในรอบเอกสารนี้
+
+## Module boundaries
+
+```mermaid
+flowchart TD
+  UI[React + shadcn/ui + Tailwind CSS + terminal renderer] --> API[Typed application API]
+  API --> Hosts[Host catalog + config resolver]
+  API --> Sessions[Connection and session service]
+  API --> Files[File transfer service]
+  API --> Tunnels[Tunnel service]
+  API --> Commands[Snippet service]
+  Hosts --> Metadata[Metadata repository]
+  Sessions --> Trust[Known-host policy]
+  Sessions --> Secrets[Secret store]
+  Sessions --> Transport[SSH adapter]
+  Files --> Transport
+  Tunnels --> Transport
+  Metadata --> Disk[Versioned local storage]
+  Secrets --> OS[OS credential store]
+```
+
+| Module | Public responsibility | ซ่อนรายละเอียดอะไร |
+|---|---|---|
+| HostCatalog / ConfigResolver | CRUD/search และ effective config พร้อม provenance | persistence, hierarchy traversal, per-field inheritance |
+| SecretStore | store/get/update/delete ผ่าน opaque SecretRef | Keychain namespace/provider/errors, memory caching |
+| ConnectionService | connect/auth/cancel/close, state/error/prompt events | SSH engine, socket lifecycle, callbacks และ capability ownership |
+| TerminalSession | ordered input/output, resize, bounded flow control, dispose | transport channel, encoding framing และ buffers |
+| KnownHostPolicy | query/first-use/change/revoke decision | fingerprint representation และ persisted trust lookup |
+| FileTransferService | browse/read/upload/download/cancel/progress | SFTP handle ownership, partial file policy, concurrency |
+| TunnelService | rule validation/start/stop/status | listener/socket cleanup, bind conflicts และ transport handles |
+| SnippetService | CRUD/Paste/Run ไป active target | target lookup, line ending และ dispatch semantics |
+| MetadataRepository | transactional writes/query/migrate | storage driver, indexes/versioning และ recovery |
+
+ไม่มี generic IPC function ที่รับ arbitrary module/method/path renderer ได้เฉพาะ typed commands และ sanitized events; secrets ไม่ใส่ใน serialized renderer state, terminal history หรือ logs Secret input ที่ผู้ใช้กรอกใน UI เป็น transient ส่งผ่าน restricted secret command แล้วล้าง state ไม่อ้างว่าทำให้ไม่มี plaintext ใน memory ทุกช่วง
+
+## Domain model ที่เสนอ
+
+| Entity | Proposed fields / invariants |
+|---|---|
+| LocalVault | stable UUID, label, schemaVersion; MVP มีหนึ่ง vault ไม่ต้องมี account |
+| Group | id, parentId?, label, field overrides; parent เดียว, ไม่มี cycle, vault เดียวกัน |
+| Host | id, groupId?, label, address, tags, connection overrides, identityRef?; port 1–65535 |
+| Identity | id, label, username, auth preference, SecretRefs/keyRef; ใช้ร่วมได้หลาย hosts |
+| KeyMetadata | id, public key/fingerprint/type, secretRef?; private key/passphrase ไม่อยู่ใน metadata |
+| KnownHost | normalized endpoint(host+port), algorithm, key/fingerprint, firstAcceptedAt, lastVerifiedAt |
+| Snippet | id, label, body, tags; body อาจมี sensitive content ต้องกำหนด storage/privacy scope |
+| TunnelRule | id, hostId, type=local, bindAddress=loopback, bindPort, destinationHost/Port |
+| Session | ephemeral id, host/config snapshot, state, channel capabilities; ไม่ persist auth prompts/passwords |
+| TransferJob | ephemeral id, session/file endpoints, bytes/total?, state, error; persistence ของ queue ไม่อยู่ใน MVP |
+| AppSettings | theme/font/scrollback preferences; validated bounds และ schemaVersion |
+
+Persist metadata แบบ versioned/transactional; baseline ให้ OS Keychain เก็บ credentials และ encryption key ของ app-local encrypted sensitive content (เช่น snippet bodies) ผ่าน mature crypto/storage provider ไม่สร้าง cryptographic construction เอง SST-003/005 ต้องระบุ field protection matrix และ lock/recovery behavior ก่อน coding ข้อเสนอไม่ได้อ้างว่า SQLite เองเข้ารหัส database โดย default
+
+Group inheritance: resolve ทีละ field จาก host → nearest ancestor override → root → defaults ค่า override เป็น explicit discriminated states `inherit` หรือ `value` เพื่อแยก unset/empty ไม่ merge username/password ข้าม identity คนละชุด; identity/auth selection resolve เป็นหนึ่งหน่วย ย้าย group ตรวจ cycle และแสดง provenance เปลี่ยน parent กระทบ connections ครั้งใหม่; live session ใช้ config snapshot เดิม
+
+Delete group ใช้ explicit move/delete-children choice; delete referenced identity ต้องรายงาน affected hosts และให้ detach/reassign ก่อนลบ ไม่ cascade secret โดยเงียบ KnownHost เป็น endpoint-scoped record ของ vault ไม่ผูก label ของ Host จึงป้องกัน duplicate catalog entries แสดง trust ต่างกัน
+
+## Session contract และ lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Connecting: connect
+  Connecting --> VerifyingHost: server key received
+  VerifyingHost --> Authenticating: accepted or known
+  VerifyingHost --> Closing: reject or cancel
+  Authenticating --> AwaitingInput: prompt
+  AwaitingInput --> Authenticating: response
+  Authenticating --> Ready: authenticated and PTY opened
+  Ready --> Closing: user close or EOF
+  Connecting --> Failed: timeout or transport error
+  Authenticating --> Failed: denied
+  Ready --> Failed: connection lost
+  Failed --> Connecting: explicit reconnect with new generation
+  Failed --> Closing: dispose
+  Closing --> Closed
+  Closed --> [*]
+```
+
+Diagram เป็น high-level contract; cancel ใช้ได้ทุก nonterminal state รวม AwaitingInput กำหนดใน SST-008 State `Ready` หมายถึง interactive channel เปิดสำเร็จ ไม่ใช่ TCP connected อย่างเดียว
+
+Command/event design ที่ต้องปิดรายละเอียดใน SST-004/008:
+
+- Commands: connect(hostId, requestId), answerPrompt(promptId, response), cancel(connectionId), openTerminal(connectionId), write(sessionId, bytes), resize(sessionId, columns, rows), close(sessionId)
+- Events: StateChanged, PromptRequested, Output(chunk, sequence), RemoteExit, Error(code, sanitized context), Closed; ใช้ connection generation ปฏิเสธ late events หลัง cancel/reconnect
+- Error taxonomy: invalid-config, host-key-untrusted/changed, auth-denied, prompt-cancelled, timeout, dns/network, channel-open-failed, subsystem-unavailable, storage-denied, resource-limit
+- Backpressure: bounded queue, pause/resume หรือ byte acknowledgements, preserve stream order และไม่มี silent drop หากเกิน limit ต้องมี explicit outcome
+- `close`/`dispose` idempotent; prompt cancellation/timeout คืนทรัพยากร; app quit ปิด sessions/jobs/listeners; lifecycle test ตรวจ leaked workers/handles
+- MVP reconnect เป็น manual สร้าง transport/channel ใหม่ ไม่ replay commands/input ไม่รับประกัน remote process continuity
+
+## Feature semantics ที่ต้องกำหนด
+
+**Known hosts:** first use แสดง endpoint/algorithm/fingerprint ให้ accept once หรือ remember; changed key block connection และเข้าสู่ explicit trust replacement flow การจำ trust ต้องเกิดหลังผู้ใช้ตัดสินใจ ไม่ใช่ auto-accept default นี่เป็น ssterm requirement; actual Termius prompt behavior ยัง unknown
+
+**Terminal:** output เป็น terminal byte stream ไม่ render HTML; URLs เปิดผ่าน scheme allowlist หลัง user action; clipboard/paste ต้องรู้ active session; bracketed paste เมื่อ server/app รองรับ ไม่ส่ง auto-execute เพื่อแก้ multiline paste UTF-8/combining characters/IME ต้องทดสอบกับ real fixture
+
+**Snippets:** Paste ใส่ข้อความเข้า local pending-input composer ให้ผู้ใช้ตรวจ ก่อนส่งไป remote; Run dispatch body พร้อม execution line ending ไป active session ตาม explicit action การเปลี่ยน active pane หลัง click ไม่เปลี่ยน captured target การรายงาน sent ไม่เท่ากับ command success ทั้งสองเป็น proposed semantics และ SST-024 ต้องตรวจ UX ให้ชัดก่อน code
+
+**SFTP:** MVP local↔remote, authenticated independent capability; unknown/changed server keys ผ่าน policy เดียวกับ terminal overwrite ต้องมี explicit decision; cancel มี partial-file policy; progress ไม่ใช้ 100% จน destination write/close สำเร็จ symlinks แสดงเป็น symlink และ follow เฉพาะ navigation ที่ผู้ใช้เลือก; ไม่ recursive-follow ใน initial transfer implementation
+
+**Tunnel:** loopback default; start ถือว่าสำเร็จหลัง local bind + SSH ready; duplicate port แจ้ง error; stop/quit ตัด listener และ active sockets ตาม policy ไม่เริ่ม tunnel อัตโนมัติจากการเปิดแอป
+
+## Proposed layout หลัง confirm
+
+`apps/desktop` สำหรับ app composition/UI, `packages/domain` สำหรับ catalog/resolver, `packages/contracts` สำหรับ API/events, `packages/services` สำหรับ lifecycle, `packages/adapters` สำหรับ SSH/storage/secrets และ `tests/fixtures` สำหรับ isolated SSH/SFTP lab โครงสร้างจริงขึ้นกับ ADR และขนาดโครงการ ไม่ได้สร้าง directories/code เหล่านี้ในรอบเตรียมเอกสาร
+
+## Later boundaries
+
+Cloud/team ทำเป็น service protocol ใหม่แยก local vault; encrypted envelopes, key lifecycle, migration, conflict/tombstones, device identity และ revoke เป็น gate ก่อน implementation ของ sync Logs/AI/broadcast ต้องมี target/retention semantics ต่างหาก Local PTY, Mosh/FIDO, proxy/chaining, remote/dynamic tunnels และ cross-platform เป็น optional adapters/capabilities ไม่ให้กลายเป็น dependency ของ SSH MVP
