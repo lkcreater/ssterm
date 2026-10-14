@@ -4,7 +4,7 @@
 
 ssterm is a local-first SSH desktop workspace for developers, DevOps engineers, and system administrators. The proposed MVP targets macOS arm64, works without an account, and includes hosts/groups/tags/identities, SSH terminals with tabs/splits, local-to-remote SFTP, active-session snippets, and local port forwarding.
 
-The repository currently contains planning documents, reference artwork, and installed agent skills. Application implementation is **AWAITING_IMPLEMENT_CONFIRMATION**. No application manifest, scaffold, or test/build scripts exist yet.
+The repository currently contains planning documents, reference artwork, and installed agent skills. The user authorized **M0 only (SST-001–002)** on 2026-10-14: complete the pipeline and commit SST-001 before starting SST-002, then deliver and commit SST-002. SST-001 is `DONE` (ADR/docs); SST-002 is `NOT_STARTED`. SST-003–028 remain **AWAITING_IMPLEMENT_CONFIRMATION**. No application manifest, scaffold, or test/build scripts exist yet.
 
 - Documentation, planning, skill installation, branding updates, and commits do not imply permission to start application implementation.
 - An explicit later instruction to implement a feature or proceed with the MVP authorizes that scope. Record the confirmation in the implementation plan and continue without repeatedly requesting the same approval.
@@ -29,8 +29,8 @@ User instructions take precedence over repository guidance. Keep scope, architec
 ## Stack and architecture
 
 - Selected: **Electron + React + TypeScript + shadcn/ui + Tailwind CSS**. Do not reopen the UI framework decision or introduce Next.js/SSR as an incidental skill recommendation.
-- Candidates pending SST-001–002: xterm.js, an independent SSH adapter such as ssh2, SQLite metadata storage, and an OS credential-store adapter. Tailwind v4 is the design integration proposal; pin compatible versions/tooling in the ADR before scaffolding.
-- Planned layout: `apps/desktop` for composition/main/preload/renderer; `packages/domain`, `packages/contracts`, `packages/services`, and `packages/adapters`; project-owned fixtures under `tests/fixtures`. These paths are proposals, not existing modules. Finalize them in the ADR before creating directories.
+- Exact UI/tooling pins, Signal Blue/Base UI/nova/Lucide integration, candidate gates, app IDs, and packaging approach are recorded in [ADR 0001](docs/adr/0001-mvp-platform-stack.md). Its temporary npm metadata resolution is not runtime/build evidence. ssh2 awaits SST-002; xterm.js, SQLite and Keychain adapters retain later acceptance gates. M0 performs no real Keychain operation.
+- ADR-selected future layout: `apps/desktop` for composition/main/preload/renderer; `packages/domain`, `packages/contracts`, `packages/services`, and `packages/adapters`; project-owned fixtures under `tests/fixtures`. These paths are decided in ADR 0001, not existing modules. SST-001 creates documents only; the isolated SST-002 spike starts after SST-001 delivery and commit.
 - Keep host/config resolution, secret storage, connection/session lifecycle, known-host policy, terminal streams, transfers, and tunnels behind focused interfaces. React owns presentation; privileged operations belong in main/service adapters.
 - Use typed, validated commands/events through a narrow preload bridge. Validate IPC sender, payload, and session ownership. Keep context isolation and sandboxing enabled and Node integration disabled in renderers.
 - Connection/session resources need explicit ownership, cancellation, bounded queues, ordered byte streams, generation IDs for stale-event rejection, and idempotent disposal. Manual reconnect opens a new session without replaying commands.

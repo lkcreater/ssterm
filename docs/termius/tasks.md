@@ -1,6 +1,6 @@
 # Task checklist
 
-**สถานะงานพัฒนา: ยังไม่เริ่ม — รอ confirm implementation.** Checklist นี้เป็นงานย่อยของ [tickets](tickets.md), ไม่ใช่รายการที่อนุมัติแล้ว `[x]` ด้านล่างหมายถึงการเตรียมเอกสารสำเร็จเท่านั้น ไม่ได้หมายถึง feature implementation
+**สถานะ: อนุมัติ M0 เท่านั้นเมื่อ 2026-10-14.** SST-001/T001/T047 `DONE` เป็น ADR/docs ผ่าน TEST/REVIEW/DELIVER; root จัดทำ commit; SST-002/T002–T003 `NOT_STARTED` จน first commit SST-003–028 ยังรออนุมัติ Checklist เชื่อม [tickets](tickets.md); ติ๊ก implementation tasks เมื่อผ่าน acceptance จริง
 
 ## งานเตรียมการที่ทำแล้ว
 
@@ -14,11 +14,11 @@
 - [x] จัด architecture proposal, tickets, task dependencies และ phase gates
 - [x] บันทึก UI stack ที่ผู้ใช้เลือก: React + Electron + shadcn/ui + Tailwind CSS; ยังไม่เริ่ม implementation
 - [x] เชื่อม Signal Blue design spec กับ implementation plan, parent tickets และงานย่อย DS01–DS06; ยังไม่เริ่ม implementation
-- [ ] ผู้ใช้ confirm ขอบเขต MVP / baseline ก่อนเริ่ม SST-001
+- [x] ผู้ใช้ confirm เฉพาะ M0 / SST-001–002 พร้อม pipeline + delivery/commit ทีละ ticket เมื่อ 2026-10-14; ดู [authorization](implementation-plan.md#confirmation-boundary--stop-condition)
 
 ## M0 — ตัดสินใจและพิสูจน์ feasibility
 
-- [ ] **T001 / SST-001:** finalize MVP/platform/app ID/original UX ADR; บันทึก React + Electron + shadcn/ui + Tailwind CSS และเลือก compatible dependency versions/build tooling
+- [x] **T001 / SST-001:** finalize MVP/platform/app ID/original UX ADR; บันทึก React + Electron + shadcn/ui + Tailwind CSS และเลือก compatible dependency versions/build tooling
 - [ ] **T002 / SST-002:** สร้าง project-owned SSH/SFTP fixture พร้อม key/password/host-key cases
 - [ ] **T003 / SST-002:** prove PTY/resize/auth/interactive prompts/SFTP/tunnel/packaging, record limits และเลือก backend
 
@@ -85,9 +85,9 @@
 
 ## Design system — งานย่อยเพิ่มตาม Signal Blue spec
 
-อ้างอิง [design-system.md](design-system.md) และ [design-system-implementation.md](design-system-implementation.md) งานทั้งหมดด้านล่างยังรอ confirm และต้องผ่าน dependencies ของ parent ticket เดิม
+อ้างอิง [design-system.md](design-system.md) และ [design-system-implementation.md](design-system-implementation.md) อนุมัติเฉพาะ DS01/T047 ใน SST-001; DS02–DS06 ยังรออนุมัติและต้องผ่าน dependencies ของ parent ticket เดิม
 
-- [ ] **T047 / SST-001:** DS01 — design integration ADR: spec version, Tailwind compatibility, shadcn base/style/icons/registry, density defaults และ open contrast/ANSI/artwork decisions
+- [x] **T047 / SST-001:** DS01 — design integration ADR: spec version, Tailwind compatibility, shadcn base/style/icons/registry, density defaults และ open contrast/ANSI/artwork decisions
 - [ ] **T048 / SST-004:** DS02 — semantic token mappings, typography/fonts/Thai fallback, geometry/motion, app/terminal theme separation และ missing generated-component slots
 - [ ] **T049 / SST-004:** DS03 — shared shadcn variants/domain primitives และ development-only showcase พร้อม deterministic state matrix/edge cases
 - [ ] **T050 / SST-018:** DS04 — Signal Blue terminal-first shell, target/environment/status recipes, resize/collapse/titlebar/overflow และ independent terminal preferences
@@ -96,4 +96,4 @@
 
 ## Task bookkeeping
 
-เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement
+Current owner: root สำหรับ SST-001 delivery/commit; [ADR 0001](../adr/0001-mvp-platform-stack.md) + [execution ledger](../agent-runs/implementation-plan.md) เป็น evidence/handoff T001/T047 done หลัง acceptance/TEST/REVIEW/DELIVER ผ่าน เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement

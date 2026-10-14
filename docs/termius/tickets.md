@@ -1,16 +1,16 @@
 # Tickets สำหรับ ssterm
 
-**ทุก ticket เป็น draft ใน repo; ยังไม่ได้ implement และไม่ได้เปิด external issue.** SST-001–028 รอ confirm MVP; SST-029–038 เป็น later scope ต้องยืนยันเพิ่ม Owner/assignee ยังไม่กำหนด
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** ผู้ใช้อนุมัติเฉพาะ M0 เมื่อ 2026-10-14: SST-001 `DONE` (ADR/docs), SST-002 `NOT_STARTED` จน SST-001 delivery + commit; SST-003–028 ยังรออนุมัติ; SST-029–038 คง later scope ดู [execution plan](../agent-runs/implementation-plan.md)
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะทุก MVP ticket คือ `AWAITING_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-003–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
-UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope หรืออนุมัติเริ่ม implementation
+UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS06 ยังรออนุมัติ
 
 ## Backlog index
 
 | ID | Title | Phase | Priority | Effort | Depends on |
 |---|---|---|---|---|---|
-| SST-001 | Scope / platform / stack ADR | M0 | P0 | S | Confirm |
+| SST-001 | Scope / platform / stack ADR | M0 | P0 | S | M0 confirmed 2026-10-14 |
 | SST-002 | SSH/SFTP/backend compatibility spike | M0 | P0 | L | 001 |
 | SST-003 | Domain / privacy / storage specification | M1 | P0 | M | 001 |
 | SST-004 | Desktop shell / design system / typed IPC | M1 | P0 | M | 001 |
@@ -55,15 +55,19 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 ### SST-001 — Scope / platform / stack ADR
 
+**Status:** `DONE` — [ADR 0001](../adr/0001-mvp-platform-stack.md) และ [dependency baseline](../adr/dependency-baseline.json) บันทึก decisions แล้ว; document validation/review/delivery ผ่านแล้ว; T001/T047 done ตาม execution ledger และ delivery note; root commit ก่อน SST-002
+
 **Outcome:** บันทึก scope, original UX, platform และ stack ก่อน bootstrap โดย UI ใช้ React + Electron + shadcn/ui + Tailwind CSS ตามที่ผู้ใช้เลือก. **Evidence:** artifact/R01, W01–W12 สำหรับ target/workflows; UI stack เป็น user requirement ของ ssterm.
 
 **Acceptance:** ยืนยัน MVP/later boundary และ macOS arm64; ADR บันทึก React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS; เลือก compatible versions/build tooling และระบุ Keychain/packaging approach; การเปรียบเทียบ SSH backends อยู่ใน SST-002. หาก spike ไม่ผ่านให้เสนอ revised backend/scope โดยคง UI stack ที่ผู้ใช้เลือก เว้นแต่ผู้ใช้เปลี่ยน requirement.
 
 **Validation:** reviewer อ่าน ADR และตรวจ requirement coverage กับ ticket index. **Tasks:** ตัดสิน default auth/known-host/Paste semantics; กำหนด app ID และ repo layout; ระบุ deviations จาก Termius.
 
-**Design handoff — DS01/T047:** บันทึก Signal Blue v1.0, dark-first/light-later, Inter/JetBrains Mono, semantic state colors, shadcn base/style/icon library/registry, Tailwind compatibility, density และ remaining contrast/ANSI/artwork decisions ตาม [design plan](design-system-implementation.md) โดยยังไม่สร้าง assets หรือ scaffold ก่อน confirm
+**Design handoff — DS01/T047:** บันทึก Signal Blue v1.0, dark-first/light-later, Inter/JetBrains Mono, semantic state colors, shadcn base/style/icon library/registry, Tailwind compatibility, density และ remaining contrast/ANSI/artwork decisions ตาม [design plan](design-system-implementation.md) โดย SST-001 เป็นเอกสารเท่านั้น ไม่สร้าง assets/scaffold; DS02–DS06 ต้องอนุมัติเพิ่ม
 
 ### SST-002 — SSH/SFTP/backend compatibility spike
+
+**Status:** `NOT_STARTED` — authorized M0; เริ่มหลัง SST-001 delivery + commit เท่านั้น ssh2 1.17.0 เป็น candidate ตาม ADR; real fixture และ unsigned packaged arm64 validation ยังไม่รัน
 
 **Outcome:** ลดความเสี่ยง engine ก่อนสร้าง application services. **Evidence:** S03/S05, N01/N06/N07, N-T02.
 

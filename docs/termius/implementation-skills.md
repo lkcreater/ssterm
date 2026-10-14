@@ -2,7 +2,7 @@
 
 ค้นด้วย skill `find-skills` วันที่ 2026-10-14 เพื่อรองรับ **React + TypeScript + Electron + shadcn/ui + Tailwind CSS** ของ ssterm ตรวจ leaderboard ก่อน แล้วใช้ `skills find` ด้วย queries `electron`, `electron react`, `shadcn`, `tailwind`, `playwright electron` และตรวจ repository/source ของ candidates ก่อนคัดเลือก
 
-**สถานะ: ผู้ใช้สั่งติดตั้งชุดหลักทั้ง 5 skills แล้ว และติดตั้งสำเร็จแบบ project-local สำหรับ Codex/Claude Code; ยังไม่เริ่ม implementation.** `find-skills` และ `reverse-engineer-anything` ที่มีอยู่เดิมคงไว้ครบ รวมโครงการมี 7 skills
+**สถานะ: ผู้ใช้สั่งติดตั้งชุดหลักทั้ง 5 skills แล้ว และติดตั้งสำเร็จแบบ project-local สำหรับ Codex/Claude Code; เริ่มเฉพาะ SST-001 ADR/docs ตาม M0 authorization 2026-10-14; ยังไม่มี production implementation.** `find-skills` และ `reverse-engineer-anything` ที่มีอยู่เดิมคงไว้ครบ รวมโครงการมี 7 skills
 
 ไฟล์จริงอยู่ใต้ `.agents/skills/`, Claude Code เชื่อมผ่าน `.claude/skills/` และ provenance/source paths/hashes อยู่ใน [skills-lock.json](../../skills-lock.json) ติดตั้งด้วย Skills CLI โดยเลือก `--agent codex claude-code --yes --json`; ไม่ติดตั้ง global skills หรือ application dependencies
 
@@ -20,13 +20,13 @@
 
 ## เหตุผลที่คัดเลือกและข้อจำกัด
 
-**Electron:** ตัว `electron-best-practices` ตรง React/Electron/typed IPC มากกว่า skill desktop ทั่วไป แม้ installs ต่ำกว่า 1K จึงจัดเป็น community candidate ใช้ร่วมกับ [official Electron security guidance](https://www.electronjs.org/docs/latest/tutorial/security). ตรวจ [SKILL.md ต้นทาง](https://github.com/jwynia/agent-skills/blob/main/skills/tech/development/tooling/electron-best-practices/SKILL.md) แล้ว มี script helpers ที่ต้องใช้ Deno; รอบนี้ไม่ได้ติดตั้ง Deno หรือรัน helpers คำแนะนำเรื่อง electron-vite/Forge/Zustand/electron-store ภายใน skill ยังไม่ถือเป็น stack decision ของโครงการ ต้องคง SQLite/SecretStore candidate และ ADR ที่มีอยู่จนตัดสินใจแยก
+**Electron:** ตัว `electron-best-practices` ตรง React/Electron/typed IPC มากกว่า skill desktop ทั่วไป แม้ installs ต่ำกว่า 1K จึงจัดเป็น community candidate ใช้ร่วมกับ [official Electron security guidance](https://www.electronjs.org/docs/latest/tutorial/security). ตรวจ [SKILL.md ต้นทาง](https://github.com/jwynia/agent-skills/blob/main/skills/tech/development/tooling/electron-best-practices/SKILL.md) แล้ว มี script helpers ที่ต้องใช้ Deno; รอบนี้ไม่ได้ติดตั้ง Deno หรือรัน helpers [ADR 0001](../adr/0001-mvp-platform-stack.md) เลือก electron-vite + @electron/packager; ไม่เลือก Forge/Zustand/electron-store จากคำแนะนำทั่วไป SQLite/SecretStore คง candidates ตาม named gates
 
 **React:** เป็น skill จาก Vercel เอง [source](https://github.com/vercel-labs/agent-skills/blob/main/skills/react-best-practices/SKILL.md); ใช้ client-renderer rules ที่เกี่ยวข้อง ส่วน Next.js/SSR/RSC-specific rules ไม่ใช่ requirement ของ Electron app การใช้ skill ไม่ได้เพิ่ม Next.js เข้ามาใน stack
 
 **shadcn:** ผู้ผลิตมี [official skill documentation](https://ui.shadcn.com/docs/skills) และ [source](https://github.com/shadcn-ui/ui/blob/main/skills/shadcn/SKILL.md). Skill อ่าน project context จาก CLI และ `components.json`; ขณะนี้ยังไม่มี app จึงยังไม่มี component context ให้ตรวจ การติดตั้ง skill ในอนาคตไม่เท่ากับการอนุมัติ scaffold/add components ก่อน confirm implementation
 
-**Tailwind:** ตรวจ [source](https://github.com/wshobson/agents/blob/main/plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md) แล้ว เนื้อหาเจาะ Tailwind v4 จึงใช้เมื่อ SST-001 เลือก compatible versions นี้ ให้ semantic tokens สอดคล้อง shadcn/ui และไม่สร้าง component system ที่ซ้ำกัน
+**Tailwind:** ตรวจ [source](https://github.com/wshobson/agents/blob/main/plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md) แล้ว เนื้อหาเจาะ Tailwind v4 จึงใช้ตาม SST-001 ที่เลือก Tailwind 4.3.3 ให้ semantic tokens สอดคล้อง shadcn/ui และไม่สร้าง component system ที่ซ้ำกัน
 
 **Playwright:** [source](https://github.com/currents-dev/playwright-best-practices-skill/blob/main/playwright-best-practices/SKILL.md) มี reference เฉพาะ [Electron testing](https://github.com/currents-dev/playwright-best-practices-skill/blob/main/playwright-best-practices/testing-patterns/electron.md). เหมาะกับ TypeScript desktop tests มากกว่าเว็บ-only smoke tests แต่ SSH/SFTP/trust/cleanup ยังต้องมี project-owned lab fixtures ตาม tickets
 
@@ -42,7 +42,7 @@ npx skills add wshobson/agents --skill tailwind-design-system
 npx skills add currents-dev/playwright-best-practices-skill --skill playwright-best-practices
 ```
 
-การติดตั้ง skills และการเริ่ม implement เป็นคนละการตัดสินใจ รอบติดตั้งนี้อัปเดต `skills-lock.json` และเพิ่ม skill directories/Claude Code links ตามคำสั่งผู้ใช้ ส่วนการเริ่ม implement ยังรอ confirmation ตามแผนเดิม ไม่ได้ติดตั้ง optional candidates ด้านล่าง
+การติดตั้ง skills และการเริ่ม implement เป็นคนละการตัดสินใจ รอบติดตั้งนี้อัปเดต `skills-lock.json` และเพิ่ม skill directories/Claude Code links ตามคำสั่งผู้ใช้ การอนุมัติ M0 ภายหลัง (2026-10-14) อยู่ใน [execution plan](../agent-runs/implementation-plan.md) อนุญาต SST-001 docs แล้ว SST-002 spike หลัง first commit; SST-003–028 ยังรออนุมัติ ไม่ได้ติดตั้ง optional candidates ด้านล่าง
 
 ## Optional และ alternatives ที่ตรวจเพิ่ม
 

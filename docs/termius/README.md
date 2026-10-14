@@ -1,12 +1,12 @@
 # Termius → ssterm: investigation และ implementation backlog
 
-**วันที่:** 2026-10-14 · **เป้าหมาย:** Termius desktop 9.43.1, macOS arm64 · **สถานะ:** `AWAITING_IMPLEMENT_CONFIRMATION`
+**วันที่:** 2026-10-14 · **เป้าหมาย:** Termius desktop 9.43.1, macOS arm64 · **สถานะ:** M0 authorized; SST-001 `DONE`, SST-002 `NOT_STARTED`
 
-จัดทำเอกสารตามคำขอให้ถอดระบบ Termius แล้วสรุป task, ticket และ plan ก่อน implement โครงการนี้ยังไม่มี application code จึงเสนอ baseline เป็น macOS desktop แบบ local-first และ account-free; ขอบเขตนี้เป็นข้อเสนอที่ยังต้องยืนยัน
+จัดทำเอกสารตามคำขอให้ถอดระบบ Termius แล้วสรุป task, ticket และ plan ก่อน implement โครงการนี้ยังไม่มี application code จึงเสนอ baseline เป็น macOS desktop แบบ local-first และ account-free; baseline นี้บันทึกใน [ADR 0001](../adr/0001-mvp-platform-stack.md); อนุมัติลงมือเฉพาะ M0 เมื่อ 2026-10-14
 
-**UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ดู [stack decision](proposed-architecture.md#baseline--stack-decision) การเลือก stack ยังไม่ใช่ confirmation ให้เริ่ม implement
+**UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ดู [stack decision](proposed-architecture.md#baseline--stack-decision) การเลือก stack และการอนุมัติ M0 เป็นคนละเหตุการณ์; SST-003–028 ยังรออนุมัติ
 
-**Visual spec สำหรับวางแผน:** [Signal Blue v1.0](design-system.md) — dark-first, Inter + JetBrains Mono, terminal-first layout และแยก blue focus จาก operational status ดู [design implementation plan](design-system-implementation.md); งานยังรอ confirm
+**Visual spec สำหรับวางแผน:** [Signal Blue v1.0](design-system.md) — dark-first, Inter + JetBrains Mono, terminal-first layout และแยก blue focus จาก operational status ดู [design implementation plan](design-system-implementation.md); อนุมัติเฉพาะ DS01 ใน SST-001; งาน DS02–DS06 ยังรออนุมัติ
 
 ## เอกสาร
 
@@ -20,8 +20,10 @@
 | [Logo & app icon](../logo/README.md) | supplied SST artwork, brand lockup/icon/presentation usage, ขนาดไฟล์ และ production export/QA handoff |
 | [design-system-implementation.md](design-system-implementation.md) | แผน DS01–DS06, token/component contracts, task mapping และเกณฑ์ตรวจรับก่อนพัฒนา |
 | [tickets.md](tickets.md) | ticket พร้อม priority, dependency, acceptance criteria และ validation |
-| [tasks.md](tasks.md) | checklist งานย่อยที่เชื่อม ticket; ยังไม่เริ่มงานพัฒนา |
-| [implementation-plan.md](implementation-plan.md) | phases, gates, ลำดับงาน, effort ranges และ scope ที่รอยืนยัน |
+| [tasks.md](tasks.md) | checklist งานย่อยที่เชื่อม ticket และสถานะตาม scoped authorization |
+| [implementation-plan.md](implementation-plan.md) | phases, gates, ลำดับงาน, effort ranges และ scope confirmation |
+| [ADR 0001](../adr/0001-mvp-platform-stack.md) | platform/stack/pins/layout/Keychain/packaging/design decisions และ evidence limits |
+| [M0 execution plan](../agent-runs/implementation-plan.md) | authorization, stage ownership, validation และ delivery/commit ledger |
 | [implementation-skills.md](implementation-skills.md) | shortlist skills สำหรับ React/Electron/shadcn/Tailwind/testing พร้อม sources, quality notes และคำสั่งติดตั้ง |
 | [evidence/README.md](evidence/README.md) | วิธีตรวจสอบ artifact, REA Evidence และ bounded shell observations |
 
@@ -39,8 +41,8 @@ REA วิเคราะห์ source ที่เลือก 10 รายก�
 
 พบ ASAR declared integrity แตกต่างจาก companion native bytes 17 รายการ จึงใช้ `record-and-continue` และคง `observed-untrusted` ในหลักฐาน การลงนาม/strip หลัง packaging เป็นสาเหตุที่เป็นไปได้ตาม REA diagnostic แต่ครั้งนี้ไม่ได้ยืนยันสาเหตุหรือ publisher authenticity รายงานจึงอ้างได้เฉพาะ installed bytes นี้
 
-## การยืนยันก่อนพัฒนา
+## Scoped confirmation
 
-ขอบเขตที่เสนอให้ยืนยัน: **M0–M5 / SST-001–SST-028**, macOS arm64 ก่อน, local-first, account-free; UI ใช้ React + Electron + shadcn/ui + Tailwind CSS ที่ผู้ใช้เลือกแล้ว ส่วน backend/versions/tooling ผ่าน spike/ADR ใน SST-001–002 การยืนยัน MVP ไม่รวม later tickets SST-029–038
+ผู้ใช้อนุมัติ **M0 / SST-001–002 เท่านั้น** เมื่อ 2026-10-14: pipeline ANALYZE → DESIGN → PLAN → IMPLEMENT → TEST → REVIEW → DELIVER และ commit SST-001 ก่อนเริ่ม SST-002 แล้ว delivery + commit SST-002 ดู [execution plan](../agent-runs/implementation-plan.md) ขณะนี้ SST-001 เป็น ADR/docs `DONE`; SST-002 `NOT_STARTED` ไม่มี application scaffold
 
-เมื่อผู้ใช้ confirm แล้วจึงเริ่ม SST-001 ไม่ bootstrap แอป ติดตั้ง application dependencies หรือสร้าง PR/issue ภายนอกในรอบนี้ Ticket ในเอกสารเป็น backlog ภายใน repo; ยังไม่ได้เปิด ticket บน external tracker
+SST-003–028/DS02–DS06 ยังรออนุมัติ; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0

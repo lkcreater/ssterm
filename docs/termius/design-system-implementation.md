@@ -1,6 +1,6 @@
 # Design system implementation plan
 
-**สถานะ: `AWAITING_IMPLEMENT_CONFIRMATION` — อัปเดตแผนเท่านั้น ยังไม่สร้าง app, CSS, components หรือ artwork.**
+**สถานะ: DS01/T047 `DONE` ใน SST-001 (M0 authorized 2026-10-14).** [ADR 0001](../adr/0001-mvp-platform-stack.md) บันทึก decisions แล้ว ผ่าน document checks/review/delivery แล้ว; DS02–DS06 ยัง `AWAITING_IMPLEMENT_CONFIRMATION` ยังไม่สร้าง app/CSS/components/artwork
 
 ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification หลักของ ssterm และใช้ [architecture](proposed-architecture.md), [tickets](tickets.md) และ [tasks](tasks.md) สำหรับพฤติกรรมและขอบเขต MVP ข้อกำหนดนี้เป็น design ของ ssterm ไม่ใช่หลักฐาน UI ภายใน Termius
 
@@ -8,11 +8,11 @@
 
 | หัวข้อ | ข้อกำหนดสำหรับ implementation |
 |---|---|
-| Stack | Electron + React + TypeScript + shadcn/ui + Tailwind CSS; เสนอ Tailwind v4 เพื่อใช้ CSS-variable mapping ตาม spec และ pin compatible versions ใน SST-001 |
+| Stack | Electron + React + TypeScript + shadcn/ui + Tailwind CSS; เลือก Tailwind 4.3.3 และ @tailwindcss/vite 4.3.3 ตาม ADR + metadata resolution evidence; real build/render ยังไม่ผ่าน |
 | Direction | Signal Blue: deep navy surfaces, electric blue สำหรับ focus/selection/action; brand line “Connected with clarity.” |
 | Theme | dark-first สำหรับ MVP; light palette เป็น proposed later work ไม่เพิ่ม light-mode toggle ก่อน validated theme พร้อม |
 | Typography | Inter สำหรับ UI, JetBrains Mono สำหรับ terminal/code; offline font assets/license และ Thai/system fallback ต้องตรวจ |
-| Density | 4 px spacing grid; controls compact 28–32 px / comfortable 36–40 px; rows 30–34 px; radius controls 6–8 px / dialogs 10–12 px ตาม spec |
+| Density | ADR default: controls/rows 32 px, spacing grid 4 px, radius controls 8 px/dialogs 12 px, focus ring 2 px; comfortable variants ภายหลังตาม spec |
 | Terminal | terminal-first layout; foreground/background/cursor/selection/ANSI 16 แยกจาก application theme |
 | State semantics | สีฟ้าแสดง active/focus; connected เขียว, connecting เหลือง, error แดง, disconnected muted; status มี icon + label และ PROD มีข้อความชัดเจน |
 | Branding | ใช้ SST-style artwork ที่ส่งมาใน [logo/icon handoff](../logo/README.md); `icon-logo.png` เป็น source icon reference, `brand-logo.png` เป็น brand lockup; production exports/edge QA ยังไม่เสร็จ |
@@ -23,7 +23,7 @@ Spec ที่พูดถึง agent auth, remote/dynamic tunnels, favorites, 
 
 | Step | Deliverable | Parent ticket / task | Depends on | Acceptance |
 |---|---|---|---|---|
-| DS01 | Design integration ADR | SST-001 / T047 | Confirm implementation | บันทึก spec v1.0, Tailwind/version compatibility, shadcn base/style/icon library, alias/paths, density defaults และ contrast gaps โดยคง Signal Blue |
+| DS01 | Design integration ADR | SST-001 / T047 | M0 confirmed 2026-10-14 | บันทึก spec v1.0, Tailwind/version compatibility, shadcn base/style/icon library, alias/paths, density defaults และ contrast gaps โดยคง Signal Blue |
 | DS02 | Semantic tokens / type / spacing foundation | SST-004 / T048 | DS01 และ app shell | Token mapping ครบ, fonts ใช้ offline ได้, Thai fallback ชัดเจน, app/terminal themes แยก, ไม่มี raw brand colors กระจายใน components |
 | DS03 | Shared components + internal showcase | SST-004 / T049 | DS02 | Components ตาม inventory มี variants/states/accessible labels; showcase แสดงทุก state ที่ต้องตรวจ รวม selected+error/focus+connected |
 | DS04 | Product recipes / terminal-first shell | SST-018 / T050 | DS03 และ session/catalog dependencies เดิม | Target/context ชัดทุก pane; titlebar/drag regions ถูกต้อง; sidebar/panels resize/collapse; terminal theme ไม่ถูก app CSS override |
@@ -68,8 +68,10 @@ Internal showcase ใช้ fixtures และเป็น development/review su
 - **Behavior:** host-key changed, auth fail, transfer conflict/cancel และ tunnel bind failure ใช้ real service outcomes ตาม tickets; showcase mock ไม่ถือว่า backend acceptance ผ่าน
 - **Checks:** typecheck/build, no console errors, visual screenshots/state coverage, accessibility checks และ manual Electron walkthrough; บันทึก fixtures/OS/window dimensions/known limitations สำหรับ review
 
-## Decisions ที่ยังต้องปิดใน implementation ADR
+## Recorded decisions / remaining implementation gates
 
-shadcn base/style/icon library/registry, exact versions, compact density default, focus-vs-selection geometry, essential boundary contrast treatment, production exports/small-size adaptation ของ supplied logo/icon และ terminal ANSI palette ยังต้องตัดสินโดยใช้ spec นี้ Light theme คงเป็น later ไม่เป็น gate ของ dark MVP
+ADR 0001 เลือก Base UI/nova (`base-nova`), official @shadcn registry/Lucide, exact versions, renderer alias/paths, 32 px controls/rows, 4 px grid, 8/12 px radii และ 2 px focus ring แยก selection fill; generated APIs/config ต้องตรวจใน SST-004
 
-เมื่อมี user confirmation จึงเริ่ม DS01/T047 แล้วตาม dependencies ไม่รัน scaffold, `shadcn init/add/apply`, ติดตั้ง fonts/dependencies หรือสร้าง assets ในรอบอัปเดตเอกสารนี้
+Rendered essential-boundary contrast treatment/status/focus matrix, minimum window-size decision, production exports/small-size adaptation ของ supplied logo/icon, font licensing/offline Thai fallback และ terminal ANSI palette ยังรอ gates DS02–DS06 Light theme คงเป็น later ไม่เป็น gate ของ dark MVP
+
+M0 confirmation อนุญาต DS01/T047 เป็น ADR/docs เท่านั้น; ไม่รัน scaffold, `shadcn init/add/apply`, ติดตั้ง fonts/repo dependencies หรือสร้าง assets ใน SST-001 DS02–DS06 ต้องอนุมัติเพิ่ม

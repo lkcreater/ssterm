@@ -1,12 +1,12 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; ส่วน implementation ยังรอ confirm.** รายละเอียด architecture อื่นเป็น Proposed design อิงปัญหา/workflow จาก [system analysis](system-analysis.md) และ [official features](official-features.md) ไม่ถือว่าเป็น architecture ภายใน Termius ที่ยืนยันแล้ว
+**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติเฉพาะ M0 / SST-001–002 เมื่อ 2026-10-14.** SST-001 `DONE` เป็น ADR/docs; SST-002 `NOT_STARTED` รอ first delivery + commit; SST-003–028 ยังรออนุมัติ รายละเอียด architecture อื่นเป็น Proposed design อิงปัญหา/workflow จาก [system analysis](system-analysis.md) และ [official features](official-features.md) ไม่ถือว่าเป็น architecture ภายใน Termius ที่ยืนยันแล้ว
 
 ## Baseline / stack decision
 
 เสนอ macOS arm64 desktop, local-first, account-free, vault เดียวก่อน ใช้ original UI/branding ของ ssterm และ implementation ของโครงการเอง ขอบเขต MVP อยู่ใน SST-001–028
 
-**UI stack ที่ผู้ใช้กำหนด:** Electron เป็น desktop runtime, React + TypeScript เป็น renderer UI, shadcn/ui สำหรับ application components และ Tailwind CSS สำหรับ styling/theme tokens การเลือกนี้เป็นข้อกำหนดของ ssterm ไม่ใช่ผล reverse engineering ของ Termius และเป็นการยืนยัน stack เท่านั้น ยังไม่อนุมัติเริ่ม implementation
+**UI stack ที่ผู้ใช้กำหนด:** Electron เป็น desktop runtime, React + TypeScript เป็น renderer UI, shadcn/ui สำหรับ application components และ Tailwind CSS สำหรับ styling/theme tokens การเลือกนี้เป็นข้อกำหนดของ ssterm ไม่ใช่ผล reverse engineering ของ Termius ส่วน exact pins/tooling/app IDs/layout และ DS01 บันทึกใน [ADR 0001](../adr/0001-mvp-platform-stack.md); ยังไม่สร้าง production scaffold
 
 | Layer | Stack / responsibility | Decision status |
 |---|---|---|
@@ -18,18 +18,18 @@
 | SSH / SFTP / tunnels | independent SSH adapter; ssh2 เป็น candidate | เลือก backend หลัง SST-002 |
 | Metadata / secrets | SQLite candidate + OS credential-store adapter | validate driver/protection/packaging ใน SST-001–006 |
 
-SST-001 บันทึก UI stack นี้ใน ADR และเลือก compatible versions/build tooling โดยไม่เปิดเลือก UI framework ใหม่ SST-002 เปรียบเทียบเฉพาะ SSH backend ที่ทำงานร่วมกับ Electron ได้ เช่น Node library, native adapter หรือ managed OpenSSH process; ต้องตรวจ packaging/ABI, authentication, PTY, SFTP และ forwarding
+[ADR 0001](../adr/0001-mvp-platform-stack.md) บันทึก UI stack และ exact versions/build tooling พร้อม temporary npm peer/engine resolution evidence; ยังไม่พิสูจน์ build/runtime และไม่เปิดเลือก UI framework ใหม่ SST-002 เปรียบเทียบเฉพาะ SSH backend ที่ทำงานร่วมกับ Electron ได้ เช่น Node library, native adapter หรือ managed OpenSSH process; ต้องตรวจ packaging/ABI, authentication, PTY, SFTP และ forwarding
 
 แหล่งทางเทคนิคที่ตรวจวันที่ 2026-10-14: [Electron security](https://www.electronjs.org/docs/latest/tutorial/security) สนับสนุน isolated renderer/validated IPC; [ssh2 upstream](https://github.com/mscdex/ssh2) เป็น candidate client library; [xterm.js security](https://xtermjs.org/docs/guides/security/) ใช้กำหนด terminal trust boundary; [SQLite transactional behavior](https://www.sqlite.org/transactional.html) ใช้ประกอบ persistence choice ไม่ได้สรุปว่าทางเลือกนี้ดีที่สุดก่อน spike
 
-เอกสารสำหรับ UI stack: [React](https://react.dev/learn), [shadcn/ui setup](https://ui.shadcn.com/docs/installation/vite) และ [Tailwind CSS setup](https://tailwindcss.com/docs/installation/using-vite) ใช้อ้างอิง integration ในอนาคต; exact versions/build tooling ยังไม่ pin ในรอบเอกสารนี้
+เอกสารสำหรับ UI stack: [React](https://react.dev/learn), [shadcn/ui setup](https://ui.shadcn.com/docs/installation/vite) และ [Tailwind CSS setup](https://tailwindcss.com/docs/installation/using-vite) ใช้อ้างอิง integration ในอนาคต; exact pins/primary registry sources อยู่ใน [dependency baseline](../adr/dependency-baseline.json)
 
 ## Design system integration
 
-ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification และ [design-system-implementation.md](design-system-implementation.md) เป็นแผน DS01–DS06; ยังรอ confirm implementation โดยคง React/Electron/shadcn/ui/Tailwind stack เดิม
+ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification และ [design-system-implementation.md](design-system-implementation.md) เป็นแผน DS01–DS06; DS01 decisions อยู่ใน ADR 0001; DS02–DS06 ยังรออนุมัติโดยคง React/Electron/shadcn/ui/Tailwind stack เดิม
 
 - Application tokens/theme ใช้ semantic CSS variables: navy canvas, blue focus/selection/action และ operational status แยกกัน; Inter สำหรับ UI และ JetBrains Mono สำหรับ code/terminal พร้อม Thai fallback
-- เสนอ Tailwind v4 mapping ที่ compatible กับ generated shadcn config; global stylesheet/component paths อยู่ใต้ renderer ของ `apps/desktop` และ resolve ตาม `components.json` หลัง bootstrap
+- เลือก Tailwind 4.3.3 + Base UI/nova/official @shadcn registry/Lucide ตาม ADR; verify generated APIs/config ใน SST-004; global stylesheet/component paths อยู่ใต้ renderer ของ `apps/desktop` และ resolve ตาม `components.json` หลัง bootstrap
 - Shared primitives/variants อยู่ `components/ui`; domain recipes แยก connection identity/status, server tree, session tabs/panes, SFTP และ tunnels; presentation แปล typed session state แต่ไม่เปลี่ยน ownership/auth policy
 - Dark-first สำหรับ MVP; light palette เป็น later proposal; terminal foreground/background/cursor/selection/ANSI/font settings แยกจาก app theme และไม่ใช้ application CSS override terminal output
 - `Host.environment?` เป็น optional display metadata สำหรับ DEV/STAGING/PROD context; แสดง PROD ชัดทุก target-sensitive surface โดยไม่ตีความเป็น access-control rule
@@ -138,9 +138,9 @@ Command/event design ที่ต้องปิดรายละเอีย�
 
 **Tunnel:** loopback default; start ถือว่าสำเร็จหลัง local bind + SSH ready; duplicate port แจ้ง error; stop/quit ตัด listener และ active sockets ตาม policy ไม่เริ่ม tunnel อัตโนมัติจากการเปิดแอป
 
-## Proposed layout หลัง confirm
+## ADR-selected future layout
 
-`apps/desktop` สำหรับ app composition/UI, `packages/domain` สำหรับ catalog/resolver, `packages/contracts` สำหรับ API/events, `packages/services` สำหรับ lifecycle, `packages/adapters` สำหรับ SSH/storage/secrets และ `tests/fixtures` สำหรับ isolated SSH/SFTP lab โครงสร้างจริงขึ้นกับ ADR และขนาดโครงการ ไม่ได้สร้าง directories/code เหล่านี้ในรอบเตรียมเอกสาร
+`apps/desktop` สำหรับ app composition/UI, `packages/domain` สำหรับ catalog/resolver, `packages/contracts` สำหรับ API/events, `packages/services` สำหรับ lifecycle, `packages/adapters` สำหรับ SSH/storage/secrets และ `tests/fixtures` สำหรับ isolated SSH/SFTP lab ADR 0001 กำหนด `apps/desktop/src/{main,preload,renderer/src}` พร้อม renderer alias `@/*`; SST-002 ใช้ isolated `spikes/ssh-compat` และ `tests/fixtures/ssh` หลัง first commit ยังไม่สร้าง directories/code เหล่านี้ใน SST-001
 
 ## Later boundaries
 

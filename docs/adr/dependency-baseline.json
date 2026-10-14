@@ -1,0 +1,167 @@
+{
+  "observed_on": "2026-10-14",
+  "scope": "SST-001 metadata-only version resolution, not runtime/build validation",
+  "selected": {
+    "electron": {
+      "version": "44.7.2",
+      "source": "https://registry.npmjs.org/electron/44.7.2",
+      "engines": {
+        "node": ">= 22.12.0"
+      },
+      "peerDependencies": null
+    },
+    "react": {
+      "version": "19.3.0",
+      "source": "https://registry.npmjs.org/react/19.3.0",
+      "engines": {
+        "node": ">=0.10.0"
+      },
+      "peerDependencies": null
+    },
+    "react-dom": {
+      "version": "19.3.0",
+      "source": "https://registry.npmjs.org/react-dom/19.3.0",
+      "engines": null,
+      "peerDependencies": {
+        "react": "^19.3.0"
+      }
+    },
+    "typescript": {
+      "version": "7.0.2",
+      "source": "https://registry.npmjs.org/typescript/7.0.2",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "peerDependencies": null
+    },
+    "electron-vite": {
+      "version": "5.0.0",
+      "source": "https://registry.npmjs.org/electron-vite/5.0.0",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "peerDependencies": {
+        "vite": "^5.0.0 || ^6.0.0 || ^7.0.0",
+        "@swc/core": "^1.0.0"
+      }
+    },
+    "tailwindcss": {
+      "version": "4.3.3",
+      "source": "https://registry.npmjs.org/tailwindcss/4.3.3",
+      "engines": null,
+      "peerDependencies": null
+    },
+    "@tailwindcss/vite": {
+      "version": "4.3.3",
+      "source": "https://registry.npmjs.org/@tailwindcss/vite/4.3.3",
+      "engines": null,
+      "peerDependencies": {
+        "vite": "^5.2.0 || ^6 || ^7 || ^8"
+      }
+    },
+    "shadcn": {
+      "version": "4.21.5",
+      "source": "https://registry.npmjs.org/shadcn/4.21.5",
+      "engines": {
+        "node": ">=20.18.1"
+      },
+      "peerDependencies": null
+    },
+    "@base-ui/react": {
+      "version": "1.9.0",
+      "source": "https://registry.npmjs.org/@base-ui/react/1.9.0",
+      "engines": {
+        "node": ">=14.0.0"
+      },
+      "peerDependencies": {
+        "react": "^17 || ^18 || ^19",
+        "date-fns": "^4.0.0",
+        "react-dom": "^17 || ^18 || ^19",
+        "@date-fns/tz": "^1.2.0",
+        "@types/react": "^17 || ^18 || ^19"
+      }
+    },
+    "lucide-react": {
+      "version": "1.57.0",
+      "source": "https://registry.npmjs.org/lucide-react/1.57.0",
+      "engines": null,
+      "peerDependencies": {
+        "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0",
+        "@types/react": "*"
+      }
+    },
+    "@electron/packager": {
+      "version": "20.3.0",
+      "source": "https://registry.npmjs.org/@electron/packager/20.3.0",
+      "engines": {
+        "node": ">= 22.12.0"
+      },
+      "peerDependencies": null
+    },
+    "vite": {
+      "version": "7.3.7",
+      "source": "https://registry.npmjs.org/vite/7.3.7",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "peerDependencies": {
+        "tsx": "^4.8.1",
+        "jiti": ">=1.21.0",
+        "less": "^4.0.0",
+        "sass": "^1.70.0",
+        "yaml": "^2.4.2",
+        "stylus": ">=0.54.8",
+        "terser": "^5.16.0",
+        "sugarss": "^5.0.0",
+        "@types/node": "^20.19.0 || >=22.12.0",
+        "lightningcss": "^1.21.0",
+        "sass-embedded": "^1.70.0"
+      }
+    },
+    "@vitejs/plugin-react": {
+      "version": "5.2.0",
+      "source": "https://registry.npmjs.org/@vitejs/plugin-react/5.2.0",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "peerDependencies": {
+        "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0"
+      }
+    }
+  },
+  "candidates_not_accepted": {
+    "ssh2": {
+      "version": "1.17.0",
+      "source": "https://registry.npmjs.org/ssh2/1.17.0"
+    },
+    "@xterm/xterm": {
+      "version": "6.0.0",
+      "source": "https://registry.npmjs.org/@xterm/xterm/6.0.0"
+    },
+    "better-sqlite3": {
+      "version": "13.0.3",
+      "source": "https://registry.npmjs.org/better-sqlite3/13.0.3"
+    },
+    "@napi-rs/keyring": {
+      "version": "2.1.1",
+      "source": "https://registry.npmjs.org/@napi-rs/keyring/2.1.1"
+    }
+  },
+  "resolution": {
+    "node": "24.11.1",
+    "npm": "11.6.2",
+    "npm_command": "npm install --package-lock-only --ignore-scripts --no-audit --no-fund --cache /private/tmp/ssterm-m0/npm-cache --prefix /private/tmp/ssterm-m0/ui-resolution",
+    "exit_code": 0,
+    "scripts_executed": false,
+    "resolved_package_count": 514,
+    "temporary_lock_sha256": "2ea90e94e0fa629a0b1fa86c24d6d1b97771560c39d8a8d5303d753abd8ac538",
+    "limitations": [
+      "No React renderer build, Electron launch, native binding load, Keychain operation or app packaging was performed by this check.",
+      "These are exact selected pins; production lockfile will be created with the authorized app scaffold."
+    ]
+  },
+  "limitations": [
+    "No React renderer build, Electron launch, native binding load, Keychain operation or app packaging was performed by this check.",
+    "These are exact selected pins; production lockfile will be created with the authorized app scaffold."
+  ]
+}

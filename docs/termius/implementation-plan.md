@@ -1,14 +1,14 @@
 # Implementation plan
 
-**สถานะ: `AWAITING_IMPLEMENT_CONFIRMATION`.** เอกสารนี้จัดทำเพื่อให้ตรวจและยืนยันขอบเขต ยังไม่ได้ bootstrap app, ติดตั้ง application dependencies หรือเขียน feature code
+**สถานะ: `M0_AUTHORIZED` เมื่อ 2026-10-14.** ผู้ใช้อนุมัติเฉพาะ SST-001–002 ตาม pipeline และ commit ทีละ ticket; SST-001 `DONE` เป็น ADR/docs, SST-002 `NOT_STARTED` จน SST-001 delivery + commit ยังไม่ bootstrap app หรือติดตั้ง repo application dependencies; SST-003–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 
-## Scope ที่เสนอให้ยืนยัน
+## Product baseline / scoped authorization
 
 **MVP M0–M5 / SST-001–028:** macOS arm64 desktop, account-free/local-first, local vault เดียว; hosts/nested groups/tags/inheritance; identities/password/imported keys/keyboard-interactive; trust fingerprints/changed keys; terminal tabs/basic split/Unicode/resize/reconnect; local↔remote SFTP; active-session snippets Paste/Run; local port forwarding; reviewable local package
 
-**UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ส่วน terminal renderer, independent SSH adapter, versioned structured storage/OS Keychain และ exact versions/build tooling ยังต้อง validate/pin ใน SST-001–002 การเลือก UI stack เป็นการอัปเดตข้อกำหนด ยังไม่ใช่ confirmation ให้เริ่ม implementation
+**UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS exact UI versions/build tooling/DS01 อยู่ [ADR 0001](../adr/0001-mvp-platform-stack.md) พร้อม metadata resolution evidence; terminal/SSH/storage/Keychain ยังต้องผ่าน gates ที่ระบุ ไม่อ้าง runtime จาก resolution การอนุมัติ M0 ไม่รวม production bootstrap
 
-**Visual specification:** ใช้ [Design System v1.0 — Signal Blue](design-system.md): dark-first, deep navy + electric blue สำหรับ focus/action, operational status colors แยก, Inter + JetBrains Mono และ terminal-first layout แผนย่อย [DS01–DS06](design-system-implementation.md) อยู่ใน SST-001/004/018/027/028 ผ่าน tasks T047–T052 และยังรอ confirm implementation; light theme เป็น later proposal
+**Visual specification:** ใช้ [Design System v1.0 — Signal Blue](design-system.md): dark-first, deep navy + electric blue สำหรับ focus/action, operational status colors แยก, Inter + JetBrains Mono และ terminal-first layout แผนย่อย [DS01–DS06](design-system-implementation.md) อยู่ใน SST-001/004/018/027/028 ผ่าน tasks T047–T052 โดยอนุมัติเฉพาะ DS01 ใน SST-001; DS02–DS06 ยังรออนุมัติ; light theme เป็น later proposal
 
 Logo/icon ใช้ supplied SST-style artwork ใน [docs/logo](../logo/README.md) เป็น reference: `brand-logo.png` สำหรับ brand lockup, `icon-logo.png` สำหรับ derived app icons และ `design-logo.png` สำหรับ presentation; exports/alpha-edge QA/macOS packaging อยู่ DS06/T052 ยังไม่เริ่มทำ
 
@@ -20,8 +20,9 @@ MVP ใช้ original UI/branding ของ ssterm; published workflow เป�
 
 ```mermaid
 flowchart LR
-  C[User confirms MVP] --> M0[Decisions + backend spike]
-  M0 --> M1[Storage + secrets + domain + IPC]
+  C[M0 authorized] --> M0[Decisions + backend spike]
+  M0 -. Separate approval required .-> A[M1-M5 scope confirmation]
+  A --> M1[Storage + secrets + domain + IPC]
   M1 --> M2[SSH + trust + terminal lifecycle]
   M2 --> M3[Catalog + tabs + split UX]
   M3 --> M4[SFTP + snippets + local tunnels]
@@ -42,7 +43,7 @@ Phase order เป็น milestone view ภายในแต่ละ phase ใ
 
 ## Suggested work order
 
-1. หลัง confirm ทำ SST-001/002 และ SST-003 spec ก่อนลงลึก UI อย่าให้ฟอร์มสร้าง assumptions ที่ backend/library ทำไม่ได้
+1. ทำ SST-001 ผ่าน delivery + commit ก่อน SST-002 ผ่าน delivery + commit แล้วหยุดที่ M0; SST-003 spec/production scaffold ต้องอนุมัติเพิ่มก่อนเริ่ม
 2. M1 split งานเป็น Electron/React typed shell/IPC + Signal Blue DS02–DS03 tokens/shared components/showcase, repository/secret adapters และ pure catalog/config rules; schema/protection decisions ต้องพร้อมก่อน persistence code
 3. M2 เริ่ม session contract → known-host policy → auth/prompts → real byte-stream/resize → flow control/cleanup ทุกขั้นต้องใช้ fixture จริงประกอบ ไม่มี terminal mock ที่ทำให้ถือว่าเชื่อม SSH ได้แล้ว
 4. M3 เติม user flows ที่ผ่าน domain/session contracts; บันทึก UI/behavior deviations อย่างชัดเจน
@@ -102,8 +103,8 @@ Fixtures ต้องเป็น project-owned local lab data ไม่ใช�
 
 ## Confirmation boundary / stop condition
 
-ขณะนี้ stop ที่เอกสาร reviewable เหล่านี้ตามคำขอผู้ใช้ การตอบ confirm MVP จะอนุญาตเริ่ม SST-001–028 รวม spike/build/tests/local packaging; optional later work, deployment/publishing และการแก้ account/config ภายนอกไม่ได้รวมโดยอัตโนมัติ
+**2026-10-14 — user confirmation:** อนุมัติ pipeline ANALYZE → DESIGN → PLAN → IMPLEMENT → TEST → REVIEW → DELIVER และ commit **SST-001 ก่อนเริ่ม SST-002** แล้ว delivery + commit SST-002 ขอบเขต **M0 เท่านั้น** รวม DS01/T047 และ isolated fixture/spike/local unsigned arm64 package ใน SST-002 ไม่รวม SST-003–028, DS02–DS06, later tickets, push/external PR/publish/deploy
 
-UI stack ที่เลือกแล้วคือ React + Electron + shadcn/ui + Tailwind CSS และ visual spec คือ Signal Blue v1.0 ส่วน default scope ที่ยังรอยืนยันคือ macOS arm64 + local-first + account-free + explicit save/Paste semantics + no cloud/team in MVP รวม design tasks DS01–DS06 ตาม parent ticket; backend/versions/tooling ผ่าน ADR/spike ผู้ใช้สามารถแก้ requirement ก่อนเริ่มได้ โดยปรับไฟล์ที่เกี่ยวข้องพร้อมกัน
+Current: SST-001 `DONE` / T001/T047 ผ่าน document checks + independent review + delivery แล้ว; SST-002 `NOT_STARTED` จน first commit รายละเอียด ownership, actual checks/results และ ledger อยู่ [execution plan](../agent-runs/implementation-plan.md); decisions อยู่ [ADR 0001](../adr/0001-mvp-platform-stack.md)
 
-เมื่อมี confirmation บันทึกข้อความ/scope/date ในส่วนนี้และเปลี่ยน ticket ที่เริ่มจริงเป็น `IN_PROGRESS` ก่อนทำงาน ไม่ทำเครื่องหมาย approved/completed จากการส่งเอกสารหรือเวลาที่ผ่านไป
+Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 หยุดหลัง M0 delivery + second commit ก่อน production implementation ไม่ขออนุมัติซ้ำใน M0 ที่ได้รับอนุมัติแล้ว
