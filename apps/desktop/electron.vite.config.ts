@@ -30,6 +30,9 @@ export default defineConfig({
           catalog: fileURLToPath(
             new URL("./src/main/catalog.ts", import.meta.url),
           ),
+          sessions: fileURLToPath(
+            new URL("./src/main/sessions.ts", import.meta.url),
+          ),
         },
         preserveEntrySignatures: "strict",
         output: {

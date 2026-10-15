@@ -1,10 +1,10 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-007 / T011–T012: `DONE`** — [catalog/resolver/previews](catalog.md) ผ่าน pipeline; unit 80/80, E2E 13/13, packaged 10/10 และ independent TEST/REVIEW ผ่าน ยังไม่ commit SST-007; SST-006 committed `9b0ba05`. SST-008 เป็นต้นไปยังไม่เริ่ม
+**SST-008 / T013–T014: `DONE`** — [session lifecycle/ownership](sessions.md) ผ่าน pipeline; unit 106/106, E2E 15/15, packaged 12/12 และ independent TEST/REVIEW ผ่าน ยังไม่ commit SST-008; SST-007 committed `c124b1b`. SST-009 เป็นต้นไปยังไม่เริ่ม
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 
-**สถานะ: M0 เสร็จแล้ว (2026-10-15)** — SST-001 ADR และ SST-002 isolated SSH/backend spike ผ่าน pipeline; ดู [ผลทดสอบ](spikes/ssh-compatibility.md) SST-003/T004–T005 ได้รับอนุมัติเฉพาะงานเอกสารและอยู่ `DONE`; ดู [domain/storage specification](termius/domain-storage-spec.md) storage/secrets/catalog services ส่งมอบแล้ว; SST-008–028 ยังรออนุมัติ
+**สถานะ: M0 เสร็จแล้ว (2026-10-15)** — SST-001 ADR และ SST-002 isolated SSH/backend spike ผ่าน pipeline; ดู [ผลทดสอบ](spikes/ssh-compatibility.md) SST-003/T004–T005 ได้รับอนุมัติเฉพาะงานเอกสารและอยู่ `DONE`; ดู [domain/storage specification](termius/domain-storage-spec.md) storage/secrets/catalog services ส่งมอบแล้ว; SST-009–028 ยังรออนุมัติ
 
 UI stack ที่ผู้ใช้เลือก: **React + Electron + shadcn/ui + Tailwind CSS** โดยใช้ TypeScript ตาม baseline
 
@@ -15,3 +15,5 @@ Visual specification ใช้ [Signal Blue design system](termius/design-system
 การตัดสินใจและ exact pins อยู่ [ADR 0001](adr/0001-mvp-platform-stack.md); pipeline/validation อยู่ [execution plan](agent-runs/implementation-plan.md)
 
 ดู [Logo & app icon](logo/README.md) สำหรับ supplied artwork และแนวทางนำไปใช้กับแบรนด์และ macOS package
+
+งาน SST-008: [session lifecycle/ownership](sessions.md) — main-only registry, prompts/generations, lock/owner/quit cleanup และ owned SSH fixture validation.

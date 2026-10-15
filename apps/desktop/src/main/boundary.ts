@@ -50,6 +50,7 @@ export class WindowBoundary {
     private readonly entryURL: string,
     private readonly app: BootstrapData["app"],
     private readonly getStorageHealth: () => StorageHealth,
+    private readonly onOwnerRevoked: (owner: Owner) => void = () => {},
   ) {}
 
   register(
@@ -69,19 +70,23 @@ export class WindowBoundary {
     };
     this.windows.set(sender.id, registration);
     return () => {
-      if (this.windows.get(sender.id) === registration)
+      if (this.windows.get(sender.id) === registration) {
         this.windows.delete(sender.id);
+        this.revokeOwner(registration.owner);
+      }
     };
   }
 
   rotate(sender: SenderIdentity): void {
     const registration = this.windows.get(sender.id);
     if (registration?.sender !== sender) return;
+    const previous = registration.owner;
     registration.owner = {
       ...registration.owner,
       generation: ++this.generation,
     };
     registration.sequence = 0;
+    this.revokeOwner(previous);
   }
 
   focus(sender: SenderIdentity, focused: boolean): void {
@@ -154,7 +159,18 @@ export class WindowBoundary {
   }
 
   dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
+    const owners = [...this.windows.values()].map((entry) => entry.owner);
     this.windows.clear();
+    for (const owner of owners) this.revokeOwner(owner);
+  }
+
+  private revokeOwner(owner: Owner): void {
+    try {
+      this.onOwnerRevoked({ ...owner });
+    } catch {
+      // An observer cannot restore an already revoked IPC registration.
+    }
   }
 }

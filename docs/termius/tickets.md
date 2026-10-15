@@ -1,10 +1,10 @@
 # Tickets สำหรับ ssterm
 
-**SST-007 / T011–T012: `DONE`** — [catalog/resolver/previews](../catalog.md) ผ่าน pipeline; unit 80/80, E2E 13/13, packaged 10/10 และ independent TEST/REVIEW ผ่าน ยังไม่ commit SST-007; SST-006 committed `9b0ba05`. SST-008 เป็นต้นไปยังไม่เริ่ม
+**SST-008 / T013–T014: `DONE`** — [session lifecycle/ownership](../sessions.md) ผ่าน pipeline; unit 106/106, E2E 15/15, packaged 12/12 และ independent TEST/REVIEW ผ่าน ยังไม่ commit SST-008; SST-007 committed `c124b1b`. SST-009 เป็นต้นไปยังไม่เริ่ม
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-008–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-009–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-008–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-009–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
 
@@ -138,6 +138,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 ## M2 — SSH terminal
 
 ### SST-008 — Connection/session state and ownership
+
+**Status:** `DONE` — T013/T014 ตาม [sessions](../sessions.md) และ [delivery](../agent-runs/sst-008-delivery.md); ยังไม่รวม SST-009 trust/SST-010 saved-host auth
 
 **Outcome:** engine-independent lifecycle contract. **Evidence:** S03, N-T01.
 

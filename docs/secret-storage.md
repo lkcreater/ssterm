@@ -50,9 +50,9 @@ After all runs, `security dump-keychain` attribute output (no secret data) showe
 - Migration still refuses any protected vault ([`migrations.ts`](../packages/adapters/src/migrations.ts)); that gate must be lifted with provider-aware re-encryption before any schema v2.
 - The repository validates envelope structure, format and refs, not authenticity or plaintext origin. Future IPC must never forward raw snippet/secret `MetadataChange`s from the renderer; only `SecretService` may produce them.
 - Startup reconciliation has no verified-restore fence yet: a restored older database could publish/clean against current OS items. A restore UI does not exist; it must add the fence.
-- The `powerMonitor` purge wiring in main has no automated test; only `TransientSecrets.purgeAll` is tested.
+- SST-008 now verifies shared desktop lock-screen/suspend wiring with emitted Electron events and focused composition tests ([sessions](sessions.md)); a physical OS-lock walkthrough, full app-lock UI and cancellation of SecretService provider/reconciliation work remain later integration.
 - `locked`/`denied` are never returned by the real Keychain Adapter (ADR 0003); their service handling is exercised only through the fixture.
 
 ## Remaining scope
 
-No UI, IPC or catalog workflow consumes these capabilities yet (SST-017/023/024). App lock, generation invalidation and resource closure are SST-008/015. See [ADR limitations](adr/0003-secret-storage-and-content-protection.md#limitations).
+No UI/IPC consumes these capabilities yet (SST-017/023/024). SST-007 catalog mutations queue secret cleanup without calling the provider. SST-008 adds session lock/generation/resource closure; full app-lock UI/action/provider integration remains SST-015 and consumers. See [ADR limitations](adr/0003-secret-storage-and-content-protection.md#limitations).

@@ -53,6 +53,49 @@ function code(value: Result<unknown>, expected: string) {
 }
 const ping = (owner: Owner) => ({ owner, requestId: "check_1" });
 
+test("navigation, renderer revocation and shutdown revoke each window owner once", () => {
+  const revoked: Owner[] = [];
+  const boundary = new WindowBoundary(
+    entry,
+    { name: "ssterm", version: "0.1.0", platform: "darwin" },
+    () => ({ status: "ready", schemaVersion: 1 }),
+    (owner) => revoked.push(owner),
+  );
+  const sender = {
+    id: 9,
+    mainFrame: { url: entry },
+    isDestroyed: () => false,
+  };
+  const event = { sender, senderFrame: sender.mainFrame };
+  const release = boundary.register(sender, 1, true, () => {});
+  const first = boundary.bootstrap(event, []);
+  assert.ok(first.ok);
+  boundary.rotate(sender);
+  const second = boundary.bootstrap(event, []);
+  assert.ok(second.ok);
+  assert.deepEqual(revoked, [first.value.owner]);
+  assert.notEqual(first.value.owner.generation, second.value.owner.generation);
+  release();
+  release();
+  boundary.dispose();
+  assert.deepEqual(revoked, [first.value.owner, second.value.owner]);
+
+  const shutdown = new WindowBoundary(
+    entry,
+    { name: "ssterm", version: "0.1.0", platform: "darwin" },
+    () => ({ status: "ready", schemaVersion: 1 }),
+    (owner) => {
+      revoked.push(owner);
+      throw new Error("observer");
+    },
+  );
+  shutdown.register(sender, 2, true, () => {});
+  shutdown.dispose();
+  shutdown.dispose();
+  assert.equal(revoked.length, 3);
+  code(shutdown.bootstrap(event, []), "unavailable");
+});
+
 test("bootstrap and ping return only bounded serializable application state", () => {
   const { boundary, event, owner } = fixture();
   assert.deepEqual(boundary.bootstrap(event, []), {
@@ -80,7 +123,10 @@ test("bootstrap copies validated storage health and never accepts diagnostic det
     assert.deepEqual(result.value.storage, health);
     assert.notEqual(result.value.storage, health);
     health.code = "busy";
-    assert.deepEqual(result.value.storage, { status: "blocked", code: "corrupt" });
+    assert.deepEqual(result.value.storage, {
+      status: "blocked",
+      code: "corrupt",
+    });
   }
   Object.assign(health, { message: "/private/path/row" });
   code(boundary.bootstrap(event, []), "unavailable");

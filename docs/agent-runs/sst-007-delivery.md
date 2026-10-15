@@ -42,3 +42,5 @@ Rollback เฉพาะ diff SST-007 เมื่อได้รับคำส
 impact previews พร้อม atomic CRUD/deletion และ queued cleanup ที่ main-only boundary. ผ่าน
 typecheck, unit 80/80, build, development E2E 13/13, unsigned macOS arm64 package และ
 packaged E2E 10/10. UI และ SSH/session อยู่นอก scope.
+
+**Commit follow-up:** ผู้ใช้สั่ง commit และเริ่มงานถัดไป; SST-007 committed `c124b1b` ก่อนเปิด SST-008 ไม่มี push.

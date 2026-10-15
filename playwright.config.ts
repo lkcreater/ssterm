@@ -34,6 +34,7 @@ export default defineConfig({
             "storage.spec.ts",
             "secrets.spec.ts",
             "catalog.spec.ts",
+            "sessions.spec.ts",
           ],
         },
       ]
@@ -45,6 +46,7 @@ export default defineConfig({
             "storage.spec.ts",
             "secrets.spec.ts",
             "catalog.spec.ts",
+            "sessions.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

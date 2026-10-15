@@ -14,6 +14,8 @@ import { SecretService, TransientSecrets } from "@ssterm/services";
 import { WindowBoundary, sameDocument } from "./boundary";
 import { contentSecurityPolicy, rendererLocation } from "./security";
 import { openMetadata } from "./storage";
+import { resolveHostConfig } from "./catalog";
+import { createDesktopSessions } from "./session-runtime";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -40,6 +42,7 @@ let storageHealth: StorageHealth = { status: "blocked", code: "unavailable" };
 const transientSecrets = new TransientSecrets();
 // Main-only; undefined while storage or the Keychain binding is unavailable.
 let secrets: SecretService | undefined;
+let desktopSessions: ReturnType<typeof createDesktopSessions> | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -66,7 +69,9 @@ async function initializeStorage(): Promise<void> {
   try {
     const directory = join(app.getPath("userData"), "metadata");
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const opened = await openMetadata({ path: join(directory, "catalog.sqlite") });
+    const opened = await openMetadata({
+      path: join(directory, "catalog.sqlite"),
+    });
     if (!opened.ok) {
       storageHealth = {
         status: "blocked",
@@ -129,8 +134,10 @@ const boundary = new WindowBoundary(
     platform: process.platform,
   },
   () => storageHealth,
+  (owner) => desktopSessions?.revokeOwner(owner),
 );
 let quitting = false;
+let shutdownComplete = false;
 if (ownsInstance) {
   app.on("second-instance", () => {
     const window = BrowserWindow.getAllWindows()[0];
@@ -221,11 +228,25 @@ if (ownsInstance) {
       closeStorage();
       return;
     }
-    const purgeSecrets = (): void => {
-      transientSecrets.purgeAll();
-    };
-    powerMonitor.on("lock-screen", purgeSecrets);
-    powerMonitor.on("suspend", purgeSecrets);
+    desktopSessions = createDesktopSessions({
+      transient: transientSecrets,
+      power: powerMonitor,
+      resolve: (hostId) => {
+        if (!repository) {
+          return {
+            ok: false,
+            error: {
+              code: "unavailable",
+              message: "Configuration is unavailable.",
+            },
+          };
+        }
+        const snapshot = repository.snapshot();
+        return snapshot.ok
+          ? resolveHostConfig(snapshot.value, hostId)
+          : snapshot;
+      },
+    });
     const defaultSession = session.defaultSession;
     defaultSession.setPermissionRequestHandler(
       (_contents, _permission, callback) => callback(false),
@@ -235,7 +256,8 @@ if (ownsInstance) {
     defaultSession.webRequest.onHeadersReceived((details, callback) => {
       const headers = { ...details.responseHeaders };
       for (const key of Object.keys(headers)) {
-        if (key.toLowerCase() === "content-security-policy") delete headers[key];
+        if (key.toLowerCase() === "content-security-policy")
+          delete headers[key];
       }
       callback({
         responseHeaders: { ...headers, "Content-Security-Policy": [csp] },
@@ -257,7 +279,8 @@ if (ownsInstance) {
     });
     createWindow();
     app.on("activate", () => {
-      if (!quitting && BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (!quitting && BrowserWindow.getAllWindows().length === 0)
+        createWindow();
     });
   });
 }
@@ -265,13 +288,21 @@ if (ownsInstance) {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (quitting) return;
   quitting = true;
   boundary.dispose();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();
-  closeStorage();
+  // Invalidation/destruction starts synchronously; optional engine drain is bounded.
+  void Promise.resolve(desktopSessions?.shutdown()).finally(() => {
+    closeStorage();
+    shutdownComplete = true;
+    app.quit();
+  });
 });
 
 if (!ownsInstance) app.quit();

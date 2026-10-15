@@ -1,6 +1,6 @@
 # SST-007 — Catalog, inheritance and impact previews
 
-**2026-10-15 · T011–T012 · DONE through implementation, independent TEST/REVIEW and DELIVERY; uncommitted.** Latest authorization: “ทำงานถัดไปได้เลย” after SST-006 commit `9b0ba05`. This ticket adds main-side domain workflows, not the SST-016 catalog UI or SST-008 sessions.
+**2026-10-15 · T011–T012 · DONE through implementation, independent TEST/REVIEW and DELIVERY; committed `c124b1b`.** Latest authorization: “ทำงานถัดไปได้เลย” after SST-006 commit `9b0ba05`. This ticket adds main-side domain workflows, not the SST-016 catalog UI or SST-008 sessions.
 
 ## Modules and contracts
 
@@ -40,3 +40,5 @@ Current checks: typecheck PASS; full unit suite **80/80**, including **11 pure c
 [Electron runtime tests](../tests/e2e/catalog.spec.ts) use the shipped production Module on separate temporary databases. They exercise inherited config/provenance, scoped search/AND tags, immutable captures, stale previews, group movement/deletion and atomic queued credential cleanup with a denied memory provider and later reconciliation. Development E2E **13/13** and packaged E2E **10/10** passed, with zero skipped/flaky/unexpected results. Independent review found no actionable findings. Full evidence: [execution record](agent-runs/implementation-plan.md#sst-007-execution-plan--2026-10-15) and [delivery](agent-runs/sst-007-delivery.md).
 
 No new renderer workflow, live session or real host connection is added. Future catalog IPC must validate caller ownership and map safe DTOs rather than forwarding raw MetadataChanges. Existing SST-006 restore/app-lock/provider limitations remain in [secret storage](secret-storage.md#known-limitations). No commit/push/deployment is included in SST-007 authorization.
+
+**Commit follow-up:** SST-007 committed `c124b1b` under the later instruction “commit และเริ่มงานถัดไป”; no push/deployment.
