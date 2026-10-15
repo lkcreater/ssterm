@@ -1,6 +1,6 @@
 # Implementation plan
 
-**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
+**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-004–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 
 ## Product baseline / scoped authorization
 
@@ -43,7 +43,7 @@ Phase order เป็น milestone view ภายในแต่ละ phase ใ
 
 ## Suggested work order
 
-1. ทำ SST-001 ผ่าน delivery + commit ก่อน SST-002 ผ่าน delivery + commit แล้วหยุดที่ M0; SST-003 spec/production scaffold ต้องอนุมัติเพิ่มก่อนเริ่ม
+1. M0 ผ่าน delivery โดย commit SST-001 ก่อน SST-002 แล้ว; คำสั่งถัดไปอนุมัติเฉพาะ SST-003 [domain/privacy/storage spec](domain-storage-spec.md) ไม่มี production scaffold/SQLite/Keychain implementation; SST-004 เป็นต้นไปยังรออนุมัติ
 2. M1 split งานเป็น Electron/React typed shell/IPC + Signal Blue DS02–DS03 tokens/shared components/showcase, repository/secret adapters และ pure catalog/config rules; schema/protection decisions ต้องพร้อมก่อน persistence code
 3. M2 เริ่ม session contract → known-host policy → auth/prompts → real byte-stream/resize → flow control/cleanup ทุกขั้นต้องใช้ fixture จริงประกอบ ไม่มี terminal mock ที่ทำให้ถือว่าเชื่อม SSH ได้แล้ว
 4. M3 เติม user flows ที่ผ่าน domain/session contracts; บันทึก UI/behavior deviations อย่างชัดเจน
@@ -93,7 +93,7 @@ Fixtures ต้องเป็น project-owned local lab data ไม่ใช�
 | Installed artifact integrity mismatch | observations ใช้ได้เฉพาะ observed bytes; publisher equivalence unknown | keep limitations; หากต้อง exact parity ใช้ fresh supplied artifact + signatures ใน separate investigation |
 | Main/UI/background semantic coverage partial | อย่าอ้าง complete internal reconstruction | bounded static ledger + own contracts; focused evidence task 038 เมื่อต้องตอบ gap |
 | Native SSH/crypto API internals unknown | proprietary adapter reuse/compatibility เสี่ยง | independent library spike 002; cloud crypto review 036 |
-| Group/identity/empty/delete semantics ยังต้องตัดสิน | UX/data inconsistency | spec examples 003/007 ก่อน persistence/UI |
+| Group/identity/empty/delete contracts ต้องพิสูจน์ใน runtime | UX/data inconsistency | [spec examples 003](domain-storage-spec.md) → domain acceptance 007 ก่อน UI |
 | Secret store unavailable/key loss | connect/content access/recovery failures | explicit provider errors/protection matrix 006 |
 | SSH prompt/stream/cancel races | wrong-session replies/leaks/hangs | state/generation/ownership 008–015 |
 | SFTP partial writes/conflicts | corruption/ambiguous results | policies + real fixtures 021–022 |
@@ -105,6 +105,8 @@ Fixtures ต้องเป็น project-owned local lab data ไม่ใช�
 
 **2026-10-14 — user confirmation:** อนุมัติ pipeline ANALYZE → DESIGN → PLAN → IMPLEMENT → TEST → REVIEW → DELIVER และ commit **SST-001 ก่อนเริ่ม SST-002** แล้ว delivery + commit SST-002 ขอบเขต **M0 เท่านั้น** รวม DS01/T047 และ isolated fixture/spike/local unsigned arm64 package ใน SST-002 ไม่รวม SST-003–028, DS02–DS06, later tickets, push/external PR/publish/deploy
 
-Current: SST-001/T001/T047 และ SST-002/T002/T003 `DONE` หลัง checks/review/delivery ผ่านแล้ว; [execution record](../agent-runs/implementation-plan.md) บันทึก pipeline และ [backend report](../spikes/ssh-compatibility.md) เก็บ actual runtime evidence หยุดที่ M0 ก่อน production implementation
+**2026-10-15 — next-ticket confirmation:** ผู้ใช้สั่ง “ทำงาน ถัดไปต่อได้” หลัง M0 อนุมัติเฉพาะ **SST-003/T004–T005** documentation-only; [domain/storage spec](domain-storage-spec.md) อยู่ `DONE` ผ่าน independent TEST/REVIEW ห้ามเริ่ม SST-004/scaffold/real SQLite/Keychain จากคำสั่งนี้ และไม่มี authorization ใหม่สำหรับ commit/push
 
-Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 หยุดหลัง M0 delivery + second commit ก่อน production implementation ไม่ขออนุมัติซ้ำใน M0 ที่ได้รับอนุมัติแล้ว
+Current: SST-001/T001/T047 และ SST-002/T002/T003 `DONE`; [execution record](../agent-runs/implementation-plan.md#sst-003-execution-plan--2026-10-15) บันทึก scope/pipeline ถัดไป และ [backend report](../spikes/ssh-compatibility.md) เก็บ actual M0 runtime evidence
+
+Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 คำสั่งถัดไป supersedes stop condition เฉพาะ SST-003; SST-004–028/DS02–DS06 ยังรออนุมัติ ไม่ขออนุมัติซ้ำสำหรับ SST-003 ที่ได้รับอนุมัติแล้ว

@@ -1,6 +1,6 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติเฉพาะ M0 เมื่อ 2026-10-14.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป Production SST-003–028 ยังรออนุมัติ รายละเอียด architecture อื่นยังเป็น design proposal ไม่ใช่ production implementation
+**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-004–028 ยังรออนุมัติ รายละเอียด architecture อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
 ## Baseline / stack decision
 
@@ -60,7 +60,7 @@ flowchart TD
 | Module | Public responsibility | ซ่อนรายละเอียดอะไร |
 |---|---|---|
 | HostCatalog / ConfigResolver | CRUD/search และ effective config พร้อม provenance | persistence, hierarchy traversal, per-field inheritance |
-| SecretStore | store/get/update/delete ผ่าน opaque SecretRef | Keychain namespace/provider/errors, memory caching |
+| SecretStore | publish/read/retire ผ่าน immutable opaque SecretRef และ stable operation lookup | Keychain namespace/provider/errors, memory caching |
 | ConnectionService | connect/auth/cancel/close, state/error/prompt events | SSH engine, socket lifecycle, callbacks และ capability ownership |
 | TerminalSession | ordered input/output, resize, bounded flow control, dispose | transport channel, encoding framing และ buffers |
 | KnownHostPolicy | query/first-use/change/revoke decision | fingerprint representation และ persisted trust lookup |
@@ -73,25 +73,27 @@ flowchart TD
 
 ## Domain model ที่เสนอ
 
+Normative logical fields/defaults/constraints, ER, inheritance/delete impact และ storage lifecycle อยู่ใน [SST-003 domain/storage specification](domain-storage-spec.md); ตารางนี้เป็นภาพรวม ยังไม่มี runtime schema
+
 | Entity | Proposed fields / invariants |
 |---|---|
-| LocalVault | stable UUID, label, schemaVersion; MVP มีหนึ่ง vault ไม่ต้องมี account |
+| LocalVault | stable UUID, label, contentKeyRef; database-level schema version; MVP มีหนึ่ง vault ไม่ต้องมี account |
 | Group | id, parentId?, label, field overrides; parent เดียว, ไม่มี cycle, vault เดียวกัน |
-| Host | id, groupId?, label, address, tags, environment?, connection overrides, identityRef?; port 1–65535; environment เป็น display metadata |
-| Identity | id, label, username, auth preference, SecretRefs/keyRef; ใช้ร่วมได้หลาย hosts |
-| KeyMetadata | id, public key/fingerprint/type, secretRef?; private key/passphrase ไม่อยู่ใน metadata |
+| Host | id, groupId?, label, address, direct tag assignments, environment?, port/auth overrides; port 1–65535; environment เป็น display metadata |
+| Identity | id, label, username, exclusive password/key/keyboard-interactive method + typed SecretRefs/keyRef; ใช้ร่วมได้หลาย hosts เป็น atomic bundle |
+| KeyMetadata | id, label, public key/fingerprint/type, required privateKeyRef และ optional passphraseRef; private key/passphrase ไม่อยู่ใน metadata |
 | KnownHost | normalized endpoint(host+port), algorithm, key/fingerprint, firstAcceptedAt, lastVerifiedAt |
-| Snippet | id, label, body, tags; body อาจมี sensitive content ต้องกำหนด storage/privacy scope |
+| Snippet | id, label, mandatory authenticated bodyEnvelope, keyRef/protection version, direct tags; ไม่มี plaintext body/preview/search index |
 | TunnelRule | id, hostId, type=local, bindAddress=loopback, bindPort, destinationHost/Port |
 | Session | ephemeral id, host/config snapshot, state, channel capabilities; ไม่ persist auth prompts/passwords |
 | TransferJob | ephemeral id, session/file endpoints, bytes/total?, state, error; persistence ของ queue ไม่อยู่ใน MVP |
-| AppSettings | theme/font/scrollback preferences; validated bounds และ schemaVersion |
+| AppSettings | vault-scoped theme/font/scrollback allowlist พร้อม bounds/defaults; schema version อยู่ database |
 
-Persist metadata แบบ versioned/transactional; baseline ให้ OS Keychain เก็บ credentials และ encryption key ของ app-local encrypted sensitive content (เช่น snippet bodies) ผ่าน mature crypto/storage provider ไม่สร้าง cryptographic construction เอง SST-003/005 ต้องระบุ field protection matrix และ lock/recovery behavior ก่อน coding ข้อเสนอไม่ได้อ้างว่า SQLite เองเข้ารหัส database โดย default
+Persist metadata แบบ versioned/transactional; baseline ให้ OS Keychain เก็บ credentials และ encryption key ของ app-local encrypted sensitive content (เช่น snippet bodies) ผ่าน mature crypto/storage provider ไม่สร้าง cryptographic construction เอง [SST-003](domain-storage-spec.md) ระบุ field protection matrix และ lock/recovery/journal contracts; SST-005/006 ต้อง verify storage/OS Adapter และเลือก mature authenticated-protection provider ก่อน coding ที่พึ่งพา capability นั้น ข้อเสนอไม่ได้อ้างว่า SQLite เองเข้ารหัส database โดย default
 
-Group inheritance: resolve ทีละ field จาก host → nearest ancestor override → root → defaults ค่า override เป็น explicit discriminated states `inherit` หรือ `value` เพื่อแยก unset/empty ไม่ merge username/password ข้าม identity คนละชุด; identity/auth selection resolve เป็นหนึ่งหน่วย ย้าย group ตรวจ cycle และแสดง provenance เปลี่ยน parent กระทบ connections ครั้งใหม่; live session ใช้ config snapshot เดิม
+Group inheritance: resolve ทีละ field จาก host → nearest ancestor override → root → defaults port override เป็น `inherit|value` (default 22); auth override เป็น `inherit|value(identity)|clear` (default none) โดย clear หยุด traversal เพื่อแยก unset/empty ไม่ merge username/password ข้าม identity คนละชุด; identity/auth selection resolve เป็นหนึ่งหน่วย ย้าย group ตรวจ cycle และแสดง provenance เปลี่ยน parent กระทบ connections ครั้งใหม่; live session ใช้ config snapshot เดิม
 
-Delete group ใช้ explicit move/delete-children choice; delete referenced identity ต้องรายงาน affected hosts และให้ detach/reassign ก่อนลบ ไม่ cascade secret โดยเงียบ KnownHost เป็น endpoint-scoped record ของ vault ไม่ผูก label ของ Host จึงป้องกัน duplicate catalog entries แสดง trust ต่างกัน
+Delete group ใช้ explicit move/delete-subtree choice พร้อม inherited impact preview; delete referenced identity ต้องรายงาน direct/inherited affected hosts และให้ detach-to-clear/reassign ก่อนลบ ไม่ cascade secret โดยเงียบ KnownHost เป็น endpoint-scoped record ของ vault ไม่ผูก label ของ Host จึงป้องกัน duplicate catalog entries แสดง trust ต่างกัน
 
 ## Session contract และ lifecycle
 
@@ -121,7 +123,7 @@ Command/event design ที่ต้องปิดรายละเอีย�
 
 - Commands: connect(hostId, requestId), answerPrompt(promptId, response), cancel(connectionId), openTerminal(connectionId), write(sessionId, bytes), resize(sessionId, columns, rows), close(sessionId)
 - Events: StateChanged, PromptRequested, Output(chunk, sequence), RemoteExit, Error(code, sanitized context), Closed; ใช้ connection generation ปฏิเสธ late events หลัง cancel/reconnect
-- Error taxonomy: invalid-config, host-key-untrusted/changed, auth-denied, prompt-cancelled, timeout, dns/network, channel-open-failed, subsystem-unavailable, storage-denied, resource-limit
+- Error taxonomy: invalid-config, host-key-untrusted/changed, auth-denied, prompt-cancelled, timeout, dns/network, channel-open-failed, subsystem-unavailable, resource-limit; storage preserves typed missing/locked/denied/unavailable/unknown/error outcomes and retry rules from the [SecretStore contract](domain-storage-spec.md#lock-missing-keys-and-backup), including ambiguous mutation reconciliation rather than blind retry
 - Backpressure: bounded queue, pause/resume หรือ byte acknowledgements, preserve stream order และไม่มี silent drop หากเกิน limit ต้องมี explicit outcome
 - `close`/`dispose` idempotent; prompt cancellation/timeout คืนทรัพยากร; app quit ปิด sessions/jobs/listeners; lifecycle test ตรวจ leaked workers/handles
 - MVP reconnect เป็น manual สร้าง transport/channel ใหม่ ไม่ replay commands/input ไม่รับประกัน remote process continuity

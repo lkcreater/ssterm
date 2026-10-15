@@ -1,8 +1,8 @@
 # Tickets สำหรับ ssterm
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-004–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-003–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-004–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS06 ยังรออนุมัติ
 
@@ -79,11 +79,13 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 ### SST-003 — Domain / privacy / storage specification
 
-**Outcome:** versioned entity schema และ protection matrix. **Evidence:** S04, W02/W03/W10; schema ใหม่เป็น Proposed.
+**Status:** `DONE` — ผู้ใช้อนุมัติเฉพาะ next ticket เมื่อ 2026-10-15; [domain/storage spec](domain-storage-spec.md) ครอบคลุม T004–T005 ผ่าน independent TEST/REVIEW; ไม่รวม schema/code/Keychain implementation หรือ commit/push
+
+**Outcome:** logical versioned entity dictionary/relations และ protection matrix; physical schema/provider acceptance อยู่ SST-005/006. **Evidence:** S04, W02/W03/W10; schema ใหม่เป็น Proposed.
 
 **Acceptance:** ระบุ relations/IDs/delete rules/inheritance/empty semantics; classify metadata/credentials/snippet bodies/settings; ระบุ lock/key loss/backup/recovery/migration และไม่มี plaintext private keys/passwords ใน metadata. Sync fields ไม่กลายเป็น MVP obligation.
 
-**Validation:** schema walkthrough กับ create/edit/delete/inherit examples. **Tasks:** ER diagram/data dictionary; field protection matrix; migration/version strategy.
+**Validation:** [deterministic walkthroughs](domain-storage-spec.md#deterministic-walkthroughs--future-acceptance-oracles) ครอบคลุม create/edit/delete/inherit, ambiguous secret writes, lock/key loss/backup และ migration failures; documentation validation ไม่ใช่ runtime proof. **Tasks:** ER diagram/data dictionary; field protection matrix; migration/version strategy.
 
 **Design metadata:** เพิ่ม optional `Host.environment` สำหรับ target context/PROD label ตาม design spec; กำหนด validation/default unspecified และไม่ใช้ display label เป็น authorization policy
 
@@ -103,7 +105,7 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 **Outcome:** catalog/settings persistence ที่เชื่อถือได้. **Evidence:** S04; independent storage design.
 
-**Acceptance:** writes transactional, durable across restart; schemaVersion/migration rollback or recoverable failure; handle corrupt/unwritable storage โดยไม่ silent-reset ข้อมูล; FK/unique constraints ตรง domain spec.
+**Acceptance:** implementation ตาม [domain/storage contracts](domain-storage-spec.md); writes transactional, durable across restart; schemaVersion/migration rollback or recoverable failure; handle corrupt/unwritable storage โดยไม่ silent-reset ข้อมูล; FK/unique constraints ตรง domain spec.
 
 **Validation:** temp database fixtures สำหรับ CRUD/restart/migration failure. **Tasks:** driver/repository adapters; migration runner; diagnostic/recovery paths.
 
@@ -111,7 +113,7 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 **Outcome:** SecretRef adapter และ sensitive-content protection. **Evidence:** N02, S04, N-T03.
 
-**Acceptance:** credential CRUD อยู่ใน project Keychain namespace; metadata เก็บ references; missing/denied/locked provider ส่ง typed outcomes; transient input/passphrase cache มี lifetime และ app-local encrypted content ใช้ provider ตาม ADR; secret/key loss ไม่ทำ silent replacement.
+**Acceptance:** ตาม [protection/journal/recovery contracts](domain-storage-spec.md) เลือกและ verify mature authenticated-protection provider (no custom crypto/plaintext fallback) และ stable operationId/ref lookup ก่อน retry ambiguous writes; credential CRUD อยู่ใน project Keychain namespace; metadata เก็บ references; missing/denied/locked provider ส่ง typed outcomes; transient input/passphrase cache มี lifetime และ app-local encrypted content ใช้ provider ตาม ADR; secret/key loss ไม่ทำ silent replacement.
 
 **Validation:** memory provider contract tests และ macOS fixture namespace integration; metadata/log inspection ไม่มี fixture secret. **Tasks:** secure provider; protection implementation; redaction/cache/cleanup.
 
@@ -255,7 +257,7 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 **Outcome:** labeled reusable script เก็บใน local vault. **Evidence:** S04/W07.
 
-**Acceptance:** create/edit/delete/search with restart persistence; body protection ตาม SST-003/006; multiline preserved; ไม่มี implicit run เมื่อ save/edit; invalid/empty input feedback.
+**Acceptance:** create/edit/delete/search with restart persistence; body protection ตาม SST-003/006; multiline preserved; ไม่มี implicit run เมื่อ save/edit; invalid input feedback, empty body save ได้แบบ encrypted แต่ Paste/Run ว่างไม่ dispatch ตาม spec.
 
 **Validation:** round-trip multiline/Unicode + sensitive-content storage check. **Tasks:** repository; editor/list; encryption integration.
 

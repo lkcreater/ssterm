@@ -4,7 +4,9 @@
 
 ## Context และ authorization
 
-ผู้ใช้เลือก Electron + React + TypeScript + shadcn/ui + Tailwind CSS แล้ว และอนุมัติ **M0 เท่านั้น**: SST-001 ผ่าน pipeline ถึง delivery และ commit ก่อนเริ่ม SST-002 แล้ว delivery และ commit อีกครั้ง ไม่อนุมัติ SST-003–028, push, external PR, publish หรือ deploy ดู [execution plan](../agent-runs/implementation-plan.md) และ [product scope](../termius/implementation-plan.md)
+ณ วันที่บันทึก ADR (2026-10-14) ผู้ใช้เลือก Electron + React + TypeScript + shadcn/ui + Tailwind CSS แล้ว และอนุมัติ **M0 เท่านั้น**: SST-001 ผ่าน pipeline ถึง delivery และ commit ก่อนเริ่ม SST-002 แล้ว delivery และ commit อีกครั้ง ไม่อนุมัติ SST-003–028, push, external PR, publish หรือ deploy ดู [execution plan](../agent-runs/implementation-plan.md) และ [product scope](../termius/implementation-plan.md)
+
+**Later scope note (2026-10-15):** คำสั่งถัดไปอนุมัติเฉพาะ SST-003/T004–T005 documentation-only [domain/storage specification](../termius/domain-storage-spec.md); supersedes M0 stop condition เฉพาะ ticket นี้ SST-004–028 ยังรออนุมัติ ไม่มี production scaffold/SQLite/Keychain หรือ authorization ใหม่สำหรับ commit/push การตัดสินใจ ADR เดิมคงเดิม
 
 SST-001 เป็นเอกสาร ไม่มี application manifest/scaffold, installed repo dependencies, UI/assets หรือ fixture code การเลือกด้านล่างเป็นข้อกำหนดของ ssterm ไม่ใช่ข้อค้นพบภายใน Termius และไม่พิสูจน์ runtime compatibility
 

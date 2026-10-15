@@ -4,7 +4,7 @@
 
 ssterm is a local-first SSH desktop workspace for developers, DevOps engineers, and system administrators. The proposed MVP targets macOS arm64, works without an account, and includes hosts/groups/tags/identities, SSH terminals with tabs/splits, local-to-remote SFTP, active-session snippets, and local port forwarding.
 
-The repository contains planning documents, reference artwork, installed agent skills, and an isolated backend spike. The user authorized M0 only: SST-001 completed and committed as `ad9ed51`; SST-002 completed all pipeline stages on 2026-10-15 with real Node and packaged Electron fixture checks. SST-003–028 remain **AWAITING_IMPLEMENT_CONFIRMATION**. Production application scaffolding/UI/services do not exist; runnable spike commands are under `spikes/ssh-compat`. See [SST-002 evidence](docs/spikes/ssh-compatibility.md).
+The repository contains planning documents, reference artwork, installed agent skills, and an isolated backend spike. M0 is complete: SST-001 completed and committed as `ad9ed51`; SST-002 completed and committed as `ace9601` on 2026-10-15 with real Node and packaged Electron fixture checks. The later user instruction authorized SST-003/T004–T005, whose documentation-only domain/privacy/storage specification is **DONE** after independent TEST/REVIEW. SST-004–028 remain **AWAITING_IMPLEMENT_CONFIRMATION**. Production application scaffolding/UI/services do not exist; runnable spike commands are under `spikes/ssh-compat`. See [SST-002 evidence](docs/spikes/ssh-compatibility.md).
 
 - Documentation, planning, skill installation, branding updates, and commits do not imply permission to start application implementation.
 - An explicit later instruction to implement a feature or proceed with the MVP authorizes that scope. Record the confirmation in the implementation plan and continue without repeatedly requesting the same approval.
@@ -16,7 +16,7 @@ The repository contains planning documents, reference artwork, installed agent s
 |---|---|
 | Product brief | [docs/intro.md](docs/intro.md) |
 | Investigation index and evidence limits | [docs/termius/README.md](docs/termius/README.md) |
-| Architecture, domain, and lifecycle contracts | [proposed-architecture.md](docs/termius/proposed-architecture.md) |
+| Architecture, domain, and lifecycle contracts | [proposed-architecture.md](docs/termius/proposed-architecture.md), [domain-storage-spec.md](docs/termius/domain-storage-spec.md) |
 | Implementation scope, milestones, and confirmation | [implementation-plan.md](docs/termius/implementation-plan.md) |
 | Acceptance criteria and task dependencies | [tickets.md](docs/termius/tickets.md), [tasks.md](docs/termius/tasks.md) |
 | Signal Blue visual specification | [design-system.md](docs/termius/design-system.md) |
@@ -39,7 +39,7 @@ User instructions take precedence over repository guidance. Keep scope, architec
 
 - Share known-host/auth policy across terminal, SFTP, and tunnels. Unknown keys require an explicit trust decision; changed keys block connection until deliberate replacement. Never auto-accept host keys.
 - Keep private keys/passwords/passphrases out of metadata, persistent React state, logs, screenshots, telemetry, and error messages. Use opaque secret references and the approved OS secret-store adapter; define transient prompt/cache lifetimes.
-- Do not invent cryptography or claim SQLite encrypts data by default. Implement sensitive-field protection and key loss/recovery behavior according to the storage ADR.
+- Do not invent cryptography or claim SQLite encrypts data by default. Follow [domain/storage contracts](docs/termius/domain-storage-spec.md): mandatory encrypted snippet bodies, explicit lock/key-loss/recovery, and non-atomic metadata/OS-secret journal reconciliation. Select and verify the mature authenticated-protection provider in SST-006; no plaintext fallback.
 - Use project-owned lab hosts, credentials, keys, databases, and Keychain namespaces for tests. Do not read Termius profiles/secrets or connect to real user/production systems merely to validate a feature.
 - Make SFTP overwrite/cancel/partial-file behavior explicit. Local tunnels default to loopback and close listeners/sockets on stop, failure, and app quit.
 - Keep snippet Paste and Run distinct, capture the target when the action is invoked, and do not claim that sending bytes proves remote command success.

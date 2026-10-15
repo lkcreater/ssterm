@@ -1,6 +1,6 @@
-# M0 execution plan — SST-001 ก่อน SST-002
+# Execution record — M0 และ SST-003
 
-**วันที่:** 2026-10-14 · **Current ticket:** SST-002 / T002–T003 (completed M0) · **PLAN:** DONE
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-003 / T004–T005 · **Pipeline:** ANALYZE → DESIGN → PLAN → IMPLEMENT → TEST → REVIEW → DELIVER DONE. M0 sections below are historical; see [current execution plan](#sst-003-execution-plan--2026-10-15).
 
 ## Authorization / acceptance
 
@@ -120,3 +120,34 @@ SST-001 completed all stages and committed `ad9ed51` before SST-002 began. SST-0
 Actual checks: clean lockfile `npm ci --omit=optional --ignore-scripts` exit 0, explicit pinned runtime preparation, `npm run check` PASS, `npm test` PASS (4 Node tests: 19 real probes + 3 regressions), `npm run package:mac` PASS, `npm run test:packaged` PASS (19 real probes). Independent tester confirmed the corrected sources/package and no remaining fixture key directories/containers; reviewer re-review found no remaining High/Medium. Evidence and operational limits: [backend report](../spikes/ssh-compatibility.md); [delivery](sst-002-delivery.md). No production UI, real Keychain, external PR, push or deployment.
 
 Coder previously hit a usage limit; work resumed on 2026-10-15 at 08:56 Asia/Bangkok after the requested 02:05 window. No limit prevented final runtime checks. Stop after M0 commit; SST-003 onward needs new scope authorization.
+
+## SST-003 execution plan — 2026-10-15
+
+**Confirmation:** ผู้ใช้สั่ง “ทำงาน ถัดไปต่อได้” หลัง M0; อนุมัติเฉพาะ next ticket **SST-003 / T004–T005**. Record นี้ supersedes M0 stop condition สำหรับ SST-003 เท่านั้น; SST-004–028/DS02–DS06 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`. ไม่มี authorization ใหม่ให้ commit/push หรือเริ่ม app scaffold/real database/Keychain operations.
+**Scope:** documentation-only domain/privacy/storage specification; ANALYZE และ DESIGN DONE. คง Electron/React/shadcn/Tailwind และ ssh2 decision เดิม; adapters/runtime acceptance อยู่ SST-005/006. ไม่มี DB/API/frontend implementation หรือ backend spike changes.
+
+| Order / stage | Dependency / owner / files / acceptance |
+|---|---|
+| 1 PLAN | DESIGN; planner แก้เฉพาะ `docs/agent-runs/implementation-plan.md` record นี้; DONE |
+| 2 IMPLEMENT T004 | PLAN; coder สร้าง `docs/termius/domain-storage-spec.md`: ER/data dictionary, IDs/relations/constraints, inheritance/empty/delete rules, field protection matrix และ create/edit/delete/inherit walkthroughs; optional illustrative JSON ใต้ `docs/termius/` ต้องไม่เป็น runtime fixtures |
+| 3 IMPLEMENT T005 | T004; coder ต่อไฟล์เดียวกัน: lock/key loss/recovery/backup, SecretRef journal ordering, versioned migration strategy/failure walkthroughs และ later implementation gates |
+| 4 Consistency | T004–T005; coder sequentially sync `AGENTS.md`, `docs/README.md`, `docs/termius/{README,proposed-architecture,implementation-plan,tickets,tasks,implementation-skills}.md` และ narrow later-scope note ใน `docs/adr/0001-mvp-platform-stack.md` (ไม่มี root `README.md`); ลิงก์ spec/authorization/status ตรงกัน; mark complete หลัง gates ผ่านจริง |
+| 5 TEST → REVIEW | IMPLEMENT; independent tester/reviewer อ่านแบบ read-only; root จัด coder แก้ findings sequentially; unresolved critical/high block completion |
+| 6 DELIVER | TEST/REVIEW pass; root ปิดเฉพาะ SST-003/T004/T005 และบันทึกผลจริง/limitations; ไม่มี commit/push/external PR |
+
+**Domain contracts:** stable vault-scoped UUIDs/revisions + composite FKs; normalized Tag unique และ KnownHost endpoint unique. Port ใช้ inherit/value, default 22; auth ใช้ inherit/value(identity)/clear แบบ atomic bundle, default none. Address เป็น direct required; environment nullable และ tags เป็น direct assignments. Identity delete preview ครอบคลุม direct/inherited impacts และ explicit detach-to-clear/reassign; key delete ถูก restrict เมื่ออ้างอิง; host delete cascade tunnel rules แต่ retain trust. Group move/delete ต้องแสดง subtree choices; active connection ใช้ captured snapshot และไม่ retarget.
+**Protection:** labels/endpoints/usernames/tags/environment/public keys/settings เป็น plaintext metadata ที่อาจ sensitive; ไม่อ้าง whole-database encryption. Password/private key/passphrase อยู่ Keychain หลัง opaque immutable SecretRefs; snippet body ต้อง encrypted ด้วย local key ใน Keychain. AEAD provider/algorithm contract เลือกและพิสูจน์ใน SST-006; ห้าม custom crypto/plaintext fallback.
+**Lifecycle:** app/OS lock cancel auth/transfers/snippet actions, close sessions/SFTP/tunnels, invalidate generations และ purge decrypted caches; explicit unlock/reconnect, ไม่ auto-resume. Secret operation journal เก็บ metadata เท่านั้น: staged create → OS write → SQL publish; replacement swap ref แล้ว queue old delete; delete removes references + queues OS delete; ไม่อ้าง cross-store atomic transaction.
+**Recovery:** consistent DB backup มี ciphertext และไม่มี secret export จึงไม่ portable โดยอัตโนมัติ; key loss ต้องแจ้ง unrecoverable protected fields โดยไม่ silent regeneration. Migration preflight/backup + transaction; corrupt/newer schema fail closed โดยไม่ reset. Future seams อยู่ MetadataRepository/SecretStore ไม่ expose storage details สู่ React.
+**Validation commands (repo root):** `git status --short`, `git diff --check`, `git diff --stat`; local Markdown-target checker ที่บันทึกข้างบนรวม new/untracked files; `python3 -m json.tool skills-lock.json > /dev/null` และ `python3 -m json.tool` สำหรับ illustrative JSON ทุกไฟล์ที่เพิ่ม. ไม่มี software test/build ที่จำเป็นสำหรับ docs-only diff นี้; backend results เดิมไม่ใช่ SST-003 runtime proof.
+**Consistency checks:** `rg -n 'SST-003|SST-004|T004|T005|AWAITING_IMPLEMENT_CONFIRMATION' AGENTS.md docs/README.md docs/termius docs/agent-runs/implementation-plan.md`; tester ตรวจ 38 unique ticket IDs / 52 unique task IDs, task checkboxes/status และ scope/history แยกจาก current authorization. Review walkthrough outcomes กับ constraints/protection/lock/recovery/migration โดยตรง; JSON parse ไม่พิสูจน์ domain behavior.
+**Rollback / retry:** revert เฉพาะ task-owned documentation diff เมื่อจำเป็นและ preserve user changes; ไม่ reset/clean หรือแก้ `.codex`/installed skills. Failure เดิมสูงสุด 3 attempts เมื่อไม่มี evidence ใหม่ แล้วเก็บ diagnostics/resolve blocker; ไม่มี database/secret rollback เพราะไม่แตะ runtime data.
+**SST-003 ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE. Ownership sequential; final record below supersedes earlier stage snapshots. No commit/push in this scope.
+
+**SST-003 coder handoff (2026-10-15):** เพิ่ม [domain/storage spec](../termius/domain-storage-spec.md) และ sync current authorization/index/status links ตาม scope; ไม่มี code/runtime/Keychain operation หรือ commit/push. Coder checks: `git diff --check` PASS; JSON parse `skills-lock.json` และ `docs/termius/evidence/artifact-identity.json` PASS; local Markdown target checker รวม new file ตรวจ 11 ไฟล์ missing 0; inventory 38 unique tickets/52 unique tasks PASS; SST-003 `IN_PROGRESS`, T004/T005 unchecked รอ independent TEST/REVIEW. Provider/algorithm/native packaging/OS lookup/encryption/migration behaviors ยังคง future implementation gates ไม่ใช่ runtime evidence.
+
+### Final SST-003 record — 2026-10-15
+
+SST-003/T004–T005 `DONE`; [delivery](sst-003-delivery.md) สรุป scope/evidence/limitations. Independent TEST พบ table delimiters และ stale current-ticket heading; root แก้และ tester ตรวจซ้ำผ่าน. Independent REVIEW พบ Medium เรื่อง typed provider outcomes; root กำหนด vocabulary/retry/reconciliation เดียวกันและ reviewer ตรวจซ้ำผ่าน ไม่มี actionable finding ค้าง. Root ปรับ ER credential ownership และตรวจ optional-cardinality notation กับเอกสาร Mermaid ทางการ; ไม่ได้ render diagram หรือทดสอบ runtime.
+
+Final root checks PASS: 12 changed/new Markdown files, 137 local links ไม่มี target หาย, JSON parse 2 ไฟล์, 38 unique ticket IDs/index entries และ 52 unique task IDs; checked เฉพาะ T001/T002/T003/T004/T005/T047. Spec มี 63 table rows คอลัมน์สอดคล้อง, 19 ER edges ผ่าน static syntax check และ 15 paper walkthroughs; `git diff --check` ผ่าน. Checks เหล่านี้เป็น documentation validation ไม่ใช่ SQL/Keychain/crypto/lock runtime proof. M0 commits ยังคง `ad9ed51` และ `ace9601`; รอบ SST-003 ไม่มี commit/push. SST-004–028/DS02–DS06 ยังรออนุมัติ.

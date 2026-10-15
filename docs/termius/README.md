@@ -1,10 +1,10 @@
 # Termius → ssterm: investigation และ implementation backlog
 
-**วันที่:** 2026-10-14; M0 update 2026-10-15 · **เป้าหมาย investigation:** Termius desktop 9.43.1, macOS arm64 · **สถานะ:** M0 complete; SST-001 และ SST-002 `DONE`
+**วันที่:** 2026-10-14; M0 update 2026-10-15 · **เป้าหมาย investigation:** Termius desktop 9.43.1, macOS arm64 · **สถานะ:** M0 complete; SST-003/T004–T005 documentation-only `DONE`
 
 เริ่มจากการวิเคราะห์ Termius และจัด task/ticket/plan ปัจจุบัน M0 มี isolated SSH/backend spike และ runtime evidence แล้ว ส่วน production macOS desktop แบบ local-first/account-free ยังต้องดำเนิน SST-003 เป็นต้นไปตามขอบเขตที่ผู้ใช้อนุมัติ ดู [ADR 0001](../adr/0001-mvp-platform-stack.md)
 
-**UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ดู [stack decision](proposed-architecture.md#baseline--stack-decision) การเลือก stack และการอนุมัติ M0 เป็นคนละเหตุการณ์; SST-003–028 ยังรออนุมัติ
+**UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ดู [stack decision](proposed-architecture.md#baseline--stack-decision) การเลือก stack และการอนุมัติ M0 เป็นคนละเหตุการณ์; SST-003 ได้รับอนุมัติเฉพาะ domain/privacy/storage specification; SST-004–028 ยังรออนุมัติ
 
 **Visual spec สำหรับวางแผน:** [Signal Blue v1.0](design-system.md) — dark-first, Inter + JetBrains Mono, terminal-first layout และแยก blue focus จาก operational status ดู [design implementation plan](design-system-implementation.md); อนุมัติเฉพาะ DS01 ใน SST-001; งาน DS02–DS06 ยังรออนุมัติ
 
@@ -16,6 +16,7 @@
 | [official-features.md](official-features.md) | ฟีเจอร์และ workflow จาก official docs พร้อม sources W01–W12 |
 | [native-boundary.md](native-boundary.md) | native wrappers, linkage, symbols, ข้อจำกัด และ input สำหรับ backlog |
 | [proposed-architecture.md](proposed-architecture.md) | architecture และ contracts ที่เสนอสำหรับ ssterm; แยกจาก Termius implementation |
+| [domain-storage-spec.md](domain-storage-spec.md) | SST-003: typed dictionary/relations/inheritance/delete/protection/lock/recovery และ journal/migration contracts; ไม่ใช่ runtime implementation |
 | [design-system.md](design-system.md) | Signal Blue brand/UI specification, semantic colors, typography, layout และ release quality checklist |
 | [Logo & app icon](../logo/README.md) | supplied SST artwork, brand lockup/icon/presentation usage, ขนาดไฟล์ และ production export/QA handoff |
 | [design-system-implementation.md](design-system-implementation.md) | แผน DS01–DS06, token/component contracts, task mapping และเกณฑ์ตรวจรับก่อนพัฒนา |
@@ -23,7 +24,7 @@
 | [tasks.md](tasks.md) | checklist งานย่อยที่เชื่อม ticket และสถานะตาม scoped authorization |
 | [implementation-plan.md](implementation-plan.md) | phases, gates, ลำดับงาน, effort ranges และ scope confirmation |
 | [ADR 0001](../adr/0001-mvp-platform-stack.md) | platform/stack/pins/layout/Keychain/packaging/design decisions และ evidence limits |
-| [M0 execution plan](../agent-runs/implementation-plan.md) | authorization, stage ownership, validation และ delivery/commit ledger |
+| [Execution plan](../agent-runs/implementation-plan.md) | authorization, stage ownership, validation และ delivery/commit ledger |
 | [implementation-skills.md](implementation-skills.md) | shortlist skills สำหรับ React/Electron/shadcn/Tailwind/testing พร้อม sources, quality notes และคำสั่งติดตั้ง |
 | [evidence/README.md](evidence/README.md) | วิธีตรวจสอบ artifact, REA Evidence และ bounded shell observations |
 
@@ -43,6 +44,6 @@ REA วิเคราะห์ source ที่เลือก 10 รายก�
 
 ## Scoped confirmation
 
-ผู้ใช้อนุมัติเฉพาะ M0 และ commit ทีละงาน: SST-001 ส่งมอบ/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 ผ่าน Node/packaged checks และ delivery แล้ว ดู [backend result](../spikes/ssh-compatibility.md) และ [execution record](../agent-runs/implementation-plan.md) งาน production SST-003–028/DS02–DS06 ยังรออนุมัติ
+ผู้ใช้อนุมัติ M0 และ commit ทีละงาน: SST-001 ส่งมอบ/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 ผ่าน Node/packaged checks และ delivery แล้ว ดู [backend result](../spikes/ssh-compatibility.md) และ [execution record](../agent-runs/implementation-plan.md) คำสั่งถัดไป “ทำงาน ถัดไปต่อได้” อนุมัติเฉพาะ SST-003/T004–T005 documentation-only; [spec](domain-storage-spec.md) อยู่ `DONE` ผ่าน independent TEST/REVIEW ส่วน SST-004–028/DS02–DS06 ยังรออนุมัติ
 
-SST-003–028/DS02–DS06 ยังรออนุมัติ; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0
+SST-004–028/DS02–DS06 ยังรออนุมัติ; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0

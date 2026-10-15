@@ -1,6 +1,6 @@
 # Task checklist
 
-**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว Production SST-003–028/DS02–DS06 ยังรออนุมัติ
+**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-004–028/DS02–DS06 ยังรออนุมัติ
 
 ## งานเตรียมการที่ทำแล้ว
 
@@ -24,8 +24,8 @@
 
 ## M1 — Foundation
 
-- [ ] **T004 / SST-003:** data dictionary/relations/inherit/delete rules และ field protection matrix
-- [ ] **T005 / SST-003:** lock/key loss/recovery/backup/schema migration semantics
+- [x] **T004 / SST-003:** data dictionary/relations/inherit/delete rules และ field protection matrix — `DONE`; [spec](domain-storage-spec.md), ผ่าน independent TEST/REVIEW
+- [x] **T005 / SST-003:** lock/key loss/recovery/backup/schema migration และ non-atomic journal semantics — `DONE`; [spec](domain-storage-spec.md), ผ่าน independent TEST/REVIEW
 - [ ] **T006 / SST-004:** bootstrap Electron + React/TypeScript renderer, shadcn/ui components, Tailwind CSS/theme tokens และ narrow typed command/events หลัง confirm
 - [ ] **T007 / SST-004:** IPC validation/sender ownership/CSP/navigation/URL policy
 - [ ] **T008 / SST-005:** transactional repository, indexes, versioned migrations และ storage failure handling
@@ -96,6 +96,8 @@
 
 ## Task bookkeeping
 
-Current owner: root สำหรับ M0 delivery/commit; [ADR 0001](../adr/0001-mvp-platform-stack.md) + [execution ledger](../agent-runs/implementation-plan.md) เป็น evidence/handoff T001/T047 done หลัง acceptance/TEST/REVIEW/DELIVER ผ่าน เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement
+Current owner: root สำหรับ SST-003 delivery; T004/T005 ปิดหลัง tester/reviewer ตรวจอิสระผ่าน; ไม่มี commit/push scope ใหม่; [ADR 0001](../adr/0001-mvp-platform-stack.md) + [execution ledger](../agent-runs/implementation-plan.md) เป็น evidence/handoff T001/T047 done หลัง acceptance/TEST/REVIEW/DELIVER ผ่าน เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement
 
 T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production implementation tasks ยังไม่ถูกติ๊ก
+
+T004/T005 completion evidence: [domain/storage specification](domain-storage-spec.md) และ [SST-003 delivery](../agent-runs/sst-003-delivery.md); specification walkthroughs ไม่ใช่ runtime acceptance ของ SST-005/006.
