@@ -6,8 +6,10 @@ import { APPLICATION_ID, IDENTITY, initialize, SCHEMA_VERSION } from './schema.t
 import { failure, fail, success } from './errors.ts';
 import { applyChanges, integer, keys, validateGraph } from './validation.ts';
 import { readSnapshot, reserveNewIds, writeSnapshot } from './records.ts';
-import { createBackup, reconciled } from './backup.ts';
+import { createBackup } from './backup.ts';
+import { ENVELOPE_VERSION, PROTECTION_FORMAT } from './protection.ts';
 import { privateStore, writable } from './files.ts';
+export { seal, open, ProtectionFault, PROTECTION_FORMAT, ENVELOPE_VERSION, CONTENT_KEY_BYTES, MAX_BODY } from './protection.ts';
 export type { MetadataRepository, MetadataSnapshot, MetadataChange, StoreResult, StorageErrorCode, BackupManifest } from '@ssterm/domain';
 function foreignKeys(db: DatabaseSync): void {
   db.exec('PRAGMA foreign_keys=ON');
@@ -25,14 +27,14 @@ function preflight(db: DatabaseSync): void {
     fail('foreign-database');
   }
   if (manifest.length !== 1 || manifest[0]?.singleton !== 1 || manifest[0]?.identity !== IDENTITY) fail('foreign-database');
-  reconciled(db);
   let snapshot;
   try {
     snapshot = readSnapshot(db);
   } catch {
     fail('corrupt');
   }
-  if (snapshot.vault.protectionFormat !== null || snapshot.vault.contentKeyRef !== null || snapshot.snippets.length || snapshot.secretRefs.length || snapshot.keys.length) fail('unsupported-protection');
+  // Pending journal rows are opened for reconciliation; unknown protection formats still fail closed.
+  if (![null, PROTECTION_FORMAT].includes(snapshot.vault.protectionFormat) || snapshot.snippets.some(row => row.protectionFormat !== PROTECTION_FORMAT || row.envelopeVersion !== ENVELOPE_VERSION)) fail('unsupported-protection');
   try {
     validateGraph(snapshot);
   } catch {
@@ -75,7 +77,6 @@ class Repository implements MetadataRepository {
       if (!Array.isArray(request.changes) || request.changes.length < 1 || request.changes.length > 1000) fail('invalid-request');
       this.db.exec('BEGIN IMMEDIATE');
       transaction = true;
-      reconciled(this.db);
       const before = readSnapshot(this.db);
       if (before.catalogRevision !== request.expectedCatalogRevision) fail('conflict');
       const after = applyChanges(before, request.changes);

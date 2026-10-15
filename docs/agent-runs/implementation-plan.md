@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-005
+# Execution record — M0 ถึง SST-006
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-005/T008 `DONE` ผ่าน ANALYZE → DESIGN → PLAN → IMPLEMENT → TEST → REVIEW → DELIVER. SST-004 committed `d6e1822`; SST-005 not committed. Earlier sections are historical; see [current execution plan](#sst-005-execution-plan--2026-10-15).
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-005/T008 `DONE` ผ่าน ANALYZE → DESIGN → PLAN → IMPLEMENT → TEST → REVIEW → DELIVER. SST-004 committed `d6e1822`; SST-005 committed `e9e9097`. **Latest completed ticket:** SST-006/T009–T010 `DONE` (not committed). Earlier sections are historical; see [current execution plan](#sst-006-execution-plan--2026-10-15).
 
 ## Authorization / acceptance
 
@@ -227,3 +227,35 @@ Actual final checks PASS: clean lockfile npm ci --ignore-scripts, explicit runti
 Migration validation uses synthetic future steps; production supports v1 only. Source permissions are a POSIX mode gate, not an ACL audit. Node 24.11.1 host warns that SQLite is experimental; Electron 44.7.2 embedded Node 24.21.0 and packaged CRUD/backup/reopen work. No real Keychain, user/Termius data or SSH access; no SST-005 commit/push/deployment. T009/SST-006 and subsequent tickets remain awaiting authorization.
 
 Final documentation/cleanup PASS: 16 changed/new Markdown files, 195 local links without missing targets, 5 JSON files, 38 unique tickets/52 unique tasks; only T001–T008 and T047–T049 checked. Exact direct pins and new-file whitespace pass; final E2E reports have zero skipped/flaky/unexpected tests and both inline SQLite receipts confirm privatePermissions=true. Task-owned temporary profiles/database staging/probe directories and Vite listener are gone; git diff --check passes.
+
+## SST-006 execution plan — 2026-10-15
+
+**Authorization:** หลังรายงานสถานะ ผู้ใช้สั่ง “เริ่มทำต่อได้”; SST-005 committed `e9e9097` แล้ว จึงเริ่มเฉพาะ **SST-006 / T009–T010** ผ่าน pipeline. ไม่อนุมัติ commit/push/external PR หรือ SST-007+/DS04–DS06. ANALYZE/DESIGN DONE; PLAN นี้เป็น gate ก่อน application coding.
+
+**ANALYZE (root, actual evidence):** schema v1 มี `secret_ref`, `secret_operation`, `snippet`, `key_metadata`, `local_vault.contentKeyRef/protectionFormat` แล้ว แต่ Adapter ปฏิเสธ protected/journal mutations (`validation.ts` type filter) และ open/migration fail-closed เมื่อมี protected content/pending journal. Root probe ใน scratchpad ติดตั้ง `@napi-rs/keyring@2.1.1` (MIT, prebuilt `keyring-darwin-arm64`) และรันจริงบน host macOS arm64 ใน namespace ทิ้ง `dev.ssterm.test.probe-<pid>`: missing `getSecret` → `null`, missing delete → `false`, binary `setSecret`/`getSecret` round-trip, `findCredentialsAsync(service)` คืน account, delete → `true` แล้ว `null`, 300 KB secret ผ่าน, เหลือ 0 items. Errors เป็น `Error{code:'GenericFailure', message}`; locked/denied แยกได้เฉพาะจากข้อความ OS ที่ adapter ต้องพิสูจน์ ไม่ fabricate.
+
+**DESIGN decisions:**
+- **Credential store:** `@napi-rs/keyring` exact pin behind main-only `SecretProvider` seam. Item identity = service namespace (production `dev.ssterm.desktop.secrets`; tests `dev.ssterm.test.<uuid>`) + account `<vaultId>/<kind>/<intendedRef>`; kind/ownership verified from identity, value never leaves main. Lookup by stable intendedRef before every retry; set only on a never-published ref (no in-place replacement of published items).
+- **Outcome mapping:** reads/lookups → `present|missing|locked|denied|unavailable|error`; mutations → `confirmed|missing|denied|unavailable|unknown|error`. Rejected set/delete is `unknown` unless definitively pre-flight; locked/denied only when evidence-backed OS status text identifies it; otherwise `unavailable`. Raw provider messages never cross the seam.
+- **Authenticated protection:** Node/OpenSSL `crypto` AES-256-GCM (`protectionFormat = "aes-256-gcm-v1"`, envelopeVersion 1): random 32-byte content key in Keychain (kind content-key), random 12-byte nonce per encryption, 16-byte tag; envelope = version byte + nonce + ciphertext + tag. AAD = unambiguous length-prefixed encoding of format, envelopeVersion, vaultId, snippetId, field `body`. Tamper/wrong-record/wrong-field/wrong-key/unknown-format all reject without modifying stored bytes. No custom construction, KDF passwords or plaintext fallback.
+- **Journal:** new finite MetadataChange variants stage/transition/publish/retire secret operations inside the existing one-transaction commit, so publication composes with owner create/update (e.g. KeyMetadata insert + privateKeyRef publish). Replacement swaps ref and journals oldRef cleanup in the same transaction; descriptors removed only after confirmed OS absence. Content key initializes only an uninitialized vault without ciphertext; missing key never regenerates. Startup reconciliation resolves pending operations per spec §Cross-store journal; backup remains blocked while unresolved.
+- **Transient lifetime:** main-only owned transient secret holder (Buffer, bounded TTL, explicit dispose that overwrites, registry purge on lock-screen/suspend/quit); no app-wide credential cache. JavaScript zeroization is best effort, not guaranteed.
+- **Placement:** provider/protection Adapters in `packages/adapters`; journal orchestration `SecretService` in new `packages/services` (ADR layout). Memory/fault-injection provider is a test fixture. No renderer/preload secret IPC in this ticket (UI belongs SST-017/023).
+
+| Order / task | Dependency / owner / acceptance |
+|---|---|
+| 1 IMPLEMENT / T009 | PLAN; single coder owns `packages/**`, `apps/desktop/src/main/**`, `apps/desktop/electron.vite.config.ts`, manifests/lock, `scripts/package-desktop.mjs`, `tests/**`, ADR 0003 and `docs/secret-storage.md`. Provider contract tests run against memory fixture and real Keychain test namespace; outcome mapping, namespace isolation and cleanup |
+| 2 IMPLEMENT / T010 | 1; protection Module, journal changes/service/reconciliation, snippet ciphertext validation, transient holder/purge, redaction checks (fixture secrets absent from SQLite bytes, backups, logs, errors) |
+| 3 runtime/package | 2; main-only `secrets` entry exercised by Electron E2E and packaged E2E against a test Keychain namespace; native binding unpacked from ASAR and loaded in packaged app |
+| 4 TEST → REVIEW → DELIVER | independent tester then reviewer; root resolves findings; unresolved critical/high blocks; close only SST-006/T009/T010 |
+
+**Verification sequence:** `npm ci --ignore-scripts` (lock changes) → `npm run runtime:prepare` → `npm run typecheck` → `npm test` → `npm run build` → `npm run test:e2e` → `npm run package:mac` → `npm run test:packaged`; `git diff --check`. Keychain tests use only `dev.ssterm.test.*` namespaces and verify zero leftover items; never the production namespace, user/Termius data or real SSH.
+**Rollback:** revert task-owned diff only on request; delete only test-namespace Keychain items the tests created; preserve user data and the production namespace.
+
+**SST-006 ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE. No SST-006 commit/push; SST-007+/DS04–DS06 remain awaiting confirmation.
+
+### Final SST-006 record — 2026-10-15
+
+SST-006/T009–T010 complete; [secret storage](../secret-storage.md), [ADR 0003](../adr/0003-secret-storage-and-content-protection.md) and [delivery](sst-006-delivery.md). Coder implemented provider/protection Adapters, journal change variants, new `packages/services` SecretService/TransientSecrets, lazy Keychain composition in main, a main-only `secrets` entry and native-binding ASAR unpack. Independent TEST passed all commands (49/49 unit, 11/11 E2E, 8/8 packaged) with 12/17 scratch-copy mutations caught; four Medium test gaps. Independent REVIEW passed with one Medium (reconcile could publish a ref swap without its owner payload, spec step 5) plus lows. One consolidated fix round: existing owners now take only plain ref swaps, needs-input→present publishes instead of abandoning, provider never throws raw errors, keyring loads lazily so a binding failure cannot crash startup, stale needs-input ops cancel, added the gap tests; coder confirmed each restored guard fails exactly one test.
+
+Final checks after fixes: typecheck PASS, `npm test` 55/55 (root re-ran), build PASS, E2E 11/11, `package:mac` PASS, packaged E2E 8/8, `git diff --check` PASS; lockfile unchanged since the clean `npm ci`. Keychain item count by service name only: 0 `dev.ssterm.test*`, 0 `dev.ssterm.desktop.secrets` (root re-counted). Limitations recorded in [secret storage](../secret-storage.md#known-limitations): adapter cannot distinguish locked/denied (maps to unavailable/unknown), unsigned-binary Keychain ACL identity until SST-028, migration still refuses protected vaults before any v2, repository checks envelope structure only, no verified-restore fence or app lock (SST-008/015), best-effort zeroization, no UI consumers yet.

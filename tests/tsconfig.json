@@ -13,6 +13,8 @@
     "../apps/desktop/src/main",
     "../apps/desktop/src/preload",
     "../packages/domain/src",
-    "../packages/adapters/src"
+    "../packages/adapters/src",
+    "../packages/services/src",
+    "fixtures/secrets"
   ]
 }

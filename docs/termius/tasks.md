@@ -1,8 +1,8 @@
 # Task checklist
 
-**SST-005 / T008: `DONE`** — SST-004 committed `d6e1822`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Local SQLite repository/evidence](../local-storage.md) ผ่าน unit/build/development checks; packaged checks และ independent TEST/REVIEW/DELIVERY ผ่าน. SST-006 เป็นต้นไปยังไม่เริ่ม
+**SST-006 / T009–T010: `DONE`** — SST-005 committed `e9e9097`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Keychain SecretRef + AES-256-GCM snippet protection](../secret-storage.md) ผ่าน unit/build/development/packaged checks และ independent TEST/REVIEW/DELIVERY. SST-007 เป็นต้นไปยังไม่เริ่ม
 
-**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-006–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
+**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-007–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
 ## งานเตรียมการที่ทำแล้ว
 
@@ -31,8 +31,8 @@
 - [x] **T006 / SST-004:** bootstrap Electron + React/TypeScript renderer, shadcn/ui components, Tailwind CSS/theme tokens และ narrow typed command/events — [evidence](../desktop-shell.md)
 - [x] **T007 / SST-004:** IPC validation/sender ownership/CSP/navigation/URL policy — [evidence](../desktop-shell.md)
 - [x] **T008 / SST-005:** transactional repository, indexes, versioned migrations และ storage failure handling — [evidence](../local-storage.md)
-- [ ] **T009 / SST-006:** Keychain SecretRef adapter + fixture provider + denied/missing/error cases
-- [ ] **T010 / SST-006:** sensitive-content encryption, cache lifetime และ redaction
+- [x] **T009 / SST-006:** Keychain SecretRef adapter + fixture provider + denied/missing/error cases — [evidence](../secret-storage.md)
+- [x] **T010 / SST-006:** sensitive-content encryption, cache lifetime และ redaction — [evidence](../secret-storage.md)
 - [ ] **T011 / SST-007:** groups/host CRUD, inheritance/provenance/cycle/move/delete consistency
 - [ ] **T012 / SST-007:** tags/search/AND filters และ shared identity impacts
 
@@ -106,4 +106,6 @@ T004/T005 completion evidence: [domain/storage specification](domain-storage-spe
 
 T006/T007/T048/T049 completion evidence: [desktop shell](../desktop-shell.md) และ [SST-004 delivery](../agent-runs/sst-004-delivery.md).
 
-T008 completion evidence: [local storage](../local-storage.md), [ADR 0002](../adr/0002-local-metadata-storage.md) และ [SST-005 delivery](../agent-runs/sst-005-delivery.md); T009/T010 ยังไม่เริ่ม.
+T008 completion evidence: [local storage](../local-storage.md), [ADR 0002](../adr/0002-local-metadata-storage.md) และ [SST-005 delivery](../agent-runs/sst-005-delivery.md).
+
+T009/T010 completion evidence: [secret storage](../secret-storage.md), [ADR 0003](../adr/0003-secret-storage-and-content-protection.md) และ [SST-006 delivery](../agent-runs/sst-006-delivery.md).

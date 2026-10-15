@@ -459,7 +459,8 @@ test('Unicode tag collision and settings/auth discriminants reject whole batches
     assert.equal(result.ok, false);
     assert.deepEqual(f.snapshot(), before);
   }
-  for (const type of ['create-snippet', 'update-secret-ref', 'create-key', 'create-known-host']) code(f.repo.commit({
+  // Known-host trust stays SST-009; protected writes accept only typed envelopes/refs, never plaintext fields.
+  for (const [type, expected] of [['create-known-host', 'unavailable'], ['create-snippet', 'invalid-request'], ['update-secret-ref', 'invalid-request'], ['create-key', 'invalid-request']]) code(f.repo.commit({
     expectedCatalogRevision: 1,
     changes: [{
       type,
@@ -468,7 +469,7 @@ test('Unicode tag collision and settings/auth discriminants reject whole batches
         body: 'fixture-sensitive'
       }
     }] as unknown as MetadataChange[]
-  }), 'unavailable');
+  }), expected!);
   code(f.repo.commit({
     expectedCatalogRevision: 1,
     changes: [{
@@ -481,7 +482,7 @@ test('Unicode tag collision and settings/auth discriminants reject whole batches
         passwordRef: randomUUID()
       }
     }] as unknown as MetadataChange[]
-  }), 'unavailable');
+  }), 'constraint');
   code(f.repo.commit({
     expectedCatalogRevision: 1,
     changes: [{
@@ -494,7 +495,7 @@ test('Unicode tag collision and settings/auth discriminants reject whole batches
         keyId: randomUUID()
       }
     }] as unknown as MetadataChange[]
-  }), 'unavailable');
+  }), 'constraint');
   assert.deepEqual(f.snapshot(), before);
 });
 test('shared endpoint normalization has deterministic IDNA, IP and invalid fixtures', () => {
@@ -616,7 +617,7 @@ test('safe open blocks zero/foreign/newer/corrupt/FK-invalid/unwritable storage 
     assert.deepEqual(readFileSync(path), before, kind);
   }
 });
-test('pending secret journal and unsupported protection fail closed; backup never replays OS actions', async t => {
+test('pending secret journal opens for reconciliation but blocks backup; unsupported protection fails closed', async t => {
   const f = await fixture(t);
   const s = f.snapshot();
   const writer = new DatabaseSync(f.path);
@@ -627,17 +628,16 @@ test('pending secret journal and unsupported protection fail closed; backup neve
   code(await f.repo.backup({
     destination: join(f.dir, 'blocked.db')
   }), 'recovery-required');
-  code(f.repo.commit({
-    expectedCatalogRevision: 0,
-    changes: [host()]
-  }), 'recovery-required');
+  assert.equal(f.commit([host()]).secretOperations[0]?.state, 'staged');
   f.repo.close();
   writer.close();
-  const before = readFileSync(f.path);
-  code(await openMetadata({
+  const reopened = value(await openMetadata({
     path: f.path
+  }));
+  code(await reopened.backup({
+    destination: join(f.dir, 'still-blocked.db')
   }), 'recovery-required');
-  assert.deepEqual(readFileSync(f.path), before);
+  reopened.close();
   raw(f.path, "DELETE FROM secret_operation");
   const db = new DatabaseSync(f.path);
   const ref = randomUUID();

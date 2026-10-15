@@ -17,6 +17,12 @@ const source = JSON.parse(
 const stage = await mkdtemp(join(tmpdir(), "ssterm-package-"));
 try {
   await cp(join(desktop, "out"), join(stage, "out"), { recursive: true });
+  // The main bundle keeps the Keychain binding external: ship its loader and arm64 prebuilt only.
+  for (const name of ["@napi-rs/keyring", "@napi-rs/keyring-darwin-arm64"]) {
+    await cp(join(root, "node_modules", name), join(stage, "node_modules", name), {
+      recursive: true,
+    });
+  }
   await writeFile(
     join(stage, "package.json"),
     JSON.stringify(
@@ -59,7 +65,8 @@ try {
     arch: "arm64",
     electronVersion: "44.7.2",
     electronZipDir,
-    asar: true,
+    // Native addons cannot be dlopen()ed from inside the archive.
+    asar: { unpack: "**/*.node" },
     overwrite: true,
     prune: false,
   });

@@ -82,7 +82,7 @@ function encode(raw: unknown, columns: readonly string[]): SQLInputValue[] {
 }
 /** Replaces only writable metadata under deferred NO ACTION FKs, avoiding transient rename uniqueness collisions. */
 export function writeSnapshot(db: DatabaseSync, s: MetadataSnapshot): void {
-  const collections = ['hostTags', 'tunnelRules', 'hosts', 'groups', 'identities', 'tags'] as const;
+  const collections = ['hostTags', 'snippetTags', 'tunnelRules', 'hosts', 'groups', 'identities', 'tags', 'keys', 'snippets', 'secretRefs', 'secretOperations'] as const;
   for (const key of collections) db.exec(`DELETE FROM ${tables[key][0]}`);
   for (const key of collections) {
     const [table, columns] = tables[key];
@@ -95,8 +95,14 @@ export function writeSnapshot(db: DatabaseSync, s: MetadataSnapshot): void {
   }
   db.prepare('UPDATE catalog_state SET revision=? WHERE singleton=1').run(s.catalogRevision);
 }
+/** Journal intended refs are reserved when staged, so a published descriptor reuses its own reservation. */
+function registeredIds(s: MetadataSnapshot): Set<string> {
+  const ids = new Set<string>([s.vault.id, s.settings.id, ...s.secretOperations.map(op => op.intendedRef)]);
+  for (const key of ['hosts', 'groups', 'identities', 'tags', 'tunnelRules', 'keys', 'snippets', 'secretRefs'] as const) for (const row of s[key] as Entity[]) ids.add(row.id);
+  return ids;
+}
 export function reserveNewIds(db: DatabaseSync, before: MetadataSnapshot, after: MetadataSnapshot): void {
-  const previous = new Set<string>([before.vault.id, before.settings.id, ...['hosts', 'groups', 'identities', 'tags', 'tunnelRules'].flatMap(key => (before[key as 'hosts'] as Entity[]).map(r => r.id))]);
+  const previous = registeredIds(before);
   const insert = db.prepare('INSERT INTO entity_registry(id) VALUES(?)');
-  for (const key of ['hosts', 'groups', 'identities', 'tags', 'tunnelRules'] as const) for (const row of after[key]) if (!previous.has(row.id)) insert.run(row.id);
+  for (const id of registeredIds(after)) if (!previous.has(id)) insert.run(id);
 }

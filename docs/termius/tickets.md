@@ -1,8 +1,8 @@
 # Tickets สำหรับ ssterm
 
-**SST-005 / T008: `DONE`** — SST-004 committed `d6e1822`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Local SQLite repository/evidence](../local-storage.md) ผ่าน unit/build/development checks; packaged checks และ independent TEST/REVIEW/DELIVERY ผ่าน. SST-006 เป็นต้นไปยังไม่เริ่ม
+**SST-006 / T009–T010: `DONE`** — SST-005 committed `e9e9097`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Keychain SecretRef + AES-256-GCM snippet protection](../secret-storage.md) ผ่าน unit/build/development/packaged checks และ independent TEST/REVIEW/DELIVERY. SST-007 เป็นต้นไปยังไม่เริ่ม
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-006–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-007–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
 Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-006–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
@@ -116,6 +116,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Validation:** temp database fixtures สำหรับ CRUD/restart/migration failure. **Tasks:** driver/repository adapters; migration runner; diagnostic/recovery paths.
 
 ### SST-006 — OS secrets and encrypted sensitive content
+
+**Status:** `DONE` — [implementation/evidence](../secret-storage.md), [ADR 0003](../adr/0003-secret-storage-and-content-protection.md); T009/T010 only, UI consumers อยู่ SST-017/023
 
 **Outcome:** SecretRef adapter และ sensitive-content protection. **Evidence:** N02, S04, N-T03.
 

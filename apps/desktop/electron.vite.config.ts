@@ -11,13 +11,21 @@ export default defineConfig({
     resolve: { alias: { "@ssterm/contracts": contracts } },
     build: {
       externalizeDeps: {
-        exclude: ["@ssterm/contracts", "@ssterm/domain", "@ssterm/adapters"],
+        exclude: [
+          "@ssterm/contracts",
+          "@ssterm/domain",
+          "@ssterm/adapters",
+          "@ssterm/services",
+        ],
       },
       rollupOptions: {
         input: {
           index: fileURLToPath(new URL("./src/main/index.ts", import.meta.url)),
           storage: fileURLToPath(
             new URL("./src/main/storage.ts", import.meta.url),
+          ),
+          secrets: fileURLToPath(
+            new URL("./src/main/secrets.ts", import.meta.url),
           ),
         },
         preserveEntrySignatures: "strict",

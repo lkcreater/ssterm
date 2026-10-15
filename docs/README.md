@@ -1,10 +1,10 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-005 / T008: `DONE`** — SST-004 committed `d6e1822`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Local SQLite repository/evidence](local-storage.md) ผ่าน unit/build/development checks; packaged checks และ independent TEST/REVIEW/DELIVERY ผ่าน. SST-006 เป็นต้นไปยังไม่เริ่ม
+**SST-006 / T009–T010: `DONE`** — SST-005 committed `e9e9097`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Keychain SecretRef + AES-256-GCM snippet protection](secret-storage.md) ผ่าน unit/build/development/packaged checks และ independent TEST/REVIEW/DELIVERY. SST-007 เป็นต้นไปยังไม่เริ่ม
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 
-**สถานะ: M0 เสร็จแล้ว (2026-10-15)** — SST-001 ADR และ SST-002 isolated SSH/backend spike ผ่าน pipeline; ดู [ผลทดสอบ](spikes/ssh-compatibility.md) SST-003/T004–T005 ได้รับอนุมัติเฉพาะงานเอกสารและอยู่ `DONE`; ดู [domain/storage specification](termius/domain-storage-spec.md) ส่วน services และ SST-006–028 ยังรออนุมัติ
+**สถานะ: M0 เสร็จแล้ว (2026-10-15)** — SST-001 ADR และ SST-002 isolated SSH/backend spike ผ่าน pipeline; ดู [ผลทดสอบ](spikes/ssh-compatibility.md) SST-003/T004–T005 ได้รับอนุมัติเฉพาะงานเอกสารและอยู่ `DONE`; ดู [domain/storage specification](termius/domain-storage-spec.md) ส่วน services และ SST-007–028 ยังรออนุมัติ
 
 UI stack ที่ผู้ใช้เลือก: **React + Electron + shadcn/ui + Tailwind CSS** โดยใช้ TypeScript ตาม baseline
 

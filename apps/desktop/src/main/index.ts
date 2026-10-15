@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, powerMonitor, session } from "electron";
 import { isAbsolute, join, relative } from "node:path";
 import { realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -10,6 +10,7 @@ import {
   type StorageProblem,
 } from "@ssterm/contracts";
 import type { MetadataRepository } from "@ssterm/domain";
+import { SecretService, TransientSecrets } from "@ssterm/services";
 import { WindowBoundary, sameDocument } from "./boundary";
 import { contentSecurityPolicy, rendererLocation } from "./security";
 import { openMetadata } from "./storage";
@@ -35,6 +36,10 @@ app.enableSandbox();
 const ownsInstance = app.requestSingleInstanceLock();
 let repository: MetadataRepository | undefined;
 let storageHealth: StorageHealth = { status: "blocked", code: "unavailable" };
+// No app-wide credential cache: only owned transient values, purged on lock, suspend and quit.
+const transientSecrets = new TransientSecrets();
+// Main-only; undefined while storage or the Keychain binding is unavailable.
+let secrets: SecretService | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -54,6 +59,7 @@ function storageProblem(code: unknown): StorageProblem {
 function closeStorage(): void {
   const owned = repository;
   repository = undefined;
+  secrets = undefined;
   owned?.close();
 }
 async function initializeStorage(): Promise<void> {
@@ -82,6 +88,20 @@ async function initializeStorage(): Promise<void> {
       status: "ready",
       schemaVersion: snapshot.value.schemaVersion,
     };
+    try {
+      // Loaded lazily so a native-binding failure leaves storage health intact and secrets unavailable.
+      const { KeychainSecretProvider, PRODUCTION_SECRET_NAMESPACE } =
+        await import("@ssterm/adapters/keychain");
+      secrets = new SecretService({
+        repository,
+        provider: new KeychainSecretProvider(PRODUCTION_SECRET_NAMESPACE),
+        transient: transientSecrets,
+      });
+      // Touches the Keychain only for unfinished journal rows; outcomes stay in the journal, never in logs.
+      void secrets.reconcile().catch(() => undefined);
+    } catch {
+      secrets = undefined;
+    }
   } catch (error) {
     closeStorage();
     const code =
@@ -201,6 +221,11 @@ if (ownsInstance) {
       closeStorage();
       return;
     }
+    const purgeSecrets = (): void => {
+      transientSecrets.purgeAll();
+    };
+    powerMonitor.on("lock-screen", purgeSecrets);
+    powerMonitor.on("suspend", purgeSecrets);
     const defaultSession = session.defaultSession;
     defaultSession.setPermissionRequestHandler(
       (_contents, _permission, callback) => callback(false),
@@ -245,6 +270,7 @@ app.on("before-quit", () => {
   boundary.dispose();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
+  transientSecrets.purgeAll();
   closeStorage();
 });
 

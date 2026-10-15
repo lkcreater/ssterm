@@ -1,4 +1,4 @@
-/** Metadata only. Credentials and protected content have no writable interface here. */
+/** Metadata and opaque descriptors only. Secret values cross only the main-side SecretProvider seam. */
 export type Id = string;
 export type StorageErrorCode = 'invalid-request' | 'conflict' | 'constraint' | 'busy' | 'closed' | 'io' | 'corrupt' | 'foreign-database' | 'unsupported-schema' | 'unsupported-protection' | 'recovery-required' | 'unwritable' | 'migration-failed' | 'unavailable';
 export type StoreResult<T> = {
@@ -157,14 +157,13 @@ export interface MetadataSnapshot {
 type Fields<T> = Omit<T, keyof Entity>;
 export type HostInput = Pick<Fields<Host>, 'label' | 'address'> & Partial<Omit<Fields<Host>, 'label' | 'address'>>;
 export type GroupInput = Pick<Fields<Group>, 'label'> & Partial<Omit<Fields<Group>, 'label'>>;
-/** Saved credentials/key identities are reserved for the verified SST-006 writer. */
-export type IdentityInput = {
-  label: string;
-  username: string;
-  method: 'password' | 'keyboard-interactive';
-  passwordRef?: null;
-  keyId?: null;
-};
+export type IdentityInput = Pick<Fields<Identity>, 'label' | 'username' | 'method'> & Partial<Pick<Fields<Identity>, 'passwordRef' | 'keyId'>>;
+/** privateKeyRef changes only through secret publication; passphraseRef may be detached with queued cleanup. */
+export type KeyInput = Pick<Fields<KeyMetadata>, 'label' | 'algorithm' | 'publicKey' | 'fingerprint' | 'privateKeyRef'> & Partial<Pick<Fields<KeyMetadata>, 'passphraseRef'>>;
+/** Produced by the protection Module; the repository validates structure, never plaintext. */
+export type SnippetInput = Fields<Snippet>;
+export type SecretOwnerType = 'vault' | 'identity' | 'key';
+export type SecretOperationState = SecretOperation['state'];
 export type TagInput = {
   label: string;
 };
@@ -199,7 +198,73 @@ export type MetadataChange = Crud<'host', HostInput> | Crud<'group', GroupInput>
   data: {
     label: string;
   };
+} | Crud<'key', KeyInput> | Crud<'snippet', SnippetInput> | {
+  /** Journals an unpublished intended ref before any OS write. expectedRevision null means the owner is created by the publishing batch. */
+  type: 'stage-secret';
+  operationId: Id;
+  action: 'create' | 'replace';
+  kind: SecretKind;
+  intendedRef: Id;
+  ownerType: SecretOwnerType;
+  ownerId: Id;
+  expectedRevision: number | null;
+  oldRef: Id | null;
+} | {
+  type: 'transition-secret';
+  operationId: Id;
+  from: SecretOperationState;
+  to: 'staged' | 'reconcile' | 'needs-input' | 'cleanup' | 'complete';
+} | {
+  /** Inserts the descriptor after a confirmed OS write; replacement also queues old-ref cleanup under cleanupOperationId. */
+  type: 'publish-secret';
+  operationId: Id;
+  cleanupOperationId?: Id;
+} | {
+  /** Journals OS deletion of a published ref the same batch leaves unreferenced. */
+  type: 'queue-secret-cleanup';
+  operationId: Id;
+  ref: Id;
+} | {
+  /** Completes cleanup after confirmed OS absence and removes its descriptor. */
+  type: 'retire-secret';
+  operationId: Id;
 };
+export type SecretErrorCode = 'invalid' | 'ambiguous' | 'malformed';
+/** Account identity within the provider namespace; kind and vault are part of the stable item identity. */
+export interface SecretItem {
+  vaultId: Id;
+  kind: SecretKind;
+  ref: Id;
+}
+type Failed = {
+  status: 'error';
+  code: SecretErrorCode;
+};
+export type SecretRead = {
+  status: 'present';
+  value: Uint8Array;
+} | {
+  status: 'missing' | 'locked' | 'denied' | 'unavailable';
+} | Failed;
+/** A lookup never returns bytes; present means the exact owned item exists. */
+export type SecretLookup = {
+  status: 'present';
+} | {
+  status: 'missing' | 'locked' | 'denied' | 'unavailable';
+} | Failed;
+export type SecretWrite = {
+  status: 'confirmed' | 'denied' | 'unavailable' | 'unknown';
+} | Failed;
+export type SecretDelete = {
+  status: 'confirmed' | 'missing' | 'denied' | 'unavailable' | 'unknown';
+} | Failed;
+/** Main-only OS credential seam. Implementations resolve typed outcomes and never throw or expose raw provider messages. */
+export interface SecretProvider {
+  read(item: SecretItem): Promise<SecretRead>;
+  lookup(item: SecretItem): Promise<SecretLookup>;
+  write(item: SecretItem, value: Uint8Array): Promise<SecretWrite>;
+  delete(item: SecretItem): Promise<SecretDelete>;
+}
 export interface BackupManifest {
   format: 'ssterm-metadata-backup-v1';
   schemaVersion: number;
