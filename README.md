@@ -14,6 +14,19 @@ npm run runtime:prepare
 npm run dev
 ```
 
+ใช้ [Makefile](Makefile) เรียก workflow เดียวกันได้:
+
+```sh
+make help          # ดูคำสั่งทั้งหมด
+make install       # ติดตั้ง workspace dependencies และเตรียม Electron
+make dev           # เปิดแอปสำหรับพัฒนา
+make check         # typecheck → unit tests → build
+make fixtures      # เตรียม SSH test dependencies และ image; ต้องเปิด Docker
+make verify        # check → Electron E2E → package → packaged tests
+```
+
+`make test-e2e` และ `make test-packaged` build ใหม่ก่อนทดสอบ ใช้ `make fixtures` เตรียม prerequisites ครั้งแรกและเมื่อ fixture/dependencies เปลี่ยน; คำสั่งทดสอบไม่ติดตั้ง dependencies หรือ build Docker image ให้อัตโนมัติ
+
 เปิด showcase โดยใช้ `npm run dev:renderer` แล้วไปที่ `http://127.0.0.1:5173/#showcase` หรือเปิด URL เดียวกันใน Electron development renderer; fixtures ถูกตัดออกจาก production JavaScript
 
 ## ตรวจและ package
