@@ -7,7 +7,7 @@
 > **Theme strategy:** Dark-first, light-ready\
 > **Brand line:** Connected with clarity.
 
-> **Implementation status:** `AWAITING_IMPLEMENT_CONFIRMATION` — specification for planning; application code and visual assets have not been implemented. See the [implementation plan](design-system-implementation.md).
+> **Implementation status:** DS01 decisions recorded in M0; production design-system UI and visual assets remain `AWAITING_IMPLEMENT_CONFIRMATION`. The isolated SSH backend spike does not implement this UI. See the [implementation plan](design-system-implementation.md).
 
 ## 1. Product & design principles
 

@@ -1,6 +1,6 @@
 # Tickets สำหรับ ssterm
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** ผู้ใช้อนุมัติเฉพาะ M0 เมื่อ 2026-10-14: SST-001 `DONE` (ADR/docs), SST-002 `NOT_STARTED` จน SST-001 delivery + commit; SST-003–028 ยังรออนุมัติ; SST-029–038 คง later scope ดู [execution plan](../agent-runs/implementation-plan.md)
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
 Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-003–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
@@ -67,7 +67,7 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 ### SST-002 — SSH/SFTP/backend compatibility spike
 
-**Status:** `NOT_STARTED` — authorized M0; เริ่มหลัง SST-001 delivery + commit เท่านั้น ssh2 1.17.0 เป็น candidate ตาม ADR; real fixture และ unsigned packaged arm64 validation ยังไม่รัน
+**Status:** `DONE` — isolated OpenSSH fixture + ssh2 1.17.0 ผ่าน Node 19 probes/3 regressions และ packaged Electron 19 probes, independent TEST/REVIEW/DELIVERY ผ่าน ดู [result/evidence](../spikes/ssh-compatibility.md) ไม่ได้ implement production adapter/UI หรือ release-signing gates
 
 **Outcome:** ลดความเสี่ยง engine ก่อนสร้าง application services. **Evidence:** S03/S05, N01/N06/N07, N-T02.
 

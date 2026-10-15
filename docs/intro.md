@@ -19,4 +19,4 @@
 
 **UI stack:** React + TypeScript บน Electron ใช้ shadcn/ui และ Tailwind CSS
 
-เอกสารนี้เป็นบรีฟของผลิตภัณฑ์ที่กำลังเตรียมพัฒนา; ยังไม่เริ่ม implementation
+เอกสารนี้เป็นบรีฟผลิตภัณฑ์; ปัจจุบันผ่าน backend feasibility spike แล้ว ส่วน production desktop UI/services ยังรอเริ่มพัฒนา

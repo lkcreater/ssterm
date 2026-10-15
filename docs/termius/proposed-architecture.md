@@ -1,6 +1,6 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติเฉพาะ M0 / SST-001–002 เมื่อ 2026-10-14.** SST-001 `DONE` เป็น ADR/docs; SST-002 `NOT_STARTED` รอ first delivery + commit; SST-003–028 ยังรออนุมัติ รายละเอียด architecture อื่นเป็น Proposed design อิงปัญหา/workflow จาก [system analysis](system-analysis.md) และ [official features](official-features.md) ไม่ถือว่าเป็น architecture ภายใน Termius ที่ยืนยันแล้ว
+**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติเฉพาะ M0 เมื่อ 2026-10-14.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป Production SST-003–028 ยังรออนุมัติ รายละเอียด architecture อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
 ## Baseline / stack decision
 
@@ -15,7 +15,7 @@
 | Components | shadcn/ui สำหรับ forms/dialogs/menus/tabs/sidebar และ shared UI primitives | ผู้ใช้เลือกแล้ว |
 | Styling / theme | Tailwind CSS และ shared theme tokens | ผู้ใช้เลือกแล้ว |
 | Terminal renderer | xterm.js ใน React-owned container; แยก terminal rendering จาก app components | Proposed; validate lifecycle/resize ใน SST-002/012 |
-| SSH / SFTP / tunnels | independent SSH adapter; ssh2 เป็น candidate | เลือก backend หลัง SST-002 |
+| SSH / SFTP / tunnels | ssh2 1.17.0 selected behind independent adapter | M0 Node/packaged fixture gate ผ่าน; production services ยังรอ SST-008–015 |
 | Metadata / secrets | SQLite candidate + OS credential-store adapter | validate driver/protection/packaging ใน SST-001–006 |
 
 [ADR 0001](../adr/0001-mvp-platform-stack.md) บันทึก UI stack และ exact versions/build tooling พร้อม temporary npm peer/engine resolution evidence; ยังไม่พิสูจน์ build/runtime และไม่เปิดเลือก UI framework ใหม่ SST-002 เปรียบเทียบเฉพาะ SSH backend ที่ทำงานร่วมกับ Electron ได้ เช่น Node library, native adapter หรือ managed OpenSSH process; ต้องตรวจ packaging/ABI, authentication, PTY, SFTP และ forwarding

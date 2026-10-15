@@ -2,7 +2,7 @@
 
 ค้นด้วย skill `find-skills` วันที่ 2026-10-14 เพื่อรองรับ **React + TypeScript + Electron + shadcn/ui + Tailwind CSS** ของ ssterm ตรวจ leaderboard ก่อน แล้วใช้ `skills find` ด้วย queries `electron`, `electron react`, `shadcn`, `tailwind`, `playwright electron` และตรวจ repository/source ของ candidates ก่อนคัดเลือก
 
-**สถานะ: ผู้ใช้สั่งติดตั้งชุดหลักทั้ง 5 skills แล้ว และติดตั้งสำเร็จแบบ project-local สำหรับ Codex/Claude Code; เริ่มเฉพาะ SST-001 ADR/docs ตาม M0 authorization 2026-10-14; ยังไม่มี production implementation.** `find-skills` และ `reverse-engineer-anything` ที่มีอยู่เดิมคงไว้ครบ รวมโครงการมี 7 skills
+**สถานะ: ติดตั้ง 5 implementation skills แบบ project-local แล้ว; M0 / SST-001 ADR และ SST-002 isolated backend spike ผ่าน pipeline ณ 2026-10-15.** ยังไม่มี production UI/services; `find-skills` และ `reverse-engineer-anything` คงไว้ครบ รวม 7 skills
 
 ไฟล์จริงอยู่ใต้ `.agents/skills/`, Claude Code เชื่อมผ่าน `.claude/skills/` และ provenance/source paths/hashes อยู่ใน [skills-lock.json](../../skills-lock.json) ติดตั้งด้วย Skills CLI โดยเลือก `--agent codex claude-code --yes --json`; ไม่ติดตั้ง global skills หรือ application dependencies
 

@@ -1,6 +1,6 @@
 # Implementation plan
 
-**สถานะ: `M0_AUTHORIZED` เมื่อ 2026-10-14.** ผู้ใช้อนุมัติเฉพาะ SST-001–002 ตาม pipeline และ commit ทีละ ticket; SST-001 `DONE` เป็น ADR/docs, SST-002 `NOT_STARTED` จน SST-001 delivery + commit ยังไม่ bootstrap app หรือติดตั้ง repo application dependencies; SST-003–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
+**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 
 ## Product baseline / scoped authorization
 
@@ -105,6 +105,6 @@ Fixtures ต้องเป็น project-owned local lab data ไม่ใช�
 
 **2026-10-14 — user confirmation:** อนุมัติ pipeline ANALYZE → DESIGN → PLAN → IMPLEMENT → TEST → REVIEW → DELIVER และ commit **SST-001 ก่อนเริ่ม SST-002** แล้ว delivery + commit SST-002 ขอบเขต **M0 เท่านั้น** รวม DS01/T047 และ isolated fixture/spike/local unsigned arm64 package ใน SST-002 ไม่รวม SST-003–028, DS02–DS06, later tickets, push/external PR/publish/deploy
 
-Current: SST-001 `DONE` / T001/T047 ผ่าน document checks + independent review + delivery แล้ว; SST-002 `NOT_STARTED` จน first commit รายละเอียด ownership, actual checks/results และ ledger อยู่ [execution plan](../agent-runs/implementation-plan.md); decisions อยู่ [ADR 0001](../adr/0001-mvp-platform-stack.md)
+Current: SST-001/T001/T047 และ SST-002/T002/T003 `DONE` หลัง checks/review/delivery ผ่านแล้ว; [execution record](../agent-runs/implementation-plan.md) บันทึก pipeline และ [backend report](../spikes/ssh-compatibility.md) เก็บ actual runtime evidence หยุดที่ M0 ก่อน production implementation
 
 Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 หยุดหลัง M0 delivery + second commit ก่อน production implementation ไม่ขออนุมัติซ้ำใน M0 ที่ได้รับอนุมัติแล้ว

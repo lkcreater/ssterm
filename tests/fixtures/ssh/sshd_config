@@ -1,0 +1,24 @@
+Port 22
+ListenAddress 0.0.0.0
+HostKey /etc/ssh/ssh_host_ed25519_key
+PidFile /run/sshd.pid
+PermitRootLogin no
+AllowUsers fixture
+PasswordAuthentication yes
+PubkeyAuthentication yes
+KbdInteractiveAuthentication yes
+UsePAM yes
+PermitEmptyPasswords no
+AuthorizedKeysFile .ssh/authorized_keys
+StrictModes yes
+PermitTTY yes
+AllowTcpForwarding local
+PermitOpen 127.0.0.1:8080
+GatewayPorts no
+X11Forwarding no
+AllowAgentForwarding no
+AllowStreamLocalForwarding no
+PrintMotd no
+PrintLastLog no
+LogLevel ERROR
+Subsystem sftp internal-sftp

@@ -87,3 +87,7 @@ Open gates remain explicit in [design handoff](../termius/design-system-implemen
 The selected stack and paths stop framework/tooling churn; Vite 7 bounds compatibility to electron-vite's declared peers. Native backend/storage/Keychain viability and real UI output remain risks with named gates. Update this ADR and related tickets/tasks if a gate changes a decision; do not silently replace the UI stack
 
 SST-001 acceptance is document coverage + local links/assets/JSON/whitespace consistency + independent review, then delivery/commit. T001/T047 are complete after document checks, independent review and delivery passed; see the execution ledger. No application lint/typecheck/unit/E2E/build scripts exist in this ticket; package metadata resolution is not a substitute. Actual validation/stage results belong in the [execution ledger](../agent-runs/implementation-plan.md). Rollback changes only this task's documents; preserve unrelated changes, and revert a committed change only when authorized
+
+## SST-002 outcome — 2026-10-15
+
+หลัง commit SST-001 `ad9ed51` งาน SST-002 ผ่าน real fixture probes 19/19 ทั้ง host Node และ packaged Electron รวม 3 regression tests จึงเลือก ssh2 1.17.0 เป็น backend baseline สำหรับ production adapter ถัดไป ดู [result](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md) Dependency baseline JSON ด้านบนเป็น snapshot การตัดสินใจ ณ SST-001; outcome นี้ supersede เฉพาะ candidate gate ของ ssh2 ไม่ยืนยัน xterm/SQLite/Keychain/native ABI/UI หรือ release readiness

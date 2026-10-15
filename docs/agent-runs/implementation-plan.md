@@ -1,6 +1,6 @@
 # M0 execution plan — SST-001 ก่อน SST-002
 
-**วันที่:** 2026-10-14 · **Current ticket:** SST-001 / T001 / DS01–T047 · **PLAN:** DONE
+**วันที่:** 2026-10-14 · **Current ticket:** SST-002 / T002–T003 (completed M0) · **PLAN:** DONE
 
 ## Authorization / acceptance
 
@@ -91,3 +91,32 @@ Rollback SST-001: ย้อนเฉพาะ task-owned Markdown diff เมื
 **Ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE · COMMIT PENDING · SST-002 NOT_STARTED. **SST-001 commit:** pending
 
 **REVIEW / DELIVERY:** independent reviewer PASS, no blocking findings; delivery note [sst-001-delivery.md](sst-001-delivery.md) completed. Root closed SST-001/T001/T047 after those gates and will create the authorized first commit before SST-002. Pending status label standardized to `AWAITING_IMPLEMENT_CONFIRMATION`.
+
+## SST-002 execution plan — 2026-10-14
+
+**SST-001 commit:** `ad9ed51` (all stages DONE); supersedes pending commit references above. First-ticket gate satisfied; **SST-002 / T002–T003 IN_PROGRESS**, M0 authorization continues; SST-003–028 remain unapproved.
+ANALYZE/DESIGN complete; implement now using isolated Node CommonJS spike, ssh2 `1.17.0`, Electron `44.7.2`, @electron/packager `20.3.0`; no production app scaffold or new DS work.
+
+| Order / owner | Files and deliverable / gate |
+|---|---|
+| 1 coder | `tests/fixtures/ssh/{Dockerfile,sshd_config,entrypoint.sh}`: project-owned image/container, ephemeral fixture keys/password, SSH published on dynamic `127.0.0.1` port; actual host-key rotation preserves endpoint |
+| 2 coder | `spikes/ssh-compat/{package.json,package-lock.json,src/{fixture,connection,probes,report}.cjs,test/integration.test.cjs}`: bounded connect/trust/auth/cancel contract; real SSH fixture and capability tests |
+| 3 coder | `spikes/ssh-compat/{electron/main.cjs,scripts/{package,run-packaged}.cjs,README.md}`: shared probes run after `app.whenReady`, unsigned macOS arm64 `.app`, documented reproducible commands |
+| 4 root | Root ignore/dependency orchestration and `docs/spikes/ssh-compatibility.md` report; update scoped status/docs after evidence; coder owns code only and edits stay sequential |
+| 5 tester → reviewer → root | Actual tests/package results, independent correctness/privacy/security review, fix blocking findings, then delivery + authorized SST-002 commit; no push |
+
+Coder creates scripts before validation; from `spikes/ssh-compat` run `npm ci`, `npm test`, `npm run package:mac`, `npm run test:packaged`; root additionally runs `git diff --check` and checks changed Markdown/JSON. Record actual scripts/results/failures; no pass claims before execution.
+Acceptance matrix: password/encrypted-key auth; unknown-key reject/explicit trust and changed-key block; real PTY, `stty` resize and exit; SFTP upload/download hashes; internal HTTP through loopback local forwarding; denied/timeout/cancel/connection-loss and idempotent cleanup; packaged shared probes plus API/lifecycle/algorithm limitations and backend decision.
+Fixture image/server and ephemeral credentials are project-owned; no user secrets, Termius data, real Keychain or `.codex` edits. Teardown only owned containers/processes/temporary paths/listeners/sockets; preserve evidence and user changes. Retry same failure at most three times without new evidence, then resolve concrete blocker.
+Rollback: stop owned fixture/package processes, dispose sockets/listeners, delete only recorded throwaway paths; revert task-owned changes if requested, never blanket reset/clean. Packaging does not close production signing/native-storage/secret gates.
+**SST-002 ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT PENDING · TEST PENDING · REVIEW PENDING · DELIVER+COMMIT PENDING. Do not close SST-002/T002/T003 until real integration and packaged runtime acceptance passes; stop after M0 delivery.
+
+**SST-002 implementation ownership:** root owns `tests/fixtures/ssh/{Dockerfile,sshd_config,entrypoint.sh}`, root `.gitignore`, environment orchestration and final reports/status. Coder owns `spikes/ssh-compat` only. Fixture accepts generated `FIXTURE_PASSWORD` and `FIXTURE_PUBLIC_KEY`; internal HTTP target is `127.0.0.1:8080`. No overlapping edits.
+
+## Final M0 record — 2026-10-15
+
+SST-001 completed all stages and committed `ad9ed51` before SST-002 began. SST-002 ANALYZE/DESIGN/PLAN/IMPLEMENT/TEST/REVIEW/DELIVER completed; root will create the second authorized commit now. Earlier pending/NOT_STARTED lines are historical stage snapshots, superseded by this final record.
+
+Actual checks: clean lockfile `npm ci --omit=optional --ignore-scripts` exit 0, explicit pinned runtime preparation, `npm run check` PASS, `npm test` PASS (4 Node tests: 19 real probes + 3 regressions), `npm run package:mac` PASS, `npm run test:packaged` PASS (19 real probes). Independent tester confirmed the corrected sources/package and no remaining fixture key directories/containers; reviewer re-review found no remaining High/Medium. Evidence and operational limits: [backend report](../spikes/ssh-compatibility.md); [delivery](sst-002-delivery.md). No production UI, real Keychain, external PR, push or deployment.
+
+Coder previously hit a usage limit; work resumed on 2026-10-15 at 08:56 Asia/Bangkok after the requested 02:05 window. No limit prevented final runtime checks. Stop after M0 commit; SST-003 onward needs new scope authorization.

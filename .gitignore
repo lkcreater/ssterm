@@ -1,0 +1,4 @@
+**/node_modules/
+spikes/ssh-compat/artifacts/
+spikes/ssh-compat/.cache/
+.DS_Store

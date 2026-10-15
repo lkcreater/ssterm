@@ -1,6 +1,6 @@
 # Design system implementation plan
 
-**สถานะ: DS01/T047 `DONE` ใน SST-001 (M0 authorized 2026-10-14).** [ADR 0001](../adr/0001-mvp-platform-stack.md) บันทึก decisions แล้ว ผ่าน document checks/review/delivery แล้ว; DS02–DS06 ยัง `AWAITING_IMPLEMENT_CONFIRMATION` ยังไม่สร้าง app/CSS/components/artwork
+**สถานะ: DS01/T047 `DONE` ใน SST-001 (M0 authorized 2026-10-14).** [ADR 0001](../adr/0001-mvp-platform-stack.md) บันทึก decisions และผ่าน document checks/review/delivery แล้ว; DS02–DS06 ยัง `AWAITING_IMPLEMENT_CONFIRMATION` ยังไม่สร้าง production UI/CSS/components/artwork; SST-002 เป็น backend spike แยกจาก design-system implementation
 
 ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification หลักของ ssterm และใช้ [architecture](proposed-architecture.md), [tickets](tickets.md) และ [tasks](tasks.md) สำหรับพฤติกรรมและขอบเขต MVP ข้อกำหนดนี้เป็น design ของ ssterm ไม่ใช่หลักฐาน UI ภายใน Termius
 

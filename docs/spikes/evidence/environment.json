@@ -1,0 +1,68 @@
+{
+  "ticket": "SST-002",
+  "observed_on": "2026-10-15",
+  "host": {
+    "os": "macOS 15.7.4",
+    "arch": "arm64",
+    "node": "24.11.1",
+    "npm": "11.6.2"
+  },
+  "fixture": {
+    "image": "ssterm-ssh-fixture:m0",
+    "image_id": "sha256:7437d73983f3578a6e6662e3627fc04eba305f14efd68ede82fbf5d336f23b0a",
+    "arch": "arm64",
+    "base_image_digest": "sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587",
+    "openssh": "9.2",
+    "openssl": "3.0.22",
+    "ssh_host_binding": "127.0.0.1 dynamic port",
+    "internal_http_target": "127.0.0.1:8080 in container"
+  },
+  "package": {
+    "relative_artifact_path": "spikes/ssh-compat/artifacts/package/SSTermSSHSpike-darwin-arm64/SSTermSSHSpike.app",
+    "bundle_id": "dev.ssterm.spike",
+    "executable_sha256": "2a40a65e1acfe2a619d313d20a90e42cae1bc9eaf8228746b0e6ea5790729bfc",
+    "developer_id_signing_requested": false,
+    "notarization_performed": false,
+    "production_release": false
+  },
+  "checks": {
+    "syntax": "passed",
+    "node_tests": {
+      "node_test_cases": 4,
+      "integration_probes": 19,
+      "regression_cases": 3,
+      "failed": 0
+    },
+    "packaged_tests": {
+      "integration_probes": 19,
+      "failed": 0
+    },
+    "independent_test_stage": "passed on final corrected sources and rebuilt package: 4 Node tests (19 probes + 3 regressions), 19 packaged probes; no fixture containers or temporary key directories remained",
+    "review": "re-review passed; no remaining High or Medium findings; operational descendant-process limit recorded",
+    "lockfile_reinstall": {
+      "command": "npm ci --omit=optional --ignore-scripts --no-audit --no-fund",
+      "exit_code": 0,
+      "packages": 55,
+      "native_install_hooks_executed": false
+    },
+    "explicit_runtime_preparation": {
+      "command": "npm run runtime:prepare",
+      "exit_code": 0
+    }
+  },
+  "reports": {
+    "node-report.json": {
+      "path": "node-report.json",
+      "sha256": "aa7b63592fb709e43261afab128dc1bb1ffec0722244f6e799377b56c7bc287f"
+    },
+    "packaged-report.json": {
+      "path": "packaged-report.json",
+      "sha256": "f5ba2288081cc5a3081c6dfb8ddae4f1bbd977133ce64eb608466e75bf9fd1f8"
+    }
+  },
+  "limitations": [
+    "Single project-owned OpenSSH/PAM fixture and Ed25519 keys only.",
+    "No production renderer/IME/IPC/storage/Keychain/native ABI/release-signing acceptance.",
+    "Hard-kill handling has run-scoped container/key cleanup but cannot promise recovery from all Docker CLI/daemon failures."
+  ]
+}

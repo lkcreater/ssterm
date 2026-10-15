@@ -1,6 +1,6 @@
 # Task checklist
 
-**สถานะ: อนุมัติ M0 เท่านั้นเมื่อ 2026-10-14.** SST-001/T001/T047 `DONE` เป็น ADR/docs ผ่าน TEST/REVIEW/DELIVER; root จัดทำ commit; SST-002/T002–T003 `NOT_STARTED` จน first commit SST-003–028 ยังรออนุมัติ Checklist เชื่อม [tickets](tickets.md); ติ๊ก implementation tasks เมื่อผ่าน acceptance จริง
+**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว Production SST-003–028/DS02–DS06 ยังรออนุมัติ
 
 ## งานเตรียมการที่ทำแล้ว
 
@@ -19,8 +19,8 @@
 ## M0 — ตัดสินใจและพิสูจน์ feasibility
 
 - [x] **T001 / SST-001:** finalize MVP/platform/app ID/original UX ADR; บันทึก React + Electron + shadcn/ui + Tailwind CSS และเลือก compatible dependency versions/build tooling
-- [ ] **T002 / SST-002:** สร้าง project-owned SSH/SFTP fixture พร้อม key/password/host-key cases
-- [ ] **T003 / SST-002:** prove PTY/resize/auth/interactive prompts/SFTP/tunnel/packaging, record limits และเลือก backend
+- [x] **T002 / SST-002:** สร้าง project-owned SSH/SFTP fixture พร้อม key/password/host-key cases
+- [x] **T003 / SST-002:** prove PTY/resize/auth/interactive prompts/SFTP/tunnel/packaging, record limits และเลือก backend
 
 ## M1 — Foundation
 
@@ -96,4 +96,6 @@
 
 ## Task bookkeeping
 
-Current owner: root สำหรับ SST-001 delivery/commit; [ADR 0001](../adr/0001-mvp-platform-stack.md) + [execution ledger](../agent-runs/implementation-plan.md) เป็น evidence/handoff T001/T047 done หลัง acceptance/TEST/REVIEW/DELIVER ผ่าน เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement
+Current owner: root สำหรับ M0 delivery/commit; [ADR 0001](../adr/0001-mvp-platform-stack.md) + [execution ledger](../agent-runs/implementation-plan.md) เป็น evidence/handoff T001/T047 done หลัง acceptance/TEST/REVIEW/DELIVER ผ่าน เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement
+
+T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production implementation tasks ยังไม่ถูกติ๊ก

@@ -1,0 +1,205 @@
+{
+  "ticket": "SST-002",
+  "runtime": "electron-packaged",
+  "observedAt": "2026-10-15T02:13:05.716Z",
+  "versions": {
+    "node": "24.21.0",
+    "electron": "44.7.2",
+    "ssh2": "1.17.0"
+  },
+  "platform": "darwin",
+  "arch": "arm64",
+  "optionalNativeBindingLoaded": false,
+  "algorithms": {
+    "kex": "curve25519-sha256@libssh.org",
+    "hostKey": "ssh-ed25519",
+    "clientToServer": {
+      "cipher": "aes128-gcm@openssh.com",
+      "mac": "",
+      "compression": "none"
+    },
+    "serverToClient": {
+      "cipher": "aes128-gcm@openssh.com",
+      "mac": "",
+      "compression": "none"
+    }
+  },
+  "cases": [
+    {
+      "name": "unknown-key-rejected-before-auth",
+      "status": "passed",
+      "milliseconds": 32,
+      "evidence": {
+        "authenticationStarted": false
+      }
+    },
+    {
+      "name": "explicit-trust-password-auth",
+      "status": "passed",
+      "milliseconds": 127,
+      "evidence": {
+        "explicitDecision": true
+      }
+    },
+    {
+      "name": "encrypted-openssh-ed25519-key-auth",
+      "status": "passed",
+      "milliseconds": 274,
+      "evidence": {
+        "encryptedKey": true,
+        "format": "OpenSSH Ed25519"
+      }
+    },
+    {
+      "name": "keyboard-interactive-pam-auth",
+      "status": "passed",
+      "milliseconds": 51,
+      "evidence": {
+        "challengeRounds": 1
+      }
+    },
+    {
+      "name": "pty-input-resize-unicode-exit",
+      "status": "passed",
+      "milliseconds": 119,
+      "evidence": {
+        "rows": 41,
+        "columns": 111,
+        "exitCode": 7,
+        "unicodeBytes": true
+      }
+    },
+    {
+      "name": "sftp-upload-download-integrity",
+      "status": "passed",
+      "milliseconds": 86,
+      "evidence": {
+        "bytes": 196625,
+        "sha256Matched": true,
+        "overwritePolicy": "exclusive-create",
+        "remotePartialPolicy": "fixture-owned path deleted on fixture teardown"
+      }
+    },
+    {
+      "name": "loopback-local-forward-http-and-stop",
+      "status": "passed",
+      "milliseconds": 55,
+      "evidence": {
+        "loopbackOnly": true,
+        "destination": "fixture-loopback:8080",
+        "bodyMatched": true,
+        "listenerClosed": true
+      }
+    },
+    {
+      "name": "bad-password-denied",
+      "status": "passed",
+      "milliseconds": 3210,
+      "evidence": {
+        "name": "SpikeError",
+        "code": "auth-denied",
+        "observation": {
+          "authenticationStarted": true,
+          "trustRequests": 0,
+          "prompts": 0
+        }
+      }
+    },
+    {
+      "name": "handshake-timeout-cleanup",
+      "status": "passed",
+      "milliseconds": 304,
+      "evidence": {
+        "name": "SpikeError",
+        "code": "timeout",
+        "observation": {
+          "authenticationStarted": false,
+          "trustRequests": 0,
+          "prompts": 0
+        }
+      }
+    },
+    {
+      "name": "cancel-before-connect",
+      "status": "passed",
+      "milliseconds": 1
+    },
+    {
+      "name": "cancel-during-handshake",
+      "status": "passed",
+      "milliseconds": 52
+    },
+    {
+      "name": "cancel-pending-trust-decision",
+      "status": "passed",
+      "milliseconds": 162
+    },
+    {
+      "name": "cancel-pending-auth-prompt",
+      "status": "passed",
+      "milliseconds": 39,
+      "evidence": {
+        "promptObserved": true
+      }
+    },
+    {
+      "name": "ordered-output-and-bounded-collector",
+      "status": "passed",
+      "milliseconds": 160,
+      "evidence": {
+        "bytes": 32768,
+        "ordered": true,
+        "collectorLimit": 65536
+      }
+    },
+    {
+      "name": "output-resource-limit-is-explicit",
+      "status": "passed",
+      "milliseconds": 51
+    },
+    {
+      "name": "repeated-session-disposal",
+      "status": "passed",
+      "milliseconds": 147,
+      "evidence": {
+        "cycles": 3,
+        "idempotent": true
+      }
+    },
+    {
+      "name": "actual-host-key-rotation-blocks-before-auth",
+      "status": "passed",
+      "milliseconds": 620,
+      "evidence": {
+        "sameEndpoint": true,
+        "differentServerKey": true,
+        "replacementRequiresExplicitDecision": true
+      }
+    },
+    {
+      "name": "transport-loss-closes-session-and-tunnel",
+      "status": "passed",
+      "milliseconds": 292,
+      "evidence": {
+        "lostTransportObserved": true,
+        "loopbackListenerClosed": true
+      }
+    },
+    {
+      "name": "owned-fixture-container-keys-and-ports-cleaned",
+      "status": "passed",
+      "milliseconds": 130,
+      "evidence": {
+        "containerRemoved": true,
+        "tempDirectoryRemoved": true,
+        "hostPortClosed": true
+      }
+    }
+  ],
+  "limitations": [
+    "One project-owned Debian OpenSSH/PAM server with an Ed25519 host key; not an exhaustive server/key/algorithm compatibility matrix.",
+    "Pure JavaScript ssh2 path: optional cpu-features and sshcrypto native accelerators are omitted; no native SSH binding/ABI acceptance.",
+    "Backend PTY bytes only; no xterm rendering, Thai IME, production IPC/UI, Keychain/storage or signing/notarization acceptance.",
+    "Unsigned local arm64 package is a feasibility artifact, not a production release."
+  ]
+}

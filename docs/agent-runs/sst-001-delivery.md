@@ -1,6 +1,6 @@
 # SST-001 delivery — scope, platform, stack และ DS01
 
-**วันที่:** 2026-10-14 · **ผล:** ผ่านเกณฑ์ส่งมอบ · **Commit:** รอ root
+**วันที่:** 2026-10-14 · **ผล:** ผ่านเกณฑ์ส่งมอบ · **Commit:** `ad9ed51`
 
 SST-001 บันทึก MVP boundary, macOS arm64 baseline, Electron/React/TypeScript/shadcn/Tailwind stack, exact dependency baseline, future app layout/IDs, security boundaries, packaging approach และ DS01 Signal Blue handoff ใน [ADR 0001](../adr/0001-mvp-platform-stack.md) กับเอกสารที่เกี่ยวข้อง
 

@@ -1,0 +1,21 @@
+{
+  "name": "ssterm-ssh-compat-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SST-002 isolated project-owned SSH compatibility probe",
+  "main": "electron/main.cjs",
+  "type": "commonjs",
+  "engines": { "node": ">=24.11.1" },
+  "scripts": {
+    "runtime:prepare": "node -e \"require('electron')\"",
+    "check": "node scripts/check.cjs",
+    "test": "node --test --test-concurrency=1 test/*.test.cjs",
+    "package:mac": "node scripts/package.cjs",
+    "test:packaged": "node scripts/run-packaged.cjs"
+  },
+  "dependencies": { "ssh2": "1.17.0" },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "@electron/packager": "20.3.0"
+  }
+}
