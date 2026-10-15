@@ -152,6 +152,9 @@ const credential = {
 } as const;
 const trust = {
   kind: "host-trust",
+  status: "unknown",
+  endpointHost: "example.com",
+  endpointPort: 22,
   algorithm: "ssh-ed25519",
   fingerprint: `SHA256:${"A".repeat(43)}`,
 } as const;
@@ -305,6 +308,38 @@ test("Ready requires host verification, authentication and adoption of an intera
   );
   assert.equal(rejected, 2);
   await h.registry.dispose();
+});
+
+test("changed host-key prompts allow only replacement or rejection and rejection blocks authentication", async () => {
+  for (const decision of ["replace", "reject"] as const) {
+    const h = harness(); const session = h.connect(); await tick();
+    const context = h.contexts[0]!;
+    assert(context.verifyingHost());
+    const changed = { ...trust, status: "changed", previousAlgorithm: "ssh-rsa", previousFingerprint: `SHA256:${"B".repeat(43)}` } as const;
+    const pending = context.requestPrompt(changed);
+    const prompt = h.registry.snapshot("owner-1")[0]!.prompt!;
+    for (const forbidden of ["accept-once", "remember"] as const) {
+      assert.equal(h.registry.answerPrompt("owner-1", session.id, 1, prompt.id, { kind: "host-trust", decision: forbidden }).ok, false);
+      assert.equal(h.registry.snapshot("owner-1")[0]!.prompt!.id, prompt.id);
+      assert(!context.authenticating());
+    }
+    value(h.registry.answerPrompt("owner-1", session.id, 1, prompt.id, { kind: "host-trust", decision }));
+    assert.deepEqual(await pending, { kind: "host-trust", decision });
+    assert.equal(context.authenticating(), decision === "replace");
+    if (decision === "reject") assert.equal(h.registry.snapshot("owner-1")[0]!.error!.code, "host-key-changed");
+    await h.registry.dispose();
+  }
+});
+
+test("unknown host-key prompts reject replacement and malformed changed identity", async () => {
+  const h = harness(); const session = h.connect(); await tick();
+  const context = h.contexts[0]!; assert(context.verifyingHost());
+  await assert.rejects(context.requestPrompt({ ...trust, status: "changed" } as never));
+  const pending = context.requestPrompt(trust);
+  const prompt = h.registry.snapshot("owner-1")[0]!.prompt!;
+  assert.equal(h.registry.answerPrompt("owner-1", session.id, 1, prompt.id, { kind: "host-trust", decision: "replace" }).ok, false);
+  value(h.registry.answerPrompt("owner-1", session.id, 1, prompt.id, { kind: "host-trust", decision: "accept-once" }));
+  await pending; await h.registry.dispose();
 });
 
 test("prompt answers enforce ownership, generation, id, uniqueness and bounded finite fields", async () => {

@@ -1,8 +1,11 @@
+import type { TrustState, TrustStateRequest, AnswerHostTrustRequest, PrepareKnownHostRevokeRequest, RevokeKnownHostRequest, KnownHostRevokePreview, TrustActionResponse } from "./known-hosts.ts";
+export * from "./known-hosts.ts";
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
   | "invalid-request"
   | "unauthorized"
   | "stale-owner"
+  | "conflict"
   | "unavailable";
 export type Result<T> =
   | { ok: true; value: T }
@@ -43,6 +46,11 @@ export interface WindowStateEvent {
 }
 export interface DesktopAPI {
   bootstrap(): Promise<Result<BootstrapData>>;
+  trustState(request: TrustStateRequest): Promise<Result<TrustState>>;
+  onTrustState(callback: (state: TrustState) => void): () => void;
+  answerHostTrust(request: AnswerHostTrustRequest): Promise<Result<TrustActionResponse>>;
+  prepareKnownHostRevoke(request: PrepareKnownHostRevokeRequest): Promise<Result<KnownHostRevokePreview>>;
+  revokeKnownHost(request: RevokeKnownHostRequest): Promise<Result<TrustActionResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -54,12 +62,18 @@ export const channels = Object.freeze({
   bootstrap: "ssterm:bootstrap",
   ping: "ssterm:ping",
   windowState: "ssterm:window-state",
+  trustState: "ssterm:trust-state",
+  trustStateChanged: "ssterm:trust-state-changed",
+  answerHostTrust: "ssterm:answer-host-trust",
+  prepareKnownHostRevoke: "ssterm:prepare-known-host-revoke",
+  revokeKnownHost: "ssterm:revoke-known-host",
 });
 
 const messages: Record<ErrorCode, string> = {
   "invalid-request": "The request is invalid.",
   unauthorized: "The request is not authorized.",
   "stale-owner": "The window has changed. Reload its state.",
+  conflict: "The state changed. Refresh and try again.",
   unavailable: "The application is unavailable.",
 };
 export function failure<T = never>(code: ErrorCode): Result<T> {

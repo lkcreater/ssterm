@@ -182,7 +182,7 @@ type Crud<K extends string, T> = {
   id: Id;
   expectedRevision: number;
 };
-export type MetadataChange = Crud<'host', HostInput> | Crud<'group', GroupInput> | Crud<'identity', IdentityInput> | Crud<'tag', TagInput> | Crud<'tunnel-rule', TunnelRuleInput> | {
+export type MetadataChange = KnownHostChange | Crud<'host', HostInput> | Crud<'group', GroupInput> | Crud<'identity', IdentityInput> | Crud<'tag', TagInput> | Crud<'tunnel-rule', TunnelRuleInput> | {
   type: 'set-host-tag';
   hostId: Id;
   tagId: Id;
@@ -295,3 +295,12 @@ export interface MetadataRepository {
 export { normalizeEndpoint, normalizeLabel, normalizeTag } from './normalize.ts';
 
 export { resolveHostConfig, queryCatalogHosts, catalogGroupTree, type ConfigSource, type ResolvedHostConfig, type CatalogHostQuery, type CatalogHostView, type CatalogGroupNode } from './catalog.ts';
+
+export { HOST_KEY_ALGORITHMS, type HostKeyAlgorithm, type HostKeyIdentity } from './host-key.ts';
+/** Main-only finite trust transitions; endpoint identity cannot be edited. */
+export type KnownHostChange = {
+  type: 'accept-known-host'; id: Id;
+  data: { endpointHost: string; endpointPort: number; algorithm: string; publicKey: string; fingerprint: string; acceptedAt: string };
+} | { type: 'verify-known-host'; id: Id; expectedRevision: number; verifiedAt: string }
+  | { type: 'replace-known-host'; id: Id; expectedRevision: number; data: { algorithm: string; publicKey: string; fingerprint: string; acceptedAt: string } }
+  | { type: 'revoke-known-host'; id: Id; expectedRevision: number };

@@ -246,3 +246,16 @@ test("focus is ordered, duplicate states suppressed, disposal is idempotent", ()
   assert.equal(events.length, 3);
   code(boundary.bootstrap(event, []), "unavailable");
 });
+
+test("shared owner authorization fences trust requests before payload handling", () => {
+  const { boundary, event, owner, sender, frame } = fixture();
+  assert.deepEqual(boundary.authorizeOwner(event, owner), { ok: true, value: owner });
+  code(boundary.authorizeOwner({ sender: { ...sender }, senderFrame: frame }, undefined), "unauthorized");
+  code(boundary.authorizeOwner({ sender, senderFrame: { url: entry } }, owner), "unauthorized");
+  code(boundary.authorizeOwner(event, { ...owner, extra: true }), "invalid-request");
+  code(boundary.authorizeOwner(event, { ...owner, windowId: 9 }), "unauthorized");
+  boundary.rotate(sender);
+  code(boundary.authorizeOwner(event, owner), "stale-owner");
+  frame.url = `${entry}?forged`;
+  code(boundary.authorizeOwner(event, undefined), "unauthorized");
+});

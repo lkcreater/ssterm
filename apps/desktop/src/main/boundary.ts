@@ -1,6 +1,7 @@
 import {
   failure,
   isPingRequest,
+  isOwner,
   isStorageHealth,
   type BootstrapData,
   type Owner,
@@ -122,6 +123,17 @@ export class WindowBoundary {
     )
       return failure("unauthorized");
     return { ok: true, value: registration };
+  }
+
+  authorizeOwner(event: Invocation, owner: unknown): Result<Owner> {
+    const authorized = this.authorize(event);
+    if (!authorized.ok) return authorized;
+    if (!isOwner(owner)) return failure("invalid-request");
+    if (owner.windowId !== authorized.value.owner.windowId)
+      return failure("unauthorized");
+    if (owner.generation !== authorized.value.owner.generation)
+      return failure("stale-owner");
+    return { ok: true, value: { ...authorized.value.owner } };
   }
 
   bootstrap(event: Invocation, args: unknown[]): Result<BootstrapData> {

@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ResolvedHostConfig, StoreResult } from "@ssterm/domain";
+import {
+  HOST_KEY_ALGORITHMS,
+  type ResolvedHostConfig,
+  type StoreResult,
+  type HostKeyAlgorithm,
+} from "@ssterm/domain";
 import { TransientSecrets, type TransientSecret } from "./transient.ts";
 
 export type SessionState =
@@ -50,30 +55,40 @@ export type PromptFieldId =
   | "response-7"
   | "response-8";
 export type SessionPromptSpec =
-  | {
+  | ({
       kind: "host-trust";
-      algorithm:
-        | "ssh-ed25519"
-        | "ssh-rsa"
-        | "ecdsa-sha2-nistp256"
-        | "ecdsa-sha2-nistp384"
-        | "ecdsa-sha2-nistp521";
+      algorithm: HostKeyAlgorithm;
       fingerprint: string;
-    }
+      endpointHost: string;
+      endpointPort: number;
+    } & (
+      | { status: "unknown" }
+      | {
+          status: "changed";
+          previousAlgorithm: HostKeyAlgorithm;
+          previousFingerprint: string;
+        }
+    ))
   | {
       kind: "credentials";
       fields: readonly { id: PromptFieldId; echo: boolean }[];
     };
 export type SessionPrompt = SessionPromptSpec & { id: string };
 export type SessionPromptInput =
-  | { kind: "host-trust"; decision: "accept-once" | "remember" | "reject" }
+  | {
+      kind: "host-trust";
+      decision: "accept-once" | "remember" | "replace" | "reject";
+    }
   | {
       kind: "credentials";
       values: readonly { id: PromptFieldId; value: Uint8Array }[];
     };
 /** Main-only answer. Consume synchronously; the views are overwritten when the callback returns. */
 export type SessionPromptAnswer =
-  | { kind: "host-trust"; decision: "accept-once" | "remember" | "reject" }
+  | {
+      kind: "host-trust";
+      decision: "accept-once" | "remember" | "replace" | "reject";
+    }
   | {
       kind: "credentials";
       use<T>(
@@ -225,26 +240,38 @@ const fieldIds = new Set<PromptFieldId>([
 function promptSpec(input: SessionPromptSpec): SessionPromptSpec | undefined {
   if (!input || typeof input !== "object") return;
   if (input.kind === "host-trust") {
+    const algorithms: readonly string[] = HOST_KEY_ALGORITHMS;
+    const fingerprint = (value: unknown) =>
+      typeof value === "string" && /^SHA256:[A-Za-z0-9+/]{43}$/u.test(value);
+    const fields = [
+      "kind",
+      "status",
+      "endpointHost",
+      "endpointPort",
+      "algorithm",
+      "fingerprint",
+      ...(input.status === "changed"
+        ? ["previousAlgorithm", "previousFingerprint"]
+        : []),
+    ];
     if (
-      Object.keys(input).some(
-        (key) => !["kind", "algorithm", "fingerprint"].includes(key),
-      ) ||
-      ![
-        "ssh-ed25519",
-        "ssh-rsa",
-        "ecdsa-sha2-nistp256",
-        "ecdsa-sha2-nistp384",
-        "ecdsa-sha2-nistp521",
-      ].includes(input.algorithm) ||
-      typeof input.fingerprint !== "string" ||
-      !/^SHA256:[A-Za-z0-9+/]{43}$/u.test(input.fingerprint)
+      Object.keys(input).some((key) => !fields.includes(key)) ||
+      !["unknown", "changed"].includes(input.status) ||
+      !algorithms.includes(input.algorithm) ||
+      !fingerprint(input.fingerprint) ||
+      typeof input.endpointHost !== "string" ||
+      input.endpointHost.length < 1 ||
+      input.endpointHost.length > 253 ||
+      /[\s\u0000-\u001f\u007f]/u.test(input.endpointHost) ||
+      !Number.isInteger(input.endpointPort) ||
+      input.endpointPort < 1 ||
+      input.endpointPort > 65535 ||
+      (input.status === "changed" &&
+        (!algorithms.includes(input.previousAlgorithm) ||
+          !fingerprint(input.previousFingerprint)))
     )
       return;
-    return {
-      kind: "host-trust",
-      algorithm: input.algorithm,
-      fingerprint: input.fingerprint,
-    };
+    return { ...input };
   }
   if (
     input.kind !== "credentials" ||
@@ -396,7 +423,11 @@ export class SessionRegistry {
         Object.keys(answer).some(
           (key) => !["kind", "decision"].includes(key),
         ) ||
-        !["accept-once", "remember", "reject"].includes(answer.decision)
+        !(
+          pending.spec.status === "changed"
+            ? ["replace", "reject"]
+            : ["accept-once", "remember", "reject"]
+        ).includes(answer.decision)
       )
         return failure("invalid-request");
       delivered = { kind: "host-trust", decision: answer.decision };
@@ -473,7 +504,12 @@ export class SessionRegistry {
     // Promise continuations run after observers; adapters must still respect signal/generation.
     pending.resolve(delivered);
     if (delivered.kind === "host-trust" && delivered.decision === "reject")
-      this.#fail(current, "host-key-untrusted");
+      this.#fail(
+        current,
+        pending.spec.kind === "host-trust" && pending.spec.status === "changed"
+          ? "host-key-changed"
+          : "host-key-untrusted",
+      );
     else this.#emit(current);
     return success(undefined);
   }

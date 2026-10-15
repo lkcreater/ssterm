@@ -35,6 +35,7 @@ export default defineConfig({
             "secrets.spec.ts",
             "catalog.spec.ts",
             "sessions.spec.ts",
+            "known-hosts.spec.ts",
           ],
         },
       ]
@@ -47,6 +48,7 @@ export default defineConfig({
             "secrets.spec.ts",
             "catalog.spec.ts",
             "sessions.spec.ts",
+            "known-hosts.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

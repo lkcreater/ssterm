@@ -1,11 +1,11 @@
 import { strict as assert } from 'node:assert';
 import { test, type TestContext } from 'node:test';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID, createHash, generateKeyPairSync } from 'node:crypto';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, chmodSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { openMetadata } from '../../packages/adapters/src/index.ts';
+import { openMetadata, decodeHostPublicKey } from '../../packages/adapters/src/index.ts';
 import { runMigrations } from '../../packages/adapters/src/migrations.ts';
 import { normalizeEndpoint, normalizeTag, type StoreResult, type MetadataRepository, type MetadataSnapshot, type MetadataChange } from '../../packages/domain/src/index.ts';
 function value<T>(result: StoreResult<T>): T {
@@ -459,8 +459,8 @@ test('Unicode tag collision and settings/auth discriminants reject whole batches
     assert.equal(result.ok, false);
     assert.deepEqual(f.snapshot(), before);
   }
-  // Known-host trust stays SST-009; protected writes accept only typed envelopes/refs, never plaintext fields.
-  for (const [type, expected] of [['create-known-host', 'unavailable'], ['create-snippet', 'invalid-request'], ['update-secret-ref', 'invalid-request'], ['create-key', 'invalid-request']]) code(f.repo.commit({
+  // Trust accepts finite decisions only; protected writes accept only typed envelopes/refs, never plaintext fields.
+  for (const [type, expected] of [['create-known-host', 'invalid-request'], ['create-snippet', 'invalid-request'], ['update-secret-ref', 'invalid-request'], ['create-key', 'invalid-request']]) code(f.repo.commit({
     expectedCatalogRevision: 1,
     changes: [{
       type,
@@ -791,7 +791,10 @@ test('deleting a host preserves normalized shared trust, identity and tags; SQL 
   const s=f.snapshot();const trust=randomUUID();const writer=new DatabaseSync(f.path);
   try {
     const insert=writer.prepare('INSERT INTO known_host VALUES(?,?,?,?,?,?,?,?,?,?,?,?)');
-    const fields=[s.vault.id,1,s.vault.createdAt,s.vault.createdAt,'example.com',22,'ssh-ed25519','fixture-public-key','fixture-fingerprint',s.vault.createdAt,s.vault.createdAt] as const;
+    const publicBytes=generateKeyPairSync('ed25519').publicKey.export({format:'der',type:'spki'}).subarray(-32);
+    const wire=Buffer.concat([Buffer.from([0,0,0,11]),Buffer.from('ssh-ed25519'),Buffer.from([0,0,0,32]),publicBytes]);
+    const identity=decodeHostPublicKey(wire)!;
+    const fields=[s.vault.id,1,s.vault.createdAt,s.vault.createdAt,'example.com',22,identity.algorithm,identity.publicKey,identity.fingerprint,s.vault.createdAt,s.vault.createdAt] as const;
     insert.run(trust,...fields);
     assert.throws(()=>insert.run(randomUUID(),...fields));
   }finally{writer.close();}

@@ -1,6 +1,6 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-008 / T013–T014: `DONE`** — [session lifecycle/ownership](sessions.md) ผ่าน pipeline; unit 106/106, E2E 15/15, packaged 12/12 และ independent TEST/REVIEW ผ่าน ยังไม่ commit SST-008; SST-007 committed `c124b1b`. SST-009 เป็นต้นไปยังไม่เริ่ม
+**SST-009 / T015: `DONE`** — [known-host verification/trust](known-hosts.md) ผ่าน pipeline; unit 129/129, E2E 17/17, packaged 14/14 และ independent TEST/REVIEW (รวม focused re-review) ผ่าน ยังไม่ commit SST-009; SST-008 committed `bcbb693`. SST-010 เป็นต้นไปยังไม่เริ่ม
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 

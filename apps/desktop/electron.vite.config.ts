@@ -11,6 +11,7 @@ export default defineConfig({
     resolve: { alias: { "@ssterm/contracts": contracts } },
     build: {
       externalizeDeps: {
+        include: ["ssh2"],
         exclude: [
           "@ssterm/contracts",
           "@ssterm/domain",
@@ -33,6 +34,7 @@ export default defineConfig({
           sessions: fileURLToPath(
             new URL("./src/main/sessions.ts", import.meta.url),
           ),
+          trust: fileURLToPath(new URL("./src/main/trust.ts", import.meta.url)),
         },
         preserveEntrySignatures: "strict",
         output: {

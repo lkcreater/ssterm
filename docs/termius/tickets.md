@@ -1,6 +1,6 @@
 # Tickets สำหรับ ssterm
 
-**SST-008 / T013–T014: `DONE`** — [session lifecycle/ownership](../sessions.md) ผ่าน pipeline; unit 106/106, E2E 15/15, packaged 12/12 และ independent TEST/REVIEW ผ่าน ยังไม่ commit SST-008; SST-007 committed `c124b1b`. SST-009 เป็นต้นไปยังไม่เริ่ม
+**SST-009 / T015: `DONE`** — [known-host verification/trust](../known-hosts.md) ผ่าน pipeline; unit 129/129, E2E 17/17, packaged 14/14 และ independent TEST/REVIEW (รวม focused re-review) ผ่าน ยังไม่ commit SST-009; SST-008 committed `bcbb693`. SST-010 เป็นต้นไปยังไม่เริ่ม
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-009–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
@@ -148,6 +148,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Validation:** fake delayed adapter ทดสอบ cancel/auth/close/reconnect races และ real fixture smoke. **Tasks:** session registry; typed command/events; teardown ownership.
 
 ### SST-009 — Known-host verification and trust replacement
+
+**Status:** `DONE` — T015 ตาม [known hosts](../known-hosts.md) และ [delivery](../agent-runs/sst-009-delivery.md); production transport hook-up/saved-host auth อยู่ SST-010
 
 **Outcome:** SSH ทุก capability ใช้ policy เดียวกัน. **Evidence:** S03/S04, W01; prompts เป็น Proposed requirement.
 

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   AlertCircleIcon,
   CircleIcon,
@@ -7,6 +8,7 @@ import {
   LockKeyholeIcon,
   PlusIcon,
   SearchIcon,
+  ShieldCheckIcon,
   ServerIcon,
   TerminalIcon,
   WorkflowIcon,
@@ -43,6 +45,11 @@ import {
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { useDesktopState } from "@/hooks/use-desktop-state";
+import { useKnownHosts } from "@/hooks/use-known-hosts";
+import {
+  KnownHostsWorkspace,
+  HostTrustDialogs,
+} from "@/components/trust/known-hosts";
 import iconLogo from "@/assets/icon-logo.png";
 
 const unavailable = [
@@ -104,6 +111,9 @@ const storageProblems: Record<
 
 export function AppShell() {
   const desktop = useDesktopState();
+  const [page, setPage] = useState<"servers" | "known-hosts">("servers");
+  const owner = desktop.status === "ready" ? desktop.data.owner : undefined;
+  const trust = useKnownHosts(owner);
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
     storage?.status === "blocked" ? storageProblems[storage.code] : undefined;
@@ -165,7 +175,11 @@ export function AppShell() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton isActive aria-current="page">
+                    <SidebarMenuButton
+                      isActive={page === "servers"}
+                      aria-current={page === "servers" ? "page" : undefined}
+                      onClick={() => setPage("servers")}
+                    >
                       <ServerIcon />
                       <span>All servers</span>
                       <span className="ml-auto type-caption">0</span>
@@ -184,6 +198,17 @@ export function AppShell() {
               <SidebarGroupLabel>Workspace tools</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={page === "known-hosts"}
+                      aria-current={page === "known-hosts" ? "page" : undefined}
+                      onClick={() => setPage("known-hosts")}
+                      disabled={storage?.status !== "ready"}
+                    >
+                      <ShieldCheckIcon />
+                      <span>Known hosts</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                   {unavailable.map(({ label, icon: Icon }) => (
                     <SidebarMenuItem key={label}>
                       <SidebarMenuButton disabled>
@@ -215,37 +240,50 @@ export function AppShell() {
                 className="size-4 text-muted-foreground"
                 aria-hidden="true"
               />
-              <h1 className="type-label">Workspace</h1>
+              <h1 className="type-label">
+                {page === "known-hosts" ? "Known hosts" : "Workspace"}
+              </h1>
             </div>
             <span className="type-caption text-muted-foreground">
               No active sessions
             </span>
           </div>
-          <div className="workspace-empty">
-            <Empty>
-              <EmptyHeader>
-                <img
-                  src={iconLogo}
-                  alt="ssterm monogram"
-                  className="empty-mark"
-                />
-                <EmptyTitle>{emptyTitle}</EmptyTitle>
-                <EmptyDescription>
-                  {storage?.status === "ready"
-                    ? "A calm place for your connected systems. Your workspace is ready; server setup is coming in a future update."
-                    : "Your workspace must open successfully before saved servers can be shown. Server setup is coming in a future update."}
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button disabled>
-                  <PlusIcon data-icon="inline-start" /> Add server
-                </Button>
-                <span className="type-caption text-muted-foreground">
-                  Connections are not available in this version.
-                </span>
-              </EmptyContent>
-            </Empty>
-          </div>
+          {page === "known-hosts" ? (
+            <KnownHostsWorkspace
+              key={
+                owner ? `${owner.windowId}:${owner.generation}` : "unavailable"
+              }
+              owner={owner}
+              state={trust.state}
+              error={trust.error}
+            />
+          ) : (
+            <div className="workspace-empty">
+              <Empty>
+                <EmptyHeader>
+                  <img
+                    src={iconLogo}
+                    alt="ssterm monogram"
+                    className="empty-mark"
+                  />
+                  <EmptyTitle>{emptyTitle}</EmptyTitle>
+                  <EmptyDescription>
+                    {storage?.status === "ready"
+                      ? "A calm place for your connected systems. Your workspace is ready; server setup is coming in a future update."
+                      : "Your workspace must open successfully before saved servers can be shown. Server setup is coming in a future update."}
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button disabled>
+                    <PlusIcon data-icon="inline-start" /> Add server
+                  </Button>
+                  <span className="type-caption text-muted-foreground">
+                    Connections are not available in this version.
+                  </span>
+                </EmptyContent>
+              </Empty>
+            </div>
+          )}
           {problem ? (
             <div className="px-5 pb-4">
               <Alert>
@@ -268,6 +306,7 @@ export function AppShell() {
           ) : null}
         </main>
       </SidebarProvider>
+      <HostTrustDialogs state={trust.state} />
       <footer className="app-statusbar">
         <CircleIcon className="size-3" aria-hidden="true" />
         <span>No connections</span>

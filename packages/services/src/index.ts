@@ -41,3 +41,12 @@ export {
   type SessionPromptInput,
   type SessionPromptAnswer,
 } from "./sessions.ts";
+export {
+  KnownHostPolicy,
+  type KnownHostView,
+  type TrustChallenge,
+  type TrustDecision,
+  type KnownHostResult,
+  type KnownHostErrorCode,
+  type KnownHostRevokePreview,
+} from "./known-hosts.ts";

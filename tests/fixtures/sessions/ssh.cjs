@@ -100,6 +100,9 @@ async function runSessionSmoke({ SessionRegistry, TransientSecrets }) {
               onUnknown: async (info) => {
                 const answer = await context.requestPrompt({
                   kind: "host-trust",
+                  status: "unknown",
+                  endpointHost: fixture.host,
+                  endpointPort: fixture.port,
                   algorithm: info.algorithm,
                   fingerprint: info.fingerprint,
                 });

@@ -17,10 +17,21 @@ const source = JSON.parse(
 const stage = await mkdtemp(join(tmpdir(), "ssterm-package-"));
 try {
   await cp(join(desktop, "out"), join(stage, "out"), { recursive: true });
-  // The main bundle keeps the Keychain binding external: ship its loader and arm64 prebuilt only.
-  for (const name of ["@napi-rs/keyring", "@napi-rs/keyring-darwin-arm64"]) {
+  // External runtime dependencies: Keychain prebuilt and the pinned SSH parser's JS closure.
+  // No optional CPU detection or SSH native acceleration is built or staged.
+  for (const name of [
+    "@napi-rs/keyring",
+    "@napi-rs/keyring-darwin-arm64",
+    "ssh2",
+    "asn1",
+    "safer-buffer",
+    "bcrypt-pbkdf",
+    "tweetnacl",
+  ]) {
     await cp(join(root, "node_modules", name), join(stage, "node_modules", name), {
       recursive: true,
+      // ssh2's upstream tests/examples are not runtime code and include private-key fixtures.
+      filter: (path) => !/\/ssh2\/(test|examples)(\/|$)/u.test(path),
     });
   }
   await writeFile(

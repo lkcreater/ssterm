@@ -186,3 +186,5 @@ export function previewMetadataChanges(snapshot: MetadataSnapshot, changes: Meta
     return failure(error);
   }
 }
+
+export { decodeHostPublicKey, validHostKeyIdentity, MAX_HOST_KEY_BYTES } from './host-key.ts';

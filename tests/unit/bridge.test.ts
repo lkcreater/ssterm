@@ -68,9 +68,8 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "bootstrap",
-    "onWindowState",
-    "ping",
+    "answerHostTrust", "bootstrap", "onTrustState", "onWindowState", "ping",
+    "prepareKnownHostRevoke", "revokeKnownHost", "trustState",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -206,4 +205,35 @@ test("bridge validates finite storage health without paths, rows or raw errors",
   const { storage: _storage, ...missingStorage } = original.value;
   setReply({ ok: true, value: missingStorage });
   assert.deepEqual(await api.bootstrap(), failure("unavailable"));
+});
+
+test("trust bridge filters owner, sequence, malformed data and credential prompts", async () => {
+  const { api, emit, setReply, listeners, dispose, calls } = fixture();
+  await api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const state = (sequence: number) => ({ owner, sequence, availability: "ready", knownHosts: [], truncated: false, prompts: [] });
+  const received: unknown[] = [];
+  api.onTrustState((value) => received.push(value));
+  emit(state(1));
+  emit(state(1));
+  emit({ ...state(2), owner: { windowId: 2, generation: 2 } });
+  emit({ ...state(2), publicKey: "must not cross" });
+  emit({ ...state(2), prompts: [{ kind: "credentials", fields: [{ id: "password" }] }] });
+  emit(state(2));
+  assert.deepEqual(received, [state(1), state(2)]);
+  setReply({ ok: true, value: state(3) });
+  assert.deepEqual(await api.trustState({ owner }), { ok: true, value: state(3) });
+  emit(state(3));
+  emit(state(4));
+  assert.equal(received.length, 3);
+  const count = calls.length;
+  assert.deepEqual(await api.answerHostTrust({ owner, sessionId: "s", generation: 1, promptId: "p", decision: "remember", secret: "bad" } as never), failure("invalid-request"));
+  assert.deepEqual(await api.prepareKnownHostRevoke({ owner, id: "h", expectedRevision: 0 }), failure("invalid-request"));
+  assert.equal(calls.length, count);
+  setReply({ ok: true, value: { accepted: true, secret: "bad" } });
+  assert.deepEqual(await api.answerHostTrust({ owner, sessionId: "s", generation: 1, promptId: "p", decision: "reject" }), failure("unavailable"));
+  setReply({ ok: true, value: { accepted: true } });
+  assert.deepEqual(await api.revokeKnownHost({ owner, token: "token" }), { ok: true, value: { accepted: true } });
+  dispose();
+  assert.equal(listeners.size, 0);
 });

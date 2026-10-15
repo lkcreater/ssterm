@@ -1,5 +1,6 @@
 import { normalizeEndpoint, normalizeLabel, normalizeTag, type MetadataSnapshot, type MetadataChange, type Entity, type Id, type SecretKind, type SecretOperation } from '@ssterm/domain';
 import { fail } from './errors.ts';
+import { validHostKeyIdentity } from './host-key.ts';
 import { ENVELOPE_OVERHEAD, ENVELOPE_VERSION, MAX_ENVELOPE, PROTECTION_FORMAT } from './protection.ts';
 export const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 export function keys(value: unknown, allowed: string[], required: string[] = []): asserts value is Record<string, unknown> {
@@ -229,6 +230,7 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
   const touched = new Set<string>();
   const initialRecords = new Map<string, Entity>();
   for (const collection of mutableCollections) for (const row of initial[collection]) initialRecords.set(row.id, row);
+  for (const row of initial.knownHosts) initialRecords.set(row.id, row);
   initialRecords.set(initial.settings.id, initial.settings);
   initialRecords.set(initial.vault.id, initial.vault);
   const usedIds = new Set<string>();
@@ -263,7 +265,46 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
   const ordered: unknown[] = [...changes.filter(c => !membership(c)), ...changes.filter(membership)];
   for (const raw of ordered) {
     if (!isObject(raw) || typeof raw.type !== 'string') fail('invalid-request');
-    if (raw.type.includes('known-host')) fail('unavailable');
+    if (['accept-known-host', 'verify-known-host', 'replace-known-host', 'revoke-known-host'].includes(raw.type)) {
+      const accepting = raw.type === 'accept-known-host';
+      keys(raw, accepting ? ['type', 'id', 'data'] : raw.type === 'verify-known-host' ? ['type', 'id', 'expectedRevision', 'verifiedAt'] : raw.type === 'replace-known-host' ? ['type', 'id', 'expectedRevision', 'data'] : ['type', 'id', 'expectedRevision'], accepting ? ['id', 'data'] : raw.type === 'verify-known-host' ? ['id', 'expectedRevision', 'verifiedAt'] : raw.type === 'replace-known-host' ? ['id', 'expectedRevision', 'data'] : ['id', 'expectedRevision']);
+      id(raw.id);
+      const timestamp = (value: unknown): string => {
+        if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) fail('invalid-request');
+        return value;
+      };
+      if (accepting) {
+        keys(raw.data, ['endpointHost', 'endpointPort', 'algorithm', 'publicKey', 'fingerprint', 'acceptedAt'], ['endpointHost', 'endpointPort', 'algorithm', 'publicKey', 'fingerprint', 'acceptedAt']);
+        let endpointHost: string;
+        try { endpointHost = normalizeEndpoint(raw.data.endpointHost as string); } catch { fail('invalid-request'); }
+        integer(raw.data.endpointPort, 1, 65535);
+        if (!validHostKeyIdentity(raw.data as unknown as {algorithm:string;publicKey:string;fingerprint:string})) fail('invalid-request');
+        const endpointPort = raw.data.endpointPort;
+        if (usedIds.has(raw.id) || next.knownHosts.some(row => row.endpointHost === endpointHost && row.endpointPort === endpointPort)) fail('conflict');
+        usedIds.add(raw.id);
+        const at = timestamp(raw.data.acceptedAt);
+        next.knownHosts.push({ id: raw.id, vaultId: next.vault.id, revision: 1, createdAt: now, updatedAt: now, endpointHost, endpointPort: raw.data.endpointPort, algorithm: raw.data.algorithm as string, publicKey: raw.data.publicKey as string, fingerprint: raw.data.fingerprint as string, firstAcceptedAt: at, lastVerifiedAt: at });
+      } else {
+        const row = next.knownHosts.find(row => row.id === raw.id) ?? fail('conflict');
+        if (raw.type === 'verify-known-host') {
+          // Observation only: fenced by the row revision but revising neither row nor catalog, so routine matches never void previews.
+          integer(raw.expectedRevision);
+          if (row.revision !== raw.expectedRevision) fail('conflict');
+          row.lastVerifiedAt = timestamp(raw.verifiedAt);
+          continue;
+        }
+        touch(row, raw.expectedRevision);
+        if (raw.type === 'revoke-known-host') next.knownHosts = next.knownHosts.filter(row => row.id !== raw.id);
+        else {
+          keys(raw.data, ['algorithm', 'publicKey', 'fingerprint', 'acceptedAt'], ['algorithm', 'publicKey', 'fingerprint', 'acceptedAt']);
+          if (!validHostKeyIdentity(raw.data as unknown as {algorithm:string;publicKey:string;fingerprint:string})) fail('invalid-request');
+          if (row.publicKey === raw.data.publicKey) fail('invalid-request');
+          const at = timestamp(raw.data.acceptedAt);
+          Object.assign(row, { algorithm: raw.data.algorithm, publicKey: raw.data.publicKey, fingerprint: raw.data.fingerprint, firstAcceptedAt: at, lastVerifiedAt: at });
+        }
+      }
+      continue;
+    }
     if (raw.type === 'set-host-tag' || raw.type === 'set-snippet-tag') {
       const hostMembership = raw.type === 'set-host-tag';
       const ownerField = hostMembership ? 'hostId' : 'snippetId';
@@ -457,12 +498,13 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
     row.revision++;
     row.updatedAt = now;
   }
+  for (const row of next.knownHosts) if (touched.has(row.id)) { row.revision++; row.updatedAt = now; }
   for (const row of [next.settings, next.vault]) if (touched.has(row.id)) {
     row.revision++;
     row.updatedAt = now;
   }
   for (const tag of next.tags) tag.normalizedName = normalizeTag(tag.label);
-  next.catalogRevision++;
+  if (!changes.every(change => change?.type === 'verify-known-host')) next.catalogRevision++;
   validateGraph(next);
   return next;
 }
@@ -562,12 +604,14 @@ export function validateGraph(s: MetadataSnapshot): void {
     ref(row.keyRef, 'content-key');
     if (!(row.bodyEnvelope instanceof Uint8Array) || row.bodyEnvelope.length < ENVELOPE_OVERHEAD || row.bodyEnvelope[0] !== row.envelopeVersion || row.keyRef !== s.vault.contentKeyRef || row.protectionFormat !== s.vault.protectionFormat) fail('constraint');
   }
+  const endpoints = new Set<string>();
   for (const row of s.knownHosts) {
     try {
-      if (normalizeEndpoint(row.endpointHost) !== row.endpointHost || !utc(row.firstAcceptedAt) || !utc(row.lastVerifiedAt)) fail('constraint');
+      if (normalizeEndpoint(row.endpointHost) !== row.endpointHost || !Number.isInteger(row.endpointPort) || row.endpointPort < 1 || row.endpointPort > 65535 || !validHostKeyIdentity(row) || endpoints.has(`${row.endpointHost}/${row.endpointPort}`) || !utc(row.firstAcceptedAt) || !utc(row.lastVerifiedAt)) fail('constraint');
     } catch {
       fail('constraint');
     }
+    endpoints.add(`${row.endpointHost}/${row.endpointPort}`);
   }
   validateJournal(s, utc);
   for (const row of s.tunnelRules) {

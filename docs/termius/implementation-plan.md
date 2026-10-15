@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-008 / T013–T014: `DONE`** — [session lifecycle/ownership](../sessions.md) ผ่าน pipeline; unit 106/106, E2E 15/15, packaged 12/12 และ independent TEST/REVIEW ผ่าน ยังไม่ commit SST-008; SST-007 committed `c124b1b`. SST-009 เป็นต้นไปยังไม่เริ่ม
+**SST-009 / T015: `DONE`** — [known-host verification/trust](../known-hosts.md) ผ่าน pipeline; unit 129/129, E2E 17/17, packaged 14/14 และ independent TEST/REVIEW (รวม focused re-review) ผ่าน ยังไม่ commit SST-009; SST-008 committed `bcbb693`. SST-010 เป็นต้นไปยังไม่เริ่ม
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-009–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 

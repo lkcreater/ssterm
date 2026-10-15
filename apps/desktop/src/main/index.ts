@@ -10,12 +10,18 @@ import {
   type StorageProblem,
 } from "@ssterm/contracts";
 import type { MetadataRepository } from "@ssterm/domain";
-import { SecretService, TransientSecrets } from "@ssterm/services";
+import {
+  KnownHostPolicy,
+  SecretService,
+  TransientSecrets,
+} from "@ssterm/services";
 import { WindowBoundary, sameDocument } from "./boundary";
 import { contentSecurityPolicy, rendererLocation } from "./security";
 import { openMetadata } from "./storage";
 import { resolveHostConfig } from "./catalog";
 import { createDesktopSessions } from "./session-runtime";
+import { createKnownHostsController } from "./known-hosts";
+import { registerKnownHostHandlers } from "./known-host-runtime";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -43,6 +49,9 @@ const transientSecrets = new TransientSecrets();
 // Main-only; undefined while storage or the Keychain binding is unavailable.
 let secrets: SecretService | undefined;
 let desktopSessions: ReturnType<typeof createDesktopSessions> | undefined;
+let knownHostPolicy: KnownHostPolicy | undefined;
+let knownHosts: ReturnType<typeof createKnownHostsController> | undefined;
+let removeKnownHostHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -134,7 +143,10 @@ const boundary = new WindowBoundary(
     platform: process.platform,
   },
   () => storageHealth,
-  (owner) => desktopSessions?.revokeOwner(owner),
+  (owner) => {
+    knownHosts?.revokeOwner(owner);
+    desktopSessions?.revokeOwner(owner);
+  },
 );
 let quitting = false;
 let shutdownComplete = false;
@@ -247,6 +259,18 @@ if (ownsInstance) {
           : snapshot;
       },
     });
+    if (repository) {
+      knownHostPolicy = new KnownHostPolicy({ repository });
+      knownHosts = createKnownHostsController({
+        policy: knownHostPolicy,
+        registry: desktopSessions.registry,
+      });
+    }
+    removeKnownHostHandlers = registerKnownHostHandlers({
+      ipc: ipcMain,
+      boundary,
+      controller: () => knownHosts,
+    });
     const defaultSession = session.defaultSession;
     defaultSession.setPermissionRequestHandler(
       (_contents, _permission, callback) => callback(false),
@@ -265,7 +289,14 @@ if (ownsInstance) {
     });
     ipcMain.handle(channels.bootstrap, (event, ...args: unknown[]) => {
       try {
-        return boundary.bootstrap(event, args);
+        const result = boundary.bootstrap(event, args);
+        if (result.ok) {
+          knownHosts?.register(result.value.owner, (state) => {
+            if (!event.sender.isDestroyed())
+              event.sender.send(channels.trustStateChanged, state);
+          });
+        }
+        return result;
       } catch {
         return failure("unavailable");
       }
@@ -294,6 +325,9 @@ app.on("before-quit", (event) => {
   if (quitting) return;
   quitting = true;
   boundary.dispose();
+  knownHosts?.dispose();
+  knownHostPolicy?.dispose();
+  removeKnownHostHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();
