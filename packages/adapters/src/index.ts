@@ -176,3 +176,13 @@ export async function openMetadata(request: {
     return failure(error);
   }
 }
+
+/** Main-only dry run. SQL commit remains authoritative for concurrency and ID reservations. */
+export function previewMetadataChanges(snapshot: MetadataSnapshot, changes: MetadataChange[]): StoreResult<MetadataSnapshot> {
+  try {
+    if (!Array.isArray(changes) || changes.length < 1 || changes.length > 1000) fail('invalid-request');
+    return success(applyChanges(snapshot, changes));
+  } catch (error) {
+    return failure(error);
+  }
+}

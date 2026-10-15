@@ -189,6 +189,12 @@ export type MetadataChange = Crud<'host', HostInput> | Crud<'group', GroupInput>
   present: boolean;
   expectedHostRevision: number;
 } | {
+  type: 'set-snippet-tag';
+  snippetId: Id;
+  tagId: Id;
+  present: boolean;
+  expectedSnippetRevision: number;
+} | {
   type: 'update-settings';
   expectedRevision: number;
   data: Partial<Fields<AppSettings>>;
@@ -287,3 +293,5 @@ export interface MetadataRepository {
   close(): void;
 }
 export { normalizeEndpoint, normalizeLabel, normalizeTag } from './normalize.ts';
+
+export { resolveHostConfig, queryCatalogHosts, catalogGroupTree, type ConfigSource, type ResolvedHostConfig, type CatalogHostQuery, type CatalogHostView, type CatalogGroupNode } from './catalog.ts';

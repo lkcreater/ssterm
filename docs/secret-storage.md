@@ -1,6 +1,6 @@
 # SST-006 — OS secrets and protected snippet content
 
-**2026-10-15 · T009–T010 · implementation complete; independent TEST/REVIEW/DELIVERY pending.** Decision record: [ADR 0003](adr/0003-secret-storage-and-content-protection.md). Contract: [domain/storage spec](termius/domain-storage-spec.md#field-protection-and-exposure).
+**2026-10-15 · T009–T010 · DONE through TEST/REVIEW/DELIVERY; committed `9b0ba05`.** Decision record: [ADR 0003](adr/0003-secret-storage-and-content-protection.md). Contract: [domain/storage spec](termius/domain-storage-spec.md#field-protection-and-exposure).
 
 ## Implementation
 

@@ -27,6 +27,9 @@ export default defineConfig({
           secrets: fileURLToPath(
             new URL("./src/main/secrets.ts", import.meta.url),
           ),
+          catalog: fileURLToPath(
+            new URL("./src/main/catalog.ts", import.meta.url),
+          ),
         },
         preserveEntrySignatures: "strict",
         output: {

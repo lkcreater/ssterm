@@ -1,8 +1,8 @@
 # Implementation plan
 
-**SST-006 / T009–T010: `DONE`** — SST-005 committed `e9e9097`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Keychain SecretRef + AES-256-GCM snippet protection](../secret-storage.md) ผ่าน unit/build/development/packaged checks และ independent TEST/REVIEW/DELIVERY. SST-007 เป็นต้นไปยังไม่เริ่ม
+**SST-007 / T011–T012: `DONE`** — [catalog/resolver/previews](../catalog.md) ผ่าน pipeline; unit 80/80, E2E 13/13, packaged 10/10 และ independent TEST/REVIEW ผ่าน ยังไม่ commit SST-007; SST-006 committed `9b0ba05`. SST-008 เป็นต้นไปยังไม่เริ่ม
 
-**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-007–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
+**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-008–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 
 ## Product baseline / scoped authorization
 
@@ -45,7 +45,7 @@ Phase order เป็น milestone view ภายในแต่ละ phase ใ
 
 ## Suggested work order
 
-1. M0 ผ่าน delivery โดย commit SST-001 ก่อน SST-002 แล้ว; คำสั่งถัดไปอนุมัติเฉพาะ SST-003 [domain/privacy/storage spec](domain-storage-spec.md) จากนั้น SST-004 สร้าง desktop scaffold/design system/typed IPC ตามคำสั่งล่าสุด; SST-005 เพิ่ม SQLite repository; Keychain และ SST-006 เป็นต้นไปยังรออนุมัติ
+1. M0 ผ่าน delivery โดย commit SST-001 ก่อน SST-002 แล้ว; คำสั่งถัดไปอนุมัติเฉพาะ SST-003 [domain/privacy/storage spec](domain-storage-spec.md) จากนั้น SST-004 สร้าง desktop scaffold/design system/typed IPC ตามคำสั่งล่าสุด; SST-005 เพิ่ม SQLite repository, SST-006 เพิ่ม Keychain/protection และ SST-007 เพิ่ม catalog domain; SST-008 เป็นต้นไปยังรออนุมัติ
 2. M1 split งานเป็น Electron/React typed shell/IPC + Signal Blue DS02–DS03 tokens/shared components/showcase, repository/secret adapters และ pure catalog/config rules; schema/protection decisions ต้องพร้อมก่อน persistence code
 3. M2 เริ่ม session contract → known-host policy → auth/prompts → real byte-stream/resize → flow control/cleanup ทุกขั้นต้องใช้ fixture จริงประกอบ ไม่มี terminal mock ที่ทำให้ถือว่าเชื่อม SSH ได้แล้ว
 4. M3 เติม user flows ที่ผ่าน domain/session contracts; บันทึก UI/behavior deviations อย่างชัดเจน
@@ -111,8 +111,10 @@ Fixtures ต้องเป็น project-owned local lab data ไม่ใช�
 
 Current: SST-001/T001/T047 และ SST-002/T002/T003 `DONE`; [execution record](../agent-runs/implementation-plan.md#sst-003-execution-plan--2026-10-15) บันทึก scope/pipeline ถัดไป และ [backend report](../spikes/ssh-compatibility.md) เก็บ actual M0 runtime evidence
 
-Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 คำสั่งถัดไป supersedes stop condition สำหรับ SST-003 และ SST-004; SST-007–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004 ไม่ขออนุมัติซ้ำสำหรับ SST-003 ที่ได้รับอนุมัติแล้ว
+Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 คำสั่งถัดไป supersedes stop condition สำหรับ SST-003 และ SST-004; SST-008–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004 ไม่ขออนุมัติซ้ำสำหรับ SST-003 ที่ได้รับอนุมัติแล้ว
 
 **2026-10-15 — earlier SST-004 confirmation:** “commit และทำงานถัดไปต่อ” อนุมัติ commit SST-003 (`603e600`) และ pipeline SST-004/T006/T007/T048/T049; supersedes earlier next-ticket boundary เฉพาะ SST-004 ไม่มี authorization ให้ commit SST-004, push หรือเริ่ม SST-005+ ดู [desktop evidence](../desktop-shell.md)
 
 **Latest SST-005 confirmation:** “commit และเริ่มงานถัดไป” อนุมัติ commit SST-004 (`d6e1822`) และ pipeline SST-005/T008 เท่านั้น; supersedes earlier SST-005 stop. T009/SST-006 และ commit SST-005/push ยังไม่ได้อนุมัติ.
+
+**Latest SST-007 confirmation:** “ทำงานถัดไปได้เลย” authorizes SST-007/T011–T012 after commit SST-006 `9b0ba05`; supersedes the earlier SST-007 stop only. No SST-007 commit/push or SST-008+ scope is inferred.

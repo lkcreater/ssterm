@@ -259,25 +259,33 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
       updatedAt: now
     });
   }
-  const ordered: unknown[] = [...changes.filter(c => c?.type !== 'set-host-tag'), ...changes.filter(c => c?.type === 'set-host-tag')];
+  const membership = (c: MetadataChange) => c?.type === 'set-host-tag' || c?.type === 'set-snippet-tag';
+  const ordered: unknown[] = [...changes.filter(c => !membership(c)), ...changes.filter(membership)];
   for (const raw of ordered) {
     if (!isObject(raw) || typeof raw.type !== 'string') fail('invalid-request');
     if (raw.type.includes('known-host')) fail('unavailable');
-    if (raw.type === 'set-host-tag') {
-      keys(raw, ['type', 'hostId', 'tagId', 'present', 'expectedHostRevision'], ['hostId', 'tagId', 'present', 'expectedHostRevision']);
-      id(raw.hostId);
+    if (raw.type === 'set-host-tag' || raw.type === 'set-snippet-tag') {
+      const hostMembership = raw.type === 'set-host-tag';
+      const ownerField = hostMembership ? 'hostId' : 'snippetId';
+      const revisionField = hostMembership ? 'expectedHostRevision' : 'expectedSnippetRevision';
+      keys(raw, ['type', ownerField, 'tagId', 'present', revisionField], [ownerField, 'tagId', 'present', revisionField]);
+      id(raw[ownerField]);
       id(raw.tagId);
       if (typeof raw.present !== 'boolean') fail('invalid-request');
-      const host = next.hosts.find(row => row.id === raw.hostId) ?? initial.hosts.find(row => row.id === raw.hostId);
-      if (!host) fail('constraint');
-      touch(host, raw.expectedHostRevision);
-      const index = next.hostTags.findIndex(row => row.hostId === raw.hostId && row.tagId === raw.tagId);
-      if (raw.present && index === -1) next.hostTags.push({
-        vaultId: next.vault.id,
-        hostId: raw.hostId,
-        tagId: raw.tagId
-      });
-      if (!raw.present && index !== -1) next.hostTags.splice(index, 1);
+      const owners = hostMembership ? next.hosts : next.snippets;
+      const originals = hostMembership ? initial.hosts : initial.snippets;
+      const row = owners.find(row => row.id === raw[ownerField]) ?? originals.find(row => row.id === raw[ownerField]);
+      if (!row) fail('constraint');
+      touch(row, raw[revisionField]);
+      if (hostMembership) {
+        const index = next.hostTags.findIndex(row => row.hostId === raw.hostId && row.tagId === raw.tagId);
+        if (raw.present && index === -1) next.hostTags.push({ vaultId: next.vault.id, hostId: raw.hostId as Id, tagId: raw.tagId });
+        if (!raw.present && index !== -1) next.hostTags.splice(index, 1);
+      } else {
+        const index = next.snippetTags.findIndex(row => row.snippetId === raw.snippetId && row.tagId === raw.tagId);
+        if (raw.present && index === -1) next.snippetTags.push({ vaultId: next.vault.id, snippetId: raw.snippetId as Id, tagId: raw.tagId });
+        if (!raw.present && index !== -1) next.snippetTags.splice(index, 1);
+      }
       continue;
     }
     if (raw.type === 'update-settings' || raw.type === 'update-vault') {
@@ -544,7 +552,12 @@ export function validateGraph(s: MetadataSnapshot): void {
     if (row.vaultId !== s.vault.id || !has(s.hosts, row.hostId) || !has(s.tags, row.tagId) || memberships.has(key)) fail('constraint');
     memberships.add(key);
   }
-  for (const row of s.snippetTags) if (row.vaultId !== s.vault.id || !has(s.snippets, row.snippetId) || !has(s.tags, row.tagId)) fail('constraint');
+  const snippetMemberships = new Set<string>();
+  for (const row of s.snippetTags) {
+    const key = `${row.snippetId}/${row.tagId}`;
+    if (row.vaultId !== s.vault.id || !has(s.snippets, row.snippetId) || !has(s.tags, row.tagId) || snippetMemberships.has(key)) fail('constraint');
+    snippetMemberships.add(key);
+  }
   for (const row of s.snippets) {
     ref(row.keyRef, 'content-key');
     if (!(row.bodyEnvelope instanceof Uint8Array) || row.bodyEnvelope.length < ENVELOPE_OVERHEAD || row.bodyEnvelope[0] !== row.envelopeVersion || row.keyRef !== s.vault.contentKeyRef || row.protectionFormat !== s.vault.protectionFormat) fail('constraint');

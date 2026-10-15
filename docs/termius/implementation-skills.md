@@ -44,7 +44,7 @@ npx skills add wshobson/agents --skill tailwind-design-system
 npx skills add currents-dev/playwright-best-practices-skill --skill playwright-best-practices
 ```
 
-การติดตั้ง skills และการเริ่ม implement เป็นคนละการตัดสินใจ รอบติดตั้งนี้อัปเดต `skills-lock.json` และเพิ่ม skill directories/Claude Code links ตามคำสั่งผู้ใช้ การอนุมัติ M0 ภายหลัง (2026-10-14) อยู่ใน [execution plan](../agent-runs/implementation-plan.md) อนุญาต SST-001 docs แล้ว SST-002 spike หลัง first commit; คำสั่งถัดไปเมื่อ 2026-10-15 อนุมัติเฉพาะ SST-003 documentation-only ตาม [domain/storage spec](domain-storage-spec.md); SST-006–028 ยังรออนุมัติ ไม่ได้ติดตั้ง optional candidates ด้านล่าง
+การติดตั้ง skills และการเริ่ม implement เป็นคนละการตัดสินใจ รอบติดตั้งนี้อัปเดต `skills-lock.json` และเพิ่ม skill directories/Claude Code links ตามคำสั่งผู้ใช้ การอนุมัติ M0 ภายหลัง (2026-10-14) อยู่ใน [execution plan](../agent-runs/implementation-plan.md) อนุญาต SST-001 docs แล้ว SST-002 spike หลัง first commit; คำสั่งถัดไปเมื่อ 2026-10-15 อนุมัติเฉพาะ SST-003 documentation-only ตาม [domain/storage spec](domain-storage-spec.md); ต่อมาส่งมอบ SST-004 desktop, SST-005 storage, SST-006 secrets และ SST-007 catalog แล้ว; SST-008–028 ยังรออนุมัติ ไม่ได้ติดตั้ง optional candidates ด้านล่าง
 
 ## Optional และ alternatives ที่ตรวจเพิ่ม
 

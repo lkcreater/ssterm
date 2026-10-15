@@ -1,6 +1,6 @@
 # ส่งมอบ SST-006 / T009–T010 — Keychain secrets และ snippet protection
 
-**ผล:** implementation, TEST, REVIEW และ DELIVER ผ่านสำหรับ SST-006/T009–T010; ยังไม่ commit หรือ push
+**ผล:** implementation, TEST, REVIEW และ DELIVER ผ่านสำหรับ SST-006/T009–T010; ต่อมา commit `9b0ba05` ตามคำสั่งผู้ใช้ ไม่มี push
 
 เริ่มจาก SST-005 commit `e9e9097` ตามคำสั่งผู้ใช้ “เริ่มทำต่อได้”. เพิ่ม Keychain provider ผ่าน `@napi-rs/keyring` 2.1.1 (exact pin) หลัง seam `SecretProvider` ที่คืน typed outcomes, AES-256-GCM จาก `node:crypto` สำหรับ snippet body (envelope v1 ผูก format/version/vault/snippet/field ด้วย AAD แบบ length-prefixed), journal change variants ใน commit transaction เดิม และ `packages/services` ที่มี `SecretService` (stage → OS write → lookup ก่อน retry → publish, SQL ก่อน OS delete, startup reconciliation) กับ `TransientSecrets` (TTL, dispose overwrite, purge เมื่อ lock-screen/suspend/quit). Schema ยังเป็น v1. Main โหลด keyring แบบ lazy จึงไม่ crash ถ้า binding โหลดไม่ได้; native `.node` ถูก unpack ออกจาก ASAR.
 

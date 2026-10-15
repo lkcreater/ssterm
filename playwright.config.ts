@@ -1,6 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
-const evidence = process.env.SSTERM_PACKAGED_EXECUTABLE ? "packaged" : "development";
+const evidence = process.env.SSTERM_PACKAGED_EXECUTABLE
+  ? "packaged"
+  : "development";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -9,7 +11,10 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: [["list"], ["json", { outputFile: `artifacts/test-results/${evidence}.json` }]],
+  reporter: [
+    ["list"],
+    ["json", { outputFile: `artifacts/test-results/${evidence}.json` }],
+  ],
   outputDir: `artifacts/test-results/${evidence}`,
   use: { trace: "retain-on-failure" },
   webServer: process.env.SSTERM_PACKAGED_EXECUTABLE
@@ -21,9 +26,27 @@ export default defineConfig({
         timeout: 30_000,
       },
   projects: process.env.SSTERM_PACKAGED_EXECUTABLE
-    ? [{ name: "packaged", testMatch: ["desktop.spec.ts", "storage.spec.ts", "secrets.spec.ts"] }]
+    ? [
+        {
+          name: "packaged",
+          testMatch: [
+            "desktop.spec.ts",
+            "storage.spec.ts",
+            "secrets.spec.ts",
+            "catalog.spec.ts",
+          ],
+        },
+      ]
     : [
-        { name: "desktop", testMatch: ["desktop.spec.ts", "storage.spec.ts", "secrets.spec.ts"] },
+        {
+          name: "desktop",
+          testMatch: [
+            "desktop.spec.ts",
+            "storage.spec.ts",
+            "secrets.spec.ts",
+            "catalog.spec.ts",
+          ],
+        },
         { name: "showcase", testMatch: "showcase.spec.ts" },
       ],
 });

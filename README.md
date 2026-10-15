@@ -32,3 +32,5 @@ npm run test:packaged
 [Desktop shell / evidence](docs/desktop-shell.md) · [เอกสารโครงการ](docs/README.md) · [SSH backend spike](spikes/ssh-compat/README.md)
 
 [Local storage / migration evidence](docs/local-storage.md) · [Storage driver ADR](docs/adr/0002-local-metadata-storage.md)
+
+[Catalog / inheritance / impact previews](docs/catalog.md) — main-side workflows; catalog editing UI remains SST-016.
