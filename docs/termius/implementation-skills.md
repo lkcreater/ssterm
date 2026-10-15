@@ -1,5 +1,7 @@
 # Skills ที่แนะนำสำหรับ implementation
 
+**SST-004 / T006–T007 / DS02–DS03 / T048–T049: `DONE`** — ผู้ใช้อนุมัติ “commit และทำงานถัดไปต่อ”; SST-003 committed `603e600` แล้ว [Desktop implementation/evidence](../desktop-shell.md) ผ่าน typecheck/unit/development และ packaged Electron checks; independent TEST/REVIEW/DELIVERY ผ่าน. SST-005 เป็นต้นไปยังไม่ได้เริ่ม
+
 ค้นด้วย skill `find-skills` วันที่ 2026-10-14 เพื่อรองรับ **React + TypeScript + Electron + shadcn/ui + Tailwind CSS** ของ ssterm ตรวจ leaderboard ก่อน แล้วใช้ `skills find` ด้วย queries `electron`, `electron react`, `shadcn`, `tailwind`, `playwright electron` และตรวจ repository/source ของ candidates ก่อนคัดเลือก
 
 **สถานะ: ติดตั้ง 5 implementation skills แบบ project-local แล้ว; M0 / SST-001 ADR และ SST-002 isolated backend spike ผ่าน pipeline ณ 2026-10-15.** ยังไม่มี production UI/services; `find-skills` และ `reverse-engineer-anything` คงไว้ครบ รวม 7 skills
@@ -42,7 +44,7 @@ npx skills add wshobson/agents --skill tailwind-design-system
 npx skills add currents-dev/playwright-best-practices-skill --skill playwright-best-practices
 ```
 
-การติดตั้ง skills และการเริ่ม implement เป็นคนละการตัดสินใจ รอบติดตั้งนี้อัปเดต `skills-lock.json` และเพิ่ม skill directories/Claude Code links ตามคำสั่งผู้ใช้ การอนุมัติ M0 ภายหลัง (2026-10-14) อยู่ใน [execution plan](../agent-runs/implementation-plan.md) อนุญาต SST-001 docs แล้ว SST-002 spike หลัง first commit; คำสั่งถัดไปเมื่อ 2026-10-15 อนุมัติเฉพาะ SST-003 documentation-only ตาม [domain/storage spec](domain-storage-spec.md); SST-004–028 ยังรออนุมัติ ไม่ได้ติดตั้ง optional candidates ด้านล่าง
+การติดตั้ง skills และการเริ่ม implement เป็นคนละการตัดสินใจ รอบติดตั้งนี้อัปเดต `skills-lock.json` และเพิ่ม skill directories/Claude Code links ตามคำสั่งผู้ใช้ การอนุมัติ M0 ภายหลัง (2026-10-14) อยู่ใน [execution plan](../agent-runs/implementation-plan.md) อนุญาต SST-001 docs แล้ว SST-002 spike หลัง first commit; คำสั่งถัดไปเมื่อ 2026-10-15 อนุมัติเฉพาะ SST-003 documentation-only ตาม [domain/storage spec](domain-storage-spec.md); SST-005–028 ยังรออนุมัติ ไม่ได้ติดตั้ง optional candidates ด้านล่าง
 
 ## Optional และ alternatives ที่ตรวจเพิ่ม
 

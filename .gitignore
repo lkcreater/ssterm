@@ -2,3 +2,7 @@
 spikes/ssh-compat/artifacts/
 spikes/ssh-compat/.cache/
 .DS_Store
+apps/desktop/out/
+artifacts/
+test-results/
+playwright-report/

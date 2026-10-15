@@ -93,3 +93,7 @@ SST-001 acceptance is document coverage + local links/assets/JSON/whitespace con
 ## SST-002 outcome — 2026-10-15
 
 หลัง commit SST-001 `ad9ed51` งาน SST-002 ผ่าน real fixture probes 19/19 ทั้ง host Node และ packaged Electron รวม 3 regression tests จึงเลือก ssh2 1.17.0 เป็น backend baseline สำหรับ production adapter ถัดไป ดู [result](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md) Dependency baseline JSON ด้านบนเป็น snapshot การตัดสินใจ ณ SST-001; outcome นี้ supersede เฉพาะ candidate gate ของ ssh2 ไม่ยืนยัน xterm/SQLite/Keychain/native ABI/UI หรือ release readiness
+
+## SST-004 bootstrap outcome — 2026-10-15
+
+Latest authorization “commit และทำงานถัดไปต่อ” supersedes the earlier SST-004 stop: SST-003 committed `603e600`, then SST-004/T006/T007/DS02–DS03/T048–T049 implemented at the selected paths/pins. [Desktop evidence](../desktop-shell.md): typecheck, 13 unit tests, 7 development E2E and 4 unsigned packaged Electron E2E pass; independent TEST/REVIEW/DELIVERY passed. shadcn info confirms Base UI/nova/Lucide. TypeScript 7 removed baseUrl, so paths use explicit relative targets; electron-vite 5 bundles contracts via externalizeDeps exclusion for sandbox preload. Local fonts/license assets and 960×640 minimum are verified for this shell; release/native-storage/session gates remain separate. Commit SST-004/push/SST-005+ are not authorized by this instruction.

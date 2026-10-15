@@ -1,10 +1,12 @@
 # Tickets สำหรับ ssterm
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-004–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
+**SST-004 / T006–T007 / DS02–DS03 / T048–T049: `DONE`** — ผู้ใช้อนุมัติ “commit และทำงานถัดไปต่อ”; SST-003 committed `603e600` แล้ว [Desktop implementation/evidence](../desktop-shell.md) ผ่าน typecheck/unit/development และ packaged Electron checks; independent TEST/REVIEW/DELIVERY ผ่าน. SST-005 เป็นต้นไปยังไม่ได้เริ่ม
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-004–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-005–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
-UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS06 ยังรออนุมัติ
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-005–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+
+UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
 
 ## Backlog index
 
@@ -90,6 +92,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Design metadata:** เพิ่ม optional `Host.environment` สำหรับ target context/PROD label ตาม design spec; กำหนด validation/default unspecified และไม่ใช้ display label เป็น authorization policy
 
 ### SST-004 — Desktop shell / design system / typed IPC
+
+**Status:** `DONE` — code และ runtime/package checks ผ่าน; ผ่าน independent TEST/REVIEW/DELIVERY ตาม [evidence](../desktop-shell.md)
 
 **Outcome:** app shell ที่มี narrow application API. **Evidence:** S01/S02, Electron primary docs; ใหม่เป็น Proposed.
 

@@ -1,6 +1,8 @@
 # Task checklist
 
-**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-004–028/DS02–DS06 ยังรออนุมัติ
+**SST-004 / T006–T007 / DS02–DS03 / T048–T049: `DONE`** — ผู้ใช้อนุมัติ “commit และทำงานถัดไปต่อ”; SST-003 committed `603e600` แล้ว [Desktop implementation/evidence](../desktop-shell.md) ผ่าน typecheck/unit/development และ packaged Electron checks; independent TEST/REVIEW/DELIVERY ผ่าน. SST-005 เป็นต้นไปยังไม่ได้เริ่ม
+
+**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-005–028/DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
 
 ## งานเตรียมการที่ทำแล้ว
 
@@ -26,8 +28,8 @@
 
 - [x] **T004 / SST-003:** data dictionary/relations/inherit/delete rules และ field protection matrix — `DONE`; [spec](domain-storage-spec.md), ผ่าน independent TEST/REVIEW
 - [x] **T005 / SST-003:** lock/key loss/recovery/backup/schema migration และ non-atomic journal semantics — `DONE`; [spec](domain-storage-spec.md), ผ่าน independent TEST/REVIEW
-- [ ] **T006 / SST-004:** bootstrap Electron + React/TypeScript renderer, shadcn/ui components, Tailwind CSS/theme tokens และ narrow typed command/events หลัง confirm
-- [ ] **T007 / SST-004:** IPC validation/sender ownership/CSP/navigation/URL policy
+- [x] **T006 / SST-004:** bootstrap Electron + React/TypeScript renderer, shadcn/ui components, Tailwind CSS/theme tokens และ narrow typed command/events — [evidence](../desktop-shell.md)
+- [x] **T007 / SST-004:** IPC validation/sender ownership/CSP/navigation/URL policy — [evidence](../desktop-shell.md)
 - [ ] **T008 / SST-005:** transactional repository, indexes, versioned migrations และ storage failure handling
 - [ ] **T009 / SST-006:** Keychain SecretRef adapter + fixture provider + denied/missing/error cases
 - [ ] **T010 / SST-006:** sensitive-content encryption, cache lifetime และ redaction
@@ -85,19 +87,21 @@
 
 ## Design system — งานย่อยเพิ่มตาม Signal Blue spec
 
-อ้างอิง [design-system.md](design-system.md) และ [design-system-implementation.md](design-system-implementation.md) อนุมัติเฉพาะ DS01/T047 ใน SST-001; DS02–DS06 ยังรออนุมัติและต้องผ่าน dependencies ของ parent ticket เดิม
+อ้างอิง [design-system.md](design-system.md) และ [design-system-implementation.md](design-system-implementation.md) อนุมัติเฉพาะ DS01/T047 ใน SST-001; DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติและต้องผ่าน dependencies ของ parent ticket เดิม
 
 - [x] **T047 / SST-001:** DS01 — design integration ADR: spec version, Tailwind compatibility, shadcn base/style/icons/registry, density defaults และ open contrast/ANSI/artwork decisions
-- [ ] **T048 / SST-004:** DS02 — semantic token mappings, typography/fonts/Thai fallback, geometry/motion, app/terminal theme separation และ missing generated-component slots
-- [ ] **T049 / SST-004:** DS03 — shared shadcn variants/domain primitives และ development-only showcase พร้อม deterministic state matrix/edge cases
+- [x] **T048 / SST-004:** DS02 — semantic token mappings, typography/fonts/Thai fallback, geometry/motion, app/terminal theme separation และ missing generated-component slots — [evidence](../desktop-shell.md)
+- [x] **T049 / SST-004:** DS03 — shared shadcn variants/domain primitives และ development-only showcase พร้อม deterministic state matrix/edge cases — [evidence](../desktop-shell.md)
 - [ ] **T050 / SST-018:** DS04 — Signal Blue terminal-first shell, target/environment/status recipes, resize/collapse/titlebar/overflow และ independent terminal preferences
 - [ ] **T051 / SST-027:** DS05 — rendered contrast/focus/status/PROD matrix, keyboard/reduced-motion/Thai/IME/window scaling และ visual evidence ตาม spec §11
 - [ ] **T052 / SST-028:** DS06 — offline fonts/licenses/fallback; derived icon sizes/macOS format จาก supplied `docs/logo/icon-logo.png`, brand lockup ตาม [asset handoff](../logo/README.md); ตรวจ alpha/edges/padding/Dock/Finder และระบุ limitations ของ exports/QA ที่ยังไม่ครบ
 
 ## Task bookkeeping
 
-Current owner: root สำหรับ SST-003 delivery; T004/T005 ปิดหลัง tester/reviewer ตรวจอิสระผ่าน; ไม่มี commit/push scope ใหม่; [ADR 0001](../adr/0001-mvp-platform-stack.md) + [execution ledger](../agent-runs/implementation-plan.md) เป็น evidence/handoff T001/T047 done หลัง acceptance/TEST/REVIEW/DELIVER ผ่าน เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement
+Current owner: root สำหรับ SST-004 review/delivery; T004/T005 เสร็จและ commit SST-003 แล้ว; T006/T007/T048/T049 ผ่าน final review/delivery แล้ว; [ADR 0001](../adr/0001-mvp-platform-stack.md) + [execution ledger](../agent-runs/implementation-plan.md) เป็น evidence/handoff T001/T047 done หลัง acceptance/TEST/REVIEW/DELIVER ผ่าน เพิ่ม owner/status/evidence links เมื่อ ticket เริ่มจริง และ mark task done เมื่อ acceptance/validation ของ parent ticket ครบ หาก stack/backend choice เปลี่ยน ให้อัปเดต tasks/tickets/architecture พร้อมกันก่อนงาน dependent ไม่ใช้ elapsed time เป็นคำยืนยัน implement
 
 T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production implementation tasks ยังไม่ถูกติ๊ก
 
 T004/T005 completion evidence: [domain/storage specification](domain-storage-spec.md) และ [SST-003 delivery](../agent-runs/sst-003-delivery.md); specification walkthroughs ไม่ใช่ runtime acceptance ของ SST-005/006.
+
+T006/T007/T048/T049 completion evidence: [desktop shell](../desktop-shell.md) และ [SST-004 delivery](../agent-runs/sst-004-delivery.md).

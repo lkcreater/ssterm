@@ -1,6 +1,6 @@
 # Design system implementation plan
 
-**สถานะ: DS01/T047 `DONE` ใน SST-001 (M0 authorized 2026-10-14).** [ADR 0001](../adr/0001-mvp-platform-stack.md) บันทึก decisions และผ่าน document checks/review/delivery แล้ว; DS02–DS06 ยัง `AWAITING_IMPLEMENT_CONFIRMATION` ยังไม่สร้าง production UI/CSS/components/artwork; SST-002 เป็น backend spike แยกจาก design-system implementation
+**สถานะ: DS01/T047 `DONE`; DS02–DS03/T048–T049 `DONE` ใน SST-004 ที่อนุมัติแล้ว.** [Desktop shell/evidence](../desktop-shell.md) มี semantic CSS, 33 shared primitives, offline fonts/licenses และ development showcase; unit/development/packaged checks ผ่าน ผ่าน independent TEST/REVIEW/DELIVERY; DS04–DS06 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`; production icon exports ยังไม่ทำ
 
 ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification หลักของ ssterm และใช้ [architecture](proposed-architecture.md), [tickets](tickets.md) และ [tasks](tasks.md) สำหรับพฤติกรรมและขอบเขต MVP ข้อกำหนดนี้เป็น design ของ ssterm ไม่ใช่หลักฐาน UI ภายใน Termius
 
@@ -8,7 +8,7 @@
 
 | หัวข้อ | ข้อกำหนดสำหรับ implementation |
 |---|---|
-| Stack | Electron + React + TypeScript + shadcn/ui + Tailwind CSS; เลือก Tailwind 4.3.3 และ @tailwindcss/vite 4.3.3 ตาม ADR + metadata resolution evidence; real build/render ยังไม่ผ่าน |
+| Stack | Electron + React + TypeScript + shadcn/ui + Tailwind CSS; Tailwind 4.3.3 และ @tailwindcss/vite 4.3.3 ตาม ADR; SST-004 real build/render และ packaged smoke ผ่าน |
 | Direction | Signal Blue: deep navy surfaces, electric blue สำหรับ focus/selection/action; brand line “Connected with clarity.” |
 | Theme | dark-first สำหรับ MVP; light palette เป็น proposed later work ไม่เพิ่ม light-mode toggle ก่อน validated theme พร้อม |
 | Typography | Inter สำหรับ UI, JetBrains Mono สำหรับ terminal/code; offline font assets/license และ Thai/system fallback ต้องตรวจ |
@@ -73,5 +73,7 @@ Internal showcase ใช้ fixtures และเป็น development/review su
 ADR 0001 เลือก Base UI/nova (`base-nova`), official @shadcn registry/Lucide, exact versions, renderer alias/paths, 32 px controls/rows, 4 px grid, 8/12 px radii และ 2 px focus ring แยก selection fill; generated APIs/config ต้องตรวจใน SST-004
 
 Rendered essential-boundary contrast treatment/status/focus matrix, minimum window-size decision, production exports/small-size adaptation ของ supplied logo/icon, font licensing/offline Thai fallback และ terminal ANSI palette ยังรอ gates DS02–DS06 Light theme คงเป็น later ไม่เป็น gate ของ dark MVP
+
+SST-004 outcome (2026-10-15) supersedes foundation gaps ข้างบน: controls/rows 32px, minimum 960×640; input boundary ใช้ muted ink เดิมแทน structural border; browser-resolved text pairs ≥4.5:1 / essential boundary ≥3:1 ใน showcase; Inter/JetBrains Mono/Noto Sans Thai และ OFL bundled; terminal ANSI16 specimen แยกจาก app theme Full workflow readability/native IME/OS accessibility และ exports ยังต้องผ่าน DS04–DS06
 
 M0 confirmation อนุญาต DS01/T047 เป็น ADR/docs เท่านั้น; ไม่รัน scaffold, `shadcn init/add/apply`, ติดตั้ง fonts/repo dependencies หรือสร้าง assets ใน SST-001 DS02–DS06 ต้องอนุมัติเพิ่ม

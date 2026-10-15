@@ -7,7 +7,7 @@
 > **Theme strategy:** Dark-first, light-ready\
 > **Brand line:** Connected with clarity.
 
-> **Implementation status:** DS01 decisions recorded in M0; production design-system UI and visual assets remain `AWAITING_IMPLEMENT_CONFIRMATION`. The isolated SSH backend spike does not implement this UI. See the [implementation plan](design-system-implementation.md).
+> **Implementation status:** DS01 complete; DS02–DS03 are implemented in authorized SST-004, independent TEST/REVIEW/DELIVERY passed. See [desktop evidence](../desktop-shell.md) and [implementation plan](design-system-implementation.md). DS04–DS06 and production icon exports remain later gates.
 
 ## 1. Product & design principles
 

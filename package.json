@@ -1,0 +1,30 @@
+{
+  "name": "ssterm-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.11.1" },
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace @ssterm/desktop",
+    "dev:renderer": "npm exec --workspace @ssterm/desktop -- vite --config vite.config.ts",
+    "typecheck": "tsc -p apps/desktop/tsconfig.node.json --noEmit && tsc -p apps/desktop/tsconfig.web.json --noEmit && tsc -p tests/tsconfig.json --noEmit",
+    "test": "node --import tsx --test tests/unit/*.test.ts",
+    "build": "npm run build --workspace @ssterm/desktop",
+    "runtime:prepare": "node -e \"require('electron')\"",
+    "package:mac": "npm run build && node scripts/package-desktop.mjs",
+    "test:e2e": "playwright test",
+    "test:packaged": "node scripts/test-packaged.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron": "44.7.2",
+    "shadcn": "4.21.5",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "types": ["node"], "lib": ["ES2022", "DOM"], "jsx": "react-jsx" },
+  "include": ["unit", "e2e", "../playwright.config.ts", "../packages/contracts/src", "../apps/desktop/src/main", "../apps/desktop/src/preload"]
+}

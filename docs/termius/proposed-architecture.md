@@ -1,12 +1,14 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-004–028 ยังรออนุมัติ รายละเอียด architecture อื่นยังเป็น design proposal ไม่ใช่ production implementation
+**SST-004 / T006–T007 / DS02–DS03 / T048–T049: `DONE`** — ผู้ใช้อนุมัติ “commit และทำงานถัดไปต่อ”; SST-003 committed `603e600` แล้ว [Desktop implementation/evidence](../desktop-shell.md) ผ่าน typecheck/unit/development และ packaged Electron checks; independent TEST/REVIEW/DELIVERY ผ่าน. SST-005 เป็นต้นไปยังไม่ได้เริ่ม
+
+**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-005–028 ยังรออนุมัติ รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
 ## Baseline / stack decision
 
 เสนอ macOS arm64 desktop, local-first, account-free, vault เดียวก่อน ใช้ original UI/branding ของ ssterm และ implementation ของโครงการเอง ขอบเขต MVP อยู่ใน SST-001–028
 
-**UI stack ที่ผู้ใช้กำหนด:** Electron เป็น desktop runtime, React + TypeScript เป็น renderer UI, shadcn/ui สำหรับ application components และ Tailwind CSS สำหรับ styling/theme tokens การเลือกนี้เป็นข้อกำหนดของ ssterm ไม่ใช่ผล reverse engineering ของ Termius ส่วน exact pins/tooling/app IDs/layout และ DS01 บันทึกใน [ADR 0001](../adr/0001-mvp-platform-stack.md); ยังไม่สร้าง production scaffold
+**UI stack ที่ผู้ใช้กำหนด:** Electron เป็น desktop runtime, React + TypeScript เป็น renderer UI, shadcn/ui สำหรับ application components และ Tailwind CSS สำหรับ styling/theme tokens การเลือกนี้เป็นข้อกำหนดของ ssterm ไม่ใช่ผล reverse engineering ของ Termius ส่วน exact pins/tooling/app IDs/layout และ DS01 บันทึกใน [ADR 0001](../adr/0001-mvp-platform-stack.md); สร้าง desktop scaffold แล้วใน SST-004 โดย services ยังไม่มี implementation
 
 | Layer | Stack / responsibility | Decision status |
 |---|---|---|
@@ -26,7 +28,7 @@
 
 ## Design system integration
 
-ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification และ [design-system-implementation.md](design-system-implementation.md) เป็นแผน DS01–DS06; DS01 decisions อยู่ใน ADR 0001; DS02–DS06 ยังรออนุมัติโดยคง React/Electron/shadcn/ui/Tailwind stack เดิม
+ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification และ [design-system-implementation.md](design-system-implementation.md) เป็นแผน DS01–DS06; DS01 decisions อยู่ใน ADR 0001; DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติโดยคง React/Electron/shadcn/ui/Tailwind stack เดิม
 
 - Application tokens/theme ใช้ semantic CSS variables: navy canvas, blue focus/selection/action และ operational status แยกกัน; Inter สำหรับ UI และ JetBrains Mono สำหรับ code/terminal พร้อม Thai fallback
 - เลือก Tailwind 4.3.3 + Base UI/nova/official @shadcn registry/Lucide ตาม ADR; verify generated APIs/config ใน SST-004; global stylesheet/component paths อยู่ใต้ renderer ของ `apps/desktop` และ resolve ตาม `components.json` หลัง bootstrap
