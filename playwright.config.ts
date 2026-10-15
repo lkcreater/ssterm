@@ -21,9 +21,9 @@ export default defineConfig({
         timeout: 30_000,
       },
   projects: process.env.SSTERM_PACKAGED_EXECUTABLE
-    ? [{ name: "packaged", testMatch: "desktop.spec.ts" }]
+    ? [{ name: "packaged", testMatch: ["desktop.spec.ts", "storage.spec.ts"] }]
     : [
-        { name: "desktop", testMatch: "desktop.spec.ts" },
+        { name: "desktop", testMatch: ["desktop.spec.ts", "storage.spec.ts"] },
         { name: "showcase", testMatch: "showcase.spec.ts" },
       ],
 });

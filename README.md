@@ -2,7 +2,7 @@
 
 Local-first SSH desktop workspace ใช้ Electron + React + TypeScript + shadcn/ui + Tailwind CSS ตาม Signal Blue design system
 
-ปัจจุบันมี desktop shell, typed IPC และ development component showcase; host storage, credentials และการเชื่อมต่อ SSH ยังเป็นงานถัดไป ดู [สถานะและแผน](docs/termius/implementation-plan.md)
+ปัจจุบันมี desktop shell, typed IPC, development component showcase และ local SQLite metadata repository; catalog editing UI, credentials และการเชื่อมต่อ SSH ยังเป็นงานถัดไป ดู [สถานะและแผน](docs/termius/implementation-plan.md)
 
 ## เริ่มพัฒนา
 
@@ -30,3 +30,5 @@ npm run test:packaged
 `package:mac` สร้าง unsigned app ที่ `artifacts/package/SSTerm-darwin-arm64/SSTerm.app`; test reports/screenshots อยู่ `artifacts/test-results/` Tests ใช้ temporary app profiles ของตัวเอง และไม่อ่าน Termius/Keychain/เครื่อง SSH จริง
 
 [Desktop shell / evidence](docs/desktop-shell.md) · [เอกสารโครงการ](docs/README.md) · [SSH backend spike](spikes/ssh-compat/README.md)
+
+[Local storage / migration evidence](docs/local-storage.md) · [Storage driver ADR](docs/adr/0002-local-metadata-storage.md)

@@ -28,3 +28,5 @@ Generated artifacts (ไม่ commit): `artifacts/test-results/development.json
 Package เป็น unsigned local build; SST-005 เป็นต้นไปยังไม่ได้เริ่ม รอบนี้ไม่มี commit SST-004, push หรือ deployment [Scope/ownership](agent-runs/implementation-plan.md#sst-004-execution-plan--2026-10-15) · [Tasks](termius/tasks.md) · [Design handoff](termius/design-system-implementation.md)
 
 ส่งมอบครบ pipeline: [SST-004 delivery](agent-runs/sst-004-delivery.md). ไม่มีประเด็น review ค้าง
+
+Later SST-005 adds sanitized bootstrap storage health and the production repository; latest runtime report counts include those checks. See [local storage](local-storage.md). The SST-004 counts above remain historical evidence of its delivery.

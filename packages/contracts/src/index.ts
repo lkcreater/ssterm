@@ -11,10 +11,25 @@ export interface Owner {
   windowId: number;
   generation: number;
 }
+/** Fixed diagnostics only; catalog data and filesystem details stay in main. */
+export type StorageProblem =
+  | "corrupt"
+  | "foreign-database"
+  | "unsupported-schema"
+  | "unsupported-protection"
+  | "recovery-required"
+  | "unwritable"
+  | "migration-failed"
+  | "busy"
+  | "unavailable";
+export type StorageHealth =
+  | { status: "ready"; schemaVersion: number }
+  | { status: "blocked"; code: StorageProblem };
 export interface BootstrapData {
   app: { name: string; version: string; platform: string };
   owner: Owner;
   window: { focused: boolean; sequence: number };
+  storage: StorageHealth;
 }
 export interface PingRequest {
   owner: Owner;
@@ -66,6 +81,26 @@ export function exactObject(
 export function isCounter(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
+export function isStorageHealth(value: unknown): value is StorageHealth {
+  if (exactObject(value, ["status", "schemaVersion"]) && value.status === "ready")
+    return isCounter(value.schemaVersion) && value.schemaVersion > 0;
+  return (
+    exactObject(value, ["status", "code"]) &&
+    value.status === "blocked" &&
+    typeof value.code === "string" &&
+    [
+      "corrupt",
+      "foreign-database",
+      "unsupported-schema",
+      "unsupported-protection",
+      "recovery-required",
+      "unwritable",
+      "migration-failed",
+      "busy",
+      "unavailable",
+    ].includes(value.code)
+  );
+}
 export function isOwner(value: unknown): value is Owner {
   return (
     exactObject(value, ["windowId", "generation"]) &&
@@ -93,7 +128,11 @@ export function isWindowStateEvent(value: unknown): value is WindowStateEvent {
   );
 }
 export function isBootstrapData(value: unknown): value is BootstrapData {
-  if (!exactObject(value, ["app", "owner", "window"]) || !isOwner(value.owner))
+  if (
+    !exactObject(value, ["app", "owner", "window", "storage"]) ||
+    !isOwner(value.owner) ||
+    !isStorageHealth(value.storage)
+  )
     return false;
   return (
     exactObject(value.app, ["name", "version", "platform"]) &&

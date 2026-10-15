@@ -10,9 +10,21 @@ export default defineConfig({
   main: {
     resolve: { alias: { "@ssterm/contracts": contracts } },
     build: {
-      externalizeDeps: { exclude: ["@ssterm/contracts"] },
+      externalizeDeps: {
+        exclude: ["@ssterm/contracts", "@ssterm/domain", "@ssterm/adapters"],
+      },
       rollupOptions: {
-        input: fileURLToPath(new URL("./src/main/index.ts", import.meta.url)),
+        input: {
+          index: fileURLToPath(new URL("./src/main/index.ts", import.meta.url)),
+          storage: fileURLToPath(
+            new URL("./src/main/storage.ts", import.meta.url),
+          ),
+        },
+        preserveEntrySignatures: "strict",
+        output: {
+          entryFileNames: "[name].js",
+          chunkFileNames: "chunks/[name]-[hash].js",
+        },
       },
     },
   },

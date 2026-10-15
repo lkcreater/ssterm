@@ -4,6 +4,7 @@ import type { BootstrapData, WindowStateEvent } from "@ssterm/contracts";
 type DesktopState =
   | { status: "loading" }
   | { status: "unavailable" }
+  // A valid bootstrap can report blocked storage; presentation checks data.storage.
   | { status: "ready"; data: BootstrapData };
 
 /** One subscription per mount, bounded race buffer, and no stale async writes. */

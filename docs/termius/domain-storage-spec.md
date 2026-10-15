@@ -3,6 +3,8 @@
 **2026-10-15 · Proposed ssterm contracts · `DONE` (specification; independent TEST/REVIEW passed).**
 [Authorization / execution plan](../agent-runs/implementation-plan.md#sst-003-execution-plan--2026-10-15): SST-003/T004–T005 only. This document specifies future behavior; it adds no application schema, code, database, encryption implementation or Keychain operation. SST-004 onward remains approval-gated. It describes independent ssterm decisions, not verified Termius behavior.
 
+**Later implementation note:** SST-004 is committed and SST-005 implements the metadata subset under later scoped authorization; see [local storage](../local-storage.md). Protected providers remain SST-006. The original authorization paragraph above records SST-003 scope, not the current execution stop.
+
 ## Module and Interface
 
 The Catalog Module owns validated edits, impact previews and effective configuration with provenance. Its Interface accepts a typed change plus expected revisions and returns a committed result, conflict or sanitized failure. The MetadataRepository Seam hides transactions, constraints and migrations; the SecretStore Seam hides OS credential access and reconciliation. Future SQLite and OS-secret Adapters satisfy these Interfaces. React receives catalog views and opaque references; it cannot call arbitrary storage operations. These contracts refine [architecture](proposed-architecture.md), without adding a separate generic CRUD layer for each table.

@@ -1,4 +1,5 @@
 import {
+  AlertCircleIcon,
   CircleIcon,
   FolderIcon,
   KeyRoundIcon,
@@ -10,6 +11,7 @@ import {
   TerminalIcon,
   WorkflowIcon,
 } from "lucide-react";
+import type { StorageProblem } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,8 +51,68 @@ const unavailable = [
   { label: "Port forwarding", icon: WorkflowIcon },
 ] as const;
 
+const storageProblems: Record<
+  StorageProblem,
+  { title: string; description: string }
+> = {
+  corrupt: {
+    title: "Workspace storage needs recovery",
+    description:
+      "Keep the original workspace files. Use a verified recovery copy or backup before reopening this workspace.",
+  },
+  "foreign-database": {
+    title: "Workspace storage is not recognized",
+    description:
+      "Keep the original files and restore a verified ssterm workspace copy before trying again.",
+  },
+  "unsupported-schema": {
+    title: "A newer ssterm version is required",
+    description:
+      "Open this workspace with a compatible newer version of ssterm. Keep the original files intact.",
+  },
+  "unsupported-protection": {
+    title: "Workspace protection is not supported",
+    description:
+      "Use a ssterm version that supports this workspace's protection format. Keep the original files intact.",
+  },
+  "recovery-required": {
+    title: "Workspace recovery is pending",
+    description:
+      "Pending credential changes need reconciliation before this workspace can open. Keep the original files and use a compatible recovery version.",
+  },
+  unwritable: {
+    title: "Workspace storage needs private access",
+    description:
+      "Check disk space, your account's access and private permissions for the workspace folder and files, then reopen ssterm.",
+  },
+  "migration-failed": {
+    title: "Workspace upgrade could not finish",
+    description:
+      "Keep the original files and the pre-upgrade backup. Use a verified recovery copy with a compatible version of ssterm.",
+  },
+  busy: {
+    title: "Workspace storage is in use",
+    description:
+      "Close other ssterm instances using this workspace, then close and reopen this window.",
+  },
+  unavailable: {
+    title: "Workspace storage is unavailable",
+    description:
+      "Close and reopen ssterm to try again. If the problem continues, keep the original files and use a verified backup or recovery copy.",
+  },
+};
+
 export function AppShell() {
   const desktop = useDesktopState();
+  const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
+  const problem =
+    storage?.status === "blocked" ? storageProblems[storage.code] : undefined;
+  const emptyTitle =
+    problem || desktop.status === "unavailable"
+      ? "Workspace is unavailable"
+      : desktop.status === "loading"
+        ? "Opening workspace"
+        : "No servers yet";
   return (
     <div
       className="app-shell"
@@ -167,10 +229,11 @@ export function AppShell() {
                   alt="ssterm monogram"
                   className="empty-mark"
                 />
-                <EmptyTitle>No servers yet</EmptyTitle>
+                <EmptyTitle>{emptyTitle}</EmptyTitle>
                 <EmptyDescription>
-                  A calm place for your connected systems. Your workspace is
-                  ready; server setup is coming in a future update.
+                  {storage?.status === "ready"
+                    ? "A calm place for your connected systems. Your workspace is ready; server setup is coming in a future update."
+                    : "Your workspace must open successfully before saved servers can be shown. Server setup is coming in a future update."}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
@@ -183,6 +246,15 @@ export function AppShell() {
               </EmptyContent>
             </Empty>
           </div>
+          {problem ? (
+            <div className="px-5 pb-4">
+              <Alert>
+                <AlertCircleIcon aria-hidden="true" />
+                <AlertTitle>{problem.title}</AlertTitle>
+                <AlertDescription>{problem.description}</AlertDescription>
+              </Alert>
+            </div>
+          ) : null}
           {desktop.status === "unavailable" ? (
             <div className="px-5 pb-4">
               <Alert>
@@ -206,7 +278,7 @@ export function AppShell() {
               workspace
             </span>
           ) : desktop.status === "ready" ? (
-            `ssterm ${desktop.data.app.version} · Local workspace`
+            `ssterm ${desktop.data.app.version} · ${problem ? "Storage unavailable" : "Local workspace"}`
           ) : (
             "Local workspace"
           )}

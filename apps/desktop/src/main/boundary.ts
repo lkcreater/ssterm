@@ -1,9 +1,11 @@
 import {
   failure,
   isPingRequest,
+  isStorageHealth,
   type BootstrapData,
   type Owner,
   type Result,
+  type StorageHealth,
   type WindowStateEvent,
 } from "@ssterm/contracts";
 
@@ -47,6 +49,7 @@ export class WindowBoundary {
   constructor(
     private readonly entryURL: string,
     private readonly app: BootstrapData["app"],
+    private readonly getStorageHealth: () => StorageHealth,
   ) {}
 
   register(
@@ -120,6 +123,8 @@ export class WindowBoundary {
     const authorized = this.authorize(event);
     if (!authorized.ok) return authorized;
     if (args.length !== 0) return failure("invalid-request");
+    const storage = this.getStorageHealth();
+    if (!isStorageHealth(storage)) return failure("unavailable");
     const window = authorized.value;
     return {
       ok: true,
@@ -127,6 +132,7 @@ export class WindowBoundary {
         app: { ...this.app },
         owner: { ...window.owner },
         window: { focused: window.focused, sequence: window.sequence },
+        storage: { ...storage },
       },
     };
   }

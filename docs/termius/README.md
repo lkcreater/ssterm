@@ -1,12 +1,12 @@
 # Termius → ssterm: investigation และ implementation backlog
 
-**SST-004 / T006–T007 / DS02–DS03 / T048–T049: `DONE`** — ผู้ใช้อนุมัติ “commit และทำงานถัดไปต่อ”; SST-003 committed `603e600` แล้ว [Desktop implementation/evidence](../desktop-shell.md) ผ่าน typecheck/unit/development และ packaged Electron checks; independent TEST/REVIEW/DELIVERY ผ่าน. SST-005 เป็นต้นไปยังไม่ได้เริ่ม
+**SST-005 / T008: `DONE`** — SST-004 committed `d6e1822`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Local SQLite repository/evidence](../local-storage.md) ผ่าน unit/build/development checks; packaged checks และ independent TEST/REVIEW/DELIVERY ผ่าน. SST-006 เป็นต้นไปยังไม่เริ่ม
 
 **วันที่:** 2026-10-14; M0 update 2026-10-15 · **เป้าหมาย investigation:** Termius desktop 9.43.1, macOS arm64 · **สถานะ:** M0 complete; SST-003/T004–T005 documentation-only `DONE`
 
-เริ่มจากการวิเคราะห์ Termius และจัด task/ticket/plan ปัจจุบัน M0 มี isolated SSH/backend spike และ runtime evidence แล้ว ส่วน production macOS desktop แบบ local-first/account-free ยังต้องดำเนิน services ใน SST-005 เป็นต้นไปตามขอบเขตที่ผู้ใช้อนุมัติ ดู [ADR 0001](../adr/0001-mvp-platform-stack.md)
+เริ่มจากการวิเคราะห์ Termius และจัด task/ticket/plan ปัจจุบัน M0 มี isolated SSH/backend spike และ runtime evidence แล้ว ส่วน production macOS desktop แบบ local-first/account-free ยังต้องดำเนิน secret/session services ใน SST-006 เป็นต้นไปตามขอบเขตที่ผู้ใช้อนุมัติ ดู [ADR 0001](../adr/0001-mvp-platform-stack.md)
 
-**UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ดู [stack decision](proposed-architecture.md#baseline--stack-decision) การเลือก stack และการอนุมัติ M0 เป็นคนละเหตุการณ์; SST-003 ได้รับอนุมัติเฉพาะ domain/privacy/storage specification; SST-005–028 ยังรออนุมัติ
+**UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS ดู [stack decision](proposed-architecture.md#baseline--stack-decision) การเลือก stack และการอนุมัติ M0 เป็นคนละเหตุการณ์; SST-003 ได้รับอนุมัติเฉพาะ domain/privacy/storage specification; SST-006–028 ยังรออนุมัติ
 
 **Visual spec สำหรับวางแผน:** [Signal Blue v1.0](design-system.md) — dark-first, Inter + JetBrains Mono, terminal-first layout และแยก blue focus จาก operational status ดู [design implementation plan](design-system-implementation.md); DS01 เสร็จใน SST-001; งาน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
 
@@ -47,6 +47,6 @@ REA วิเคราะห์ source ที่เลือก 10 รายก�
 
 ## Scoped confirmation
 
-ผู้ใช้อนุมัติ M0 และ commit ทีละงาน: SST-001 ส่งมอบ/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 ผ่าน Node/packaged checks และ delivery แล้ว ดู [backend result](../spikes/ssh-compatibility.md) และ [execution record](../agent-runs/implementation-plan.md) คำสั่งถัดไป “ทำงาน ถัดไปต่อได้” อนุมัติเฉพาะ SST-003/T004–T005 documentation-only; [spec](domain-storage-spec.md) อยู่ `DONE` ผ่าน independent TEST/REVIEW ส่วน SST-005–028/DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
+ผู้ใช้อนุมัติ M0 และ commit ทีละงาน: SST-001 ส่งมอบ/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 ผ่าน Node/packaged checks และ delivery แล้ว ดู [backend result](../spikes/ssh-compatibility.md) และ [execution record](../agent-runs/implementation-plan.md) คำสั่งถัดไป “ทำงาน ถัดไปต่อได้” อนุมัติเฉพาะ SST-003/T004–T005 documentation-only; [spec](domain-storage-spec.md) อยู่ `DONE` ผ่าน independent TEST/REVIEW ส่วน SST-006–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
-SST-005–028/DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0
+SST-006–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0

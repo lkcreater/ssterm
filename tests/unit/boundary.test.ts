@@ -8,20 +8,25 @@ import {
 import type {
   Owner,
   Result,
+  StorageHealth,
   WindowStateEvent,
 } from "../../packages/contracts/src/index.ts";
 
 const entry = "file:///app/renderer/index.html";
-function fixture(id = 1, windowId = id) {
+function fixture(
+  id = 1,
+  windowId = id,
+  health: StorageHealth = { status: "ready", schemaVersion: 1 },
+) {
   let destroyed = false;
   const frame = { url: entry };
   const sender = { id, mainFrame: frame, isDestroyed: () => destroyed };
   const events: WindowStateEvent[] = [];
-  const boundary = new WindowBoundary(entry, {
-    name: "ssterm",
-    version: "0.1.0",
-    platform: "darwin",
-  });
+  const boundary = new WindowBoundary(
+    entry,
+    { name: "ssterm", version: "0.1.0", platform: "darwin" },
+    () => health,
+  );
   const revoke = boundary.register(sender, windowId, false, (event) =>
     events.push(event),
   );
@@ -56,6 +61,7 @@ test("bootstrap and ping return only bounded serializable application state", ()
       app: { name: "ssterm", version: "0.1.0", platform: "darwin" },
       owner,
       window: { focused: false, sequence: 0 },
+      storage: { status: "ready", schemaVersion: 1 },
     },
   });
   assert.deepEqual(boundary.ping(event, [ping(owner)]), {
@@ -63,6 +69,21 @@ test("bootstrap and ping return only bounded serializable application state", ()
     value: { requestId: "check_1", ready: true },
   });
   code(boundary.bootstrap(event, [{}]), "invalid-request");
+});
+
+test("bootstrap copies validated storage health and never accepts diagnostic details", () => {
+  const health: StorageHealth = { status: "blocked", code: "corrupt" };
+  const { boundary, event } = fixture(1, 1, health);
+  const result = boundary.bootstrap(event, []);
+  assert.ok(result.ok);
+  if (result.ok) {
+    assert.deepEqual(result.value.storage, health);
+    assert.notEqual(result.value.storage, health);
+    health.code = "busy";
+    assert.deepEqual(result.value.storage, { status: "blocked", code: "corrupt" });
+  }
+  Object.assign(health, { message: "/private/path/row" });
+  code(boundary.bootstrap(event, []), "unavailable");
 });
 
 test("registered sender identity and main frame are checked before payloads", () => {

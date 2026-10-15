@@ -5,7 +5,7 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { DesktopAPI } from "../../packages/contracts/src/index";
@@ -21,11 +21,21 @@ interface Desktop {
   page: Page;
   errors: string[];
   externalRequests: string[];
+  profile: string;
 }
 
-export const test = base.extend<{ desktop: Desktop }>({
-  desktop: async ({}, use, testInfo) => {
+export const test = base.extend<{ desktop: Desktop; corruptStore: boolean }>({
+  corruptStore: [false, { option: true }],
+  desktop: async ({ corruptStore }, use, testInfo) => {
     const profile = await mkdtemp(join(tmpdir(), "ssterm-e2e-"));
+    if (corruptStore) {
+      await mkdir(join(profile, "metadata"), { mode: 0o700 });
+      await writeFile(
+        join(profile, "metadata/catalog.sqlite"),
+        "ssterm-corrupt-owned-fixture",
+        { mode: 0o600 },
+      );
+    }
     const env = Object.fromEntries(
       Object.entries(process.env).filter(
         (item): item is [string, string] => item[1] !== undefined,
@@ -67,7 +77,7 @@ export const test = base.extend<{ desktop: Desktop }>({
       });
       if (showcase) await page.goto("http://127.0.0.1:5173/#showcase");
       await page.waitForLoadState("domcontentloaded");
-      await use({ app, page, errors, externalRequests });
+      await use({ app, page, errors, externalRequests, profile });
     } finally {
       if (app) {
         const child = app.process();

@@ -97,3 +97,7 @@ SST-001 acceptance is document coverage + local links/assets/JSON/whitespace con
 ## SST-004 bootstrap outcome — 2026-10-15
 
 Latest authorization “commit และทำงานถัดไปต่อ” supersedes the earlier SST-004 stop: SST-003 committed `603e600`, then SST-004/T006/T007/DS02–DS03/T048–T049 implemented at the selected paths/pins. [Desktop evidence](../desktop-shell.md): typecheck, 13 unit tests, 7 development E2E and 4 unsigned packaged Electron E2E pass; independent TEST/REVIEW/DELIVERY passed. shadcn info confirms Base UI/nova/Lucide. TypeScript 7 removed baseUrl, so paths use explicit relative targets; electron-vite 5 bundles contracts via externalizeDeps exclusion for sandbox preload. Local fonts/license assets and 960×640 minimum are verified for this shell; release/native-storage/session gates remain separate. Commit SST-004/push/SST-005+ are not authorized by this instruction.
+
+## SST-005 storage decision — 2026-10-15
+
+User subsequently authorized commit SST-004 (`d6e1822`) and SST-005/T008. [ADR 0002](0002-local-metadata-storage.md) selects `node:sqlite` from the pinned runtime, superseding the untested better-sqlite3 candidate above. Domain/adapters now exist; [storage evidence](../local-storage.md) records the actual validation and remaining gates. No better-sqlite3 failure is claimed; secret providers/SSH and commit SST-005 remain separate scope.

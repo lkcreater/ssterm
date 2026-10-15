@@ -7,6 +7,7 @@ import {
 import {
   channels,
   failure,
+  isStorageHealth,
   type BootstrapData,
   type WindowStateEvent,
 } from "../../packages/contracts/src/index.ts";
@@ -20,6 +21,7 @@ function fixture() {
       app: { name: "ssterm", version: "0.1.0", platform: "darwin" },
       owner: { windowId: 1, generation: 2 },
       window: { focused: false, sequence: 0 },
+      storage: { status: "ready", schemaVersion: 1 },
     } satisfies BootstrapData,
   };
   let reject = false;
@@ -164,10 +166,44 @@ test("pre-bootstrap events are ignored and new ownership rejects previous genera
       app: { name: "ssterm", version: "0.1.0", platform: "darwin" },
       owner: { windowId: 1, generation: 3 },
       window: { focused: false, sequence: 0 },
+      storage: { status: "ready", schemaVersion: 1 },
     },
   });
   await api.bootstrap();
   emit(event(20, 2));
   emit(event(1, 3));
   assert.deepEqual(received, [event(1), event(1, 3)]);
+});
+
+test("bridge validates finite storage health without paths, rows or raw errors", async () => {
+  const { api, setReply } = fixture();
+  const original = await api.bootstrap();
+  assert.ok(original.ok);
+  if (!original.ok) return;
+  for (const code of [
+    "corrupt", "foreign-database", "unsupported-schema", "unsupported-protection",
+    "recovery-required", "unwritable", "migration-failed", "busy", "unavailable",
+  ]) {
+    setReply({ ok: true, value: { ...original.value, storage: { status: "blocked", code } } });
+    assert.deepEqual(await api.bootstrap(), {
+      ok: true, value: { ...original.value, storage: { status: "blocked", code } },
+    });
+  }
+  for (const storage of [
+    undefined, null, {}, { status: "ready", schemaVersion: 0 },
+    { status: "ready", schemaVersion: 1.2 },
+    { status: "ready", schemaVersion: Number.MAX_SAFE_INTEGER + 1 },
+    { status: "ready", schemaVersion: 1, vaultId: "hidden" },
+    { status: "blocked", code: "io" },
+    { status: "blocked", code: "corrupt", message: "/private/data" },
+    { status: "blocked", code: "corrupt", rows: [] },
+    { status: "blocked", code: "corrupt", schemaVersion: 1 },
+  ]) {
+    assert.equal(isStorageHealth(storage), false);
+    setReply({ ok: true, value: { ...original.value, storage } });
+    assert.deepEqual(await api.bootstrap(), failure("unavailable"));
+  }
+  const { storage: _storage, ...missingStorage } = original.value;
+  setReply({ ok: true, value: missingStorage });
+  assert.deepEqual(await api.bootstrap(), failure("unavailable"));
 });

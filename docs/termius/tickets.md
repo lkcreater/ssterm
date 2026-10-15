@@ -1,10 +1,10 @@
 # Tickets สำหรับ ssterm
 
-**SST-004 / T006–T007 / DS02–DS03 / T048–T049: `DONE`** — ผู้ใช้อนุมัติ “commit และทำงานถัดไปต่อ”; SST-003 committed `603e600` แล้ว [Desktop implementation/evidence](../desktop-shell.md) ผ่าน typecheck/unit/development และ packaged Electron checks; independent TEST/REVIEW/DELIVERY ผ่าน. SST-005 เป็นต้นไปยังไม่ได้เริ่ม
+**SST-005 / T008: `DONE`** — SST-004 committed `d6e1822`; ผู้ใช้อนุมัติเริ่มงานถัดไป [Local SQLite repository/evidence](../local-storage.md) ผ่าน unit/build/development checks; packaged checks และ independent TEST/REVIEW/DELIVERY ผ่าน. SST-006 เป็นต้นไปยังไม่เริ่ม
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-005–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-006–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-005–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-006–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
 
@@ -106,6 +106,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Design validation:** token coverage/computed theme, state matrix default/hover/pressed/focus/disabled/loading/error และ selected+connection combinations; source palette ยังไม่ถือว่าผ่าน rendered contrast โดยอัตโนมัติ
 
 ### SST-005 — Versioned local repository / migrations
+
+**Status:** `DONE` — [implementation/evidence](../local-storage.md); T008 only, OS secrets/T009 อยู่ SST-006
 
 **Outcome:** catalog/settings persistence ที่เชื่อถือได้. **Evidence:** S04; independent storage design.
 
