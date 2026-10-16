@@ -43,6 +43,9 @@ export const terminalAnsiKeys = [
   "brightWhite",
 ] as const;
 
+/** Lines kept per session (≈ 12 B × columns × lines); AppSettings bounds it until settings persist (SST-018). */
+export const TERMINAL_SCROLLBACK = 10_000;
+
 export const terminalFont =
   '"JetBrains Mono Variable", "Noto Sans Thai Variable", ui-monospace, monospace';
 const { selection, ...terminalColors } = signalTerminalTheme;
@@ -60,7 +63,7 @@ export const xtermOptions = {
   fontFamily: terminalFont,
   fontSize: 13,
   lineHeight: 1.4,
-  scrollback: 10_000,
+  scrollback: TERMINAL_SCROLLBACK,
   allowProposedApi: true,
   linkHandler: { activate() {} },
   windowOptions: {},

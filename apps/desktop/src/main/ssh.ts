@@ -2,6 +2,8 @@
 import type { MetadataRepository, SecretProvider } from "@ssterm/domain";
 import { resolveHostConfig } from "@ssterm/domain";
 import { KnownHostPolicy, createSavedHostSshAdapter, type TransientSecrets, type SessionLimits } from "@ssterm/services";
+import { MAX_TERMINAL_WRITE } from "@ssterm/contracts";
+import { terminalBounds, type TerminalBounds } from "@ssterm/adapters/ssh";
 import { createDesktopSessions, type SessionPowerEvents } from "./session-runtime";
 
 export function createSavedHostSessions(options: {
@@ -10,7 +12,11 @@ export function createSavedHostSessions(options: {
   transient: TransientSecrets;
   power: SessionPowerEvents;
   limits?: Partial<SessionLimits>;
+  /** Main-only stream bounds. An idle session must always accept one maximum write, so a paste is never split. */
+  terminal?: TerminalBounds;
 }) {
+  const terminal = terminalBounds(options.terminal);
+  if (terminal.inputBacklog < MAX_TERMINAL_WRITE) throw new RangeError("invalid-terminal-bounds");
   const policy = new KnownHostPolicy({ repository: options.repository });
   const sessions = createDesktopSessions({
     transient: options.transient,
@@ -21,7 +27,7 @@ export function createSavedHostSessions(options: {
       return snapshot.ok ? resolveHostConfig(snapshot.value, hostId) : snapshot;
     },
     adapter: options.provider
-      ? createSavedHostSshAdapter({ provider: options.provider, policy })
+      ? createSavedHostSshAdapter({ provider: options.provider, policy, terminal })
       : undefined,
   });
   return {

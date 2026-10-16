@@ -277,13 +277,13 @@ export type TerminalEnd =
   | { kind: 'signal'; signal: string }
   | { kind: 'eof' };
 export type TerminalWrite = 'ok' | 'busy' | 'closed';
-/** Main-only byte stream of one session generation. Output stays paused until `open`, then flows within a fixed unacknowledged window. */
+/** Main-only byte stream of one session generation. Output stays paused until `open`, then flows within a bounded unacknowledged window. */
 export interface TerminalStream {
   /** Binds the single consumer and returns true; later calls bind nothing and return false. Chunks are exact-length owned copies numbered 0, 1, 2, ... without gaps. `output` must not throw. */
   open(output: (chunk: Uint8Array, sequence: number) => void): boolean;
   /** Returns credit for consumed bytes, clamped to bytes delivered. */
   ack(bytes: number): void;
-  /** Copies input in call order. `busy`: backlog over the fixed bound, nothing queued. */
+  /** Copies input in call order. All or nothing: `busy` means the backlog bound would be exceeded and nothing was queued. */
   write(bytes: Uint8Array): TerminalWrite;
   /** Remote PTY size; the caller validates integer ranges. */
   resize(columns: number, rows: number): void;

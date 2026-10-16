@@ -1,6 +1,7 @@
 import { exactObject, isCounter, isOwner, type Owner } from "./index.ts";
 
-export const MAX_TERMINAL_WRITE = 65_536;
+/** One maximum paste (256 KiB) plus its 12 bracket bytes fits one write, so it is accepted or refused whole. */
+export const MAX_TERMINAL_WRITE = 294_912;
 export const MAX_TERMINAL_CHUNK = 1_048_576;
 export const MAX_TERMINAL_SIZE = 1_000;
 /** Mirrors the domain `TerminalEnd`; main assigns one to the other, so drift fails compilation. */

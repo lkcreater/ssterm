@@ -37,6 +37,7 @@ import {
 import {
   hasNewline,
   isLinkActivation,
+  MAX_QUEUED_INPUT,
   pasteDecision,
   sanitizePaste,
   terminalShortcut,
@@ -47,8 +48,6 @@ import {
   xtermOptions,
 } from "@/lib/terminal-theme";
 
-// Room for one maximum (256 KiB) paste plus its bracket markers and typed input.
-const MAX_QUEUED_INPUT = MAX_TERMINAL_WRITE * 5;
 const NOTICE_MS = 4000;
 const statuses = {
   connecting: "connecting",
@@ -244,7 +243,10 @@ function LiveTerminal({
     const pause = () => {
       paused = true;
       discard();
-      if (!cancelled) setInputPaused(true);
+      if (cancelled) return;
+      setInputPaused(true);
+      // A "Pasted …" notice may already show for input that was just refused.
+      setNotice(undefined);
     };
     const pump = async () => {
       if (sending) return;
@@ -320,7 +322,8 @@ function LiveTerminal({
       paste(text) {
         if (cancelled || !live || paused) return false;
         term.paste(text);
-        return true;
+        // term.paste sends synchronously, so a refused queue has already paused input here.
+        return !paused;
       },
     };
     return () => {

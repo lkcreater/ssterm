@@ -8,6 +8,7 @@ import {
   channels,
   failure,
   isStorageHealth,
+  MAX_TERMINAL_WRITE,
   type BootstrapData,
   type WindowStateEvent,
 } from "../../packages/contracts/src/index.ts";
@@ -351,7 +352,7 @@ test("terminal commands are rebuilt and written bytes are copied then wiped", as
   const count = f.calls.length;
   for (const invalid of [
     f.api.writeTerminal({ ...target, bytes: new Uint8Array(0) }),
-    f.api.writeTerminal({ ...target, bytes: new Uint8Array(65_537) }),
+    f.api.writeTerminal({ ...target, bytes: new Uint8Array(MAX_TERMINAL_WRITE + 1) }),
     f.api.writeTerminal({ ...target, bytes, extra: true } as never),
     f.api.resizeTerminal({ ...target, columns: 0, rows: 24 }),
     f.api.ackTerminal({ ...target, bytes: 1.5 }),

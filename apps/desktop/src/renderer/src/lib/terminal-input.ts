@@ -1,6 +1,10 @@
 /** Local input policy for a terminal pane. Pure, so every rule is unit-tested without xterm. */
+import { MAX_TERMINAL_WRITE } from "@ssterm/contracts";
 
 export const MAX_PASTE_BYTES = 256 * 1024;
+// A paste arrives as one onData call no larger than MAX_TERMINAL_WRITE and is sent as one write,
+// so main accepts or refuses it whole; the extra room is for typing queued around it.
+export const MAX_QUEUED_INPUT = MAX_TERMINAL_WRITE + 32_768;
 
 // C0 except HT/LF/CR, DEL and C1. Removing ESC is what stops a pasted `ESC[201~` from ending
 // bracketed paste early; the remaining `[201~` is inert text. Bidi embeddings, overrides and

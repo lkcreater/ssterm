@@ -6,10 +6,13 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { createServer, type Socket } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
+import { EventEmitter } from "node:events";
 import ssh2, { type Connection, type KeyboardAuthContext, type ServerChannel, type Session, type WindowChangeInfo } from "ssh2";
 import type { KeyMetadata, ResolvedHostConfig, SecretItem, SecretProvider, SecretRead } from "../../packages/domain/src/index.ts";
 import { openMetadata } from "../../packages/adapters/src/index.ts";
-import { createSshConnection, preparePrivateKey, TERMINAL_OUTPUT_WINDOW, TERMINAL_INPUT_BACKLOG } from "../../packages/adapters/src/ssh.ts";
+import { createSshConnection, preparePrivateKey, TERMINAL_OUTPUT_WINDOW, TERMINAL_INPUT_BACKLOG, TERMINAL_BUFFER_LIMIT, TERMINAL_CHUNK_LIMIT, terminalBounds, type TerminalBounds } from "../../packages/adapters/src/ssh.ts";
+import { MAX_TERMINAL_WRITE } from "../../packages/contracts/src/index.ts";
+import { createSavedHostSessions } from "../../apps/desktop/src/main/ssh.ts";
 import { createSavedHostSshAdapter, KnownHostPolicy, SessionRegistry, TransientSecrets, type SessionSnapshot } from "../../packages/services/src/index.ts";
 
 const passphrase = Buffer.from("owned-fixture-passphrase");
@@ -58,7 +61,7 @@ function answerCredentials(registry: SessionRegistry, snapshot: SessionSnapshot,
     assert(registry.answerPrompt("fixture-owner", snapshot.id, snapshot.generation, prompt.id, { kind: "credentials", values: input }).ok);
   } finally { for (const field of input) field.value.fill(0); }
 }
-async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: boolean; holdShell?: boolean; connectMs?: number; promptMs?: number; interactive?: (auth: KeyboardAuthContext) => void; shell?: (channel: ServerChannel, session: Session) => void } = {}) {
+async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: boolean; holdShell?: boolean; connectMs?: number; promptMs?: number; terminal?: TerminalBounds; interactive?: (auth: KeyboardAuthContext) => void; shell?: (channel: ServerChannel, session: Session) => void } = {}) {
   const dir = mkdtempSync("/private/tmp/ssterm-ssh-session-");
   const opened = await openMetadata({ path: join(dir, "metadata.db") });
   assert(opened.ok);
@@ -117,7 +120,7 @@ async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: bo
   };
   const registry = new SessionRegistry({
     resolve: () => ({ ok: true, value: resolved }),
-    transient: new TransientSecrets(), adapter: createSavedHostSshAdapter({ provider, policy }),
+    transient: new TransientSecrets(), adapter: createSavedHostSshAdapter({ provider, policy, terminal: options.terminal }),
     limits: { connectMs: options.connectMs ?? 10_000, promptMs: options.promptMs ?? 60_000 },
   });
   const snapshots: SessionSnapshot[] = [];
@@ -569,9 +572,9 @@ async function readyStream(f: Awaited<ReturnType<typeof fixture>>) {
 }
 const length = (chunks: readonly Uint8Array[]) => chunks.reduce((total, chunk) => total + chunk.length, 0);
 
-test("terminal output is held until open, then merges stdout/stderr in arrival order as owned chunks with consecutive sequences and bounded credit", async (t) => {
+for (const credit of [TERMINAL_OUTPUT_WINDOW, 65_536]) test(`terminal output is held until open, then merges stdout/stderr in arrival order as owned chunks with consecutive sequences and bounded credit (window ${credit})`, async (t) => {
   let server!: ServerChannel;
-  const f = await fixture(t, { shell(channel) { server = channel; channel.write("pre-open|"); } });
+  const f = await fixture(t, { terminal: { outputWindow: credit }, shell(channel) { server = channel; channel.write("pre-open|"); } });
   const stream = await readyStream(f);
   await delay(50);
   const chunks: Uint8Array[] = [], sequences: number[] = [];
@@ -596,8 +599,8 @@ test("terminal output is held until open, then merges stdout/stderr in arrival o
   server.write(bulk);
   let stalls = 0;
   while (length(chunks) < expected.length) {
-    await until(() => unacked >= TERMINAL_OUTPUT_WINDOW || length(chunks) === expected.length);
-    if (unacked >= TERMINAL_OUTPUT_WINDOW) {
+    await until(() => unacked >= credit || length(chunks) === expected.length);
+    if (unacked >= credit) {
       const held = length(chunks);
       await delay(30);
       assert.equal(length(chunks), held, "output must stop while the credit window is exhausted");
@@ -606,7 +609,7 @@ test("terminal output is held until open, then merges stdout/stderr in arrival o
     stream.ack(unacked); unacked = 0;
   }
   assert(stalls >= 10, `expected repeated credit pauses, saw ${stalls}`);
-  assert(maxUnacked <= TERMINAL_OUTPUT_WINDOW + largest);
+  assert(maxUnacked <= credit + largest);
   assert(Buffer.concat(chunks).equals(expected));
   assert.deepEqual(sequences, sequences.map((_, index) => index));
   assert(chunks.every((chunk) => chunk.byteOffset === 0 && chunk.buffer.byteLength === chunk.byteLength));
@@ -627,7 +630,9 @@ test("terminal input reaches the remote in call order from owned copies", async 
   assert.equal(Buffer.concat(inbound).toString(), expected);
 });
 
-test("input over the backlog bound is refused without queuing, and writes after the remote end are closed", async (t) => {
+test("maximum-size writes are accepted whole or refused with nothing queued, and writes after the remote end are closed", async (t) => {
+  // An idle session always takes one maximum write, so a bracketed paste is never split.
+  assert(TERMINAL_INPUT_BACKLOG >= MAX_TERMINAL_WRITE);
   let server!: ServerChannel;
   const f = await fixture(t, { shell(channel) { server = channel; channel.pause(); } });
   const stream = await readyStream(f);
@@ -635,13 +640,14 @@ test("input over the backlog bound is refused without queuing, and writes after 
   const accepted: Buffer[] = [];
   let result: string = "ok";
   for (let index = 0; index < 256 && result === "ok"; index++) {
-    const bytes = Buffer.alloc(65_536, (index % 250) + 1);
+    const bytes = Buffer.alloc(MAX_TERMINAL_WRITE, (index % 250) + 1);
     result = stream.write(bytes);
     if (result === "ok") accepted.push(Buffer.from(bytes));
     bytes.fill(0);
   }
   assert.equal(result, "busy");
-  assert.equal(stream.write(Buffer.alloc(TERMINAL_INPUT_BACKLOG, 0xff)), "busy");
+  assert(accepted.length >= 1, "the first maximum write on an idle session is accepted");
+  assert.equal(stream.write(Buffer.alloc(MAX_TERMINAL_WRITE, 0xff)), "busy");
   const inbound: Buffer[] = [];
   server.on("data", (data: Buffer) => inbound.push(Buffer.from(data)));
   server.resume();
@@ -653,6 +659,129 @@ test("input over the backlog bound is refused without queuing, and writes after 
   await until(() => f.current().state === "Closed");
   assert.deepEqual(f.current().end, { kind: "eof" });
   assert.equal(stream.write(Buffer.from("late")), "closed");
+});
+
+test("main validates terminal stream bounds when the saved-host composition is constructed", async (t) => {
+  const dir = mkdtempSync("/private/tmp/ssterm-ssh-bounds-");
+  const opened = await openMetadata({ path: join(dir, "metadata.db") });
+  assert(opened.ok);
+  t.after(() => { opened.value.close(); rmSync(dir, { recursive: true, force: true }); });
+  const build = (terminal: TerminalBounds) => createSavedHostSessions({
+    repository: opened.value, transient: new TransientSecrets(), power: new EventEmitter(), terminal,
+  });
+  for (const terminal of [
+    { outputWindow: 65_535 }, { outputWindow: 1_048_577 }, { outputWindow: 131_072.5 }, { outputWindow: Number.NaN },
+    { inputBacklog: MAX_TERMINAL_WRITE - 1 }, { inputBacklog: 2_097_153 }, { inputBacklog: "524288" as unknown as number },
+  ]) assert.throws(() => build(terminal), RangeError, JSON.stringify(terminal));
+  for (const terminal of [{}, { outputWindow: 65_536, inputBacklog: MAX_TERMINAL_WRITE }, { outputWindow: 1_048_576, inputBacklog: 2_097_152 }]) {
+    const runtime = build(terminal);
+    await runtime.shutdown();
+  }
+  // The adapter applies the same ranges wherever defaults are applied, and returns a frozen copy.
+  for (const terminal of [{ inputBacklog: 0 }, { inputBacklog: 2_097_153 }, { outputWindow: 65_535 }, { outputWindow: null as unknown as number }])
+    assert.throws(() => terminalBounds(terminal), RangeError, JSON.stringify(terminal));
+  assert.throws(() => createSshConnection({
+    host: "127.0.0.1", port: 22, username: "u", signal: new AbortController().signal, terminal: { inputBacklog: 1.5 },
+    verifyHost: async () => false, authenticate: async () => undefined, ready: () => false, failed() {}, ended() {},
+  }), RangeError);
+  const caller = { inputBacklog: 1 };
+  const copy = terminalBounds(caller);
+  caller.inputBacklog = 9e9;
+  assert.deepEqual(copy, { outputWindow: TERMINAL_OUTPUT_WINDOW, inputBacklog: 1 });
+  assert(Object.isFrozen(copy));
+});
+
+test("the input backlog counts bytes ssh2 already queued on its TCP socket", async (t) => {
+  const connect = ssh2.Client.prototype.connect;
+  const sshClients: ssh2.Client[] = [];
+  t.mock.method(ssh2.Client.prototype, "connect", function (this: ssh2.Client, ...args: Parameters<typeof connect>) {
+    sshClients.push(this);
+    return connect.apply(this, args);
+  });
+  const f = await fixture(t, { terminal: { inputBacklog: MAX_TERMINAL_WRITE } });
+  const stream = await readyStream(f);
+  const socket = (sshClients[0] as unknown as { _sock: { writableLength: number } })._sock;
+  Object.defineProperty(socket, "writableLength", { configurable: true, get: () => 1 });
+  assert.equal(stream.write(Buffer.alloc(MAX_TERMINAL_WRITE)), "busy", "a full socket queue refuses a write the channel alone would take");
+  assert.equal(stream.write(Buffer.alloc(MAX_TERMINAL_WRITE - 1)), "ok");
+});
+
+// A peer that ignores flow control: the server's own view of the client window is overridden, so it never waits.
+async function hostileFixture(t: TestContext, send: (channel: ServerChannel, stopped: () => boolean) => void) {
+  let stopped = false;
+  const f = await fixture(t, { terminal: { outputWindow: 65_536 }, shell(channel) {
+    channel.on("error", () => {});
+    channel.on("close", () => { stopped = true; });
+    send(channel, () => stopped);
+  } });
+  const stream = await readyStream(f);
+  let delivered = 0, frames = 0;
+  // The consumer never acknowledges, so the adapter pauses after one window.
+  stream.open((chunk) => { delivered += chunk.length; frames++; });
+  try { await until(() => f.current().state === "Failed"); } finally { stopped = true; }
+  return { f, delivered: () => delivered, frames: () => frames };
+}
+
+test("a peer that overruns the SSH window fails the session with resource-limit before buffering past the cap", async (t) => {
+  const block = Buffer.alloc(32_767, 0x61);
+  const total = 64 * 1_048_576;
+  let written = 0;
+  const h = await hostileFixture(t, (channel, stopped) => {
+    channel.write("x"); // the client window then never lands exactly on 0, where ssh2 drops data silently
+    setTimeout(() => {
+      (channel as unknown as { outgoing: { window: number } }).outgoing.window = 1e12;
+      const pump = () => {
+        if (stopped() || written >= total) return;
+        for (let index = 0; index < 8; index++) { channel.write(block); written += block.length; }
+        setImmediate(pump);
+      };
+      pump();
+    }, 50);
+  });
+  assert.equal(h.f.current().error?.code, "resource-limit");
+  assert(h.delivered() <= 65_536 + 32_768, `delivered ${h.delivered()}`);
+  // Flow control would stop a compliant peer near 4 MiB; this one was cut off long before its 64 MiB.
+  assert(written > TERMINAL_BUFFER_LIMIT && written < total / 2, `peer wrote ${written} bytes before the failure`);
+  await until(() => h.f.current().cleanup === "complete");
+});
+
+test("many tiny packets held behind exhausted credit fail with resource-limit at the chunk cap", async (t) => {
+  const one = Buffer.from("x");
+  let written = 0;
+  const h = await hostileFixture(t, (channel, stopped) => {
+    const pump = () => {
+      if (stopped()) return;
+      for (let index = 0; index < 2_000; index++) { channel.write(one); written++; }
+      setImmediate(pump);
+    };
+    pump();
+  });
+  assert.equal(h.f.current().error?.code, "resource-limit");
+  assert.equal(h.frames(), 65_536, "one window of 1-byte frames, then output pauses");
+  // The trip happens on the first chunk over the cap; anything beyond was still in flight.
+  assert(written > 65_536 + TERMINAL_CHUNK_LIMIT && written < 65_536 + 3 * TERMINAL_CHUNK_LIMIT, `peer wrote ${written} packets`);
+  await until(() => h.f.current().cleanup === "complete");
+});
+
+test("a compliant flood held by a stalled consumer never trips the buffering caps", async (t) => {
+  let server!: ServerChannel;
+  const f = await fixture(t, { shell(channel) { server = channel; } });
+  const stream = await readyStream(f);
+  const chunks: Uint8Array[] = [];
+  let unacked = 0;
+  stream.open((chunk) => { chunks.push(chunk); unacked += chunk.length; });
+  const bulk = Buffer.from(Array.from({ length: 1_000_000 }, (_, index) => `${String(index).padStart(15, "0")}\n`).join(""));
+  server.write(bulk);
+  await until(() => unacked >= TERMINAL_OUTPUT_WINDOW);
+  // Stall long enough for ssh2 to fill its high-water mark and the window it granted.
+  await delay(1_000);
+  assert.equal(f.current().state, "Ready");
+  while (length(chunks) < bulk.length) {
+    stream.ack(unacked); unacked = 0;
+    await delay(1);
+  }
+  assert.equal(f.current().state, "Ready");
+  assert(Buffer.concat(chunks).equals(bulk));
 });
 
 test("resize sends a remote window-change with columns and rows in order", async (t) => {

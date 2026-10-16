@@ -13,8 +13,19 @@ async function startTerminalFixture(production, options) {
   const transient = new production.TransientSecrets();
   const power = new EventEmitter();
   const ownerId = production.sessionOwnerId(options.owner);
-  // Receipts only: per generation frame count, byte total and whether sequences were consecutive from 0.
+  // Receipts only, never content: per generation frame/ack/write counts and byte totals, whether
+  // sequences were consecutive from 0, and main-clock times. `mark` restarts the timed fields so one
+  // phase (e.g. a flood) is measured on its own: max unacknowledged, first/last frame and last ack.
   const frames = new Map();
+  const receipt = (key) => {
+    let entry = frames.get(key);
+    if (!entry) {
+      entry = { count: 0, bytes: 0, consecutive: true, acks: 0, ackedBytes: 0, writes: 0, writtenBytes: 0, largestWrite: 0,
+        maxUnacked: 0, firstFrameAt: null, lastFrameAt: null, lastAckAt: null };
+      frames.set(key, entry);
+    }
+    return entry;
+  };
   let lab, repository, runtime, controller, unsubscribe, current, second, cleaned = false;
   const requireTrue = (condition, code) => {
     if (!condition) throw new Error(`TERMINAL_FIXTURE_${code}`);
@@ -25,12 +36,13 @@ async function startTerminalFixture(production, options) {
   };
   const record = (send) => (channel, frame) => {
     if (channel === production.channels.terminalOutput) {
-      const key = `${frame.sessionId}:${frame.generation}`;
-      const entry = frames.get(key) ?? { count: 0, bytes: 0, consecutive: true };
+      const entry = receipt(`${frame.sessionId}:${frame.generation}`);
       entry.consecutive &&= frame.sequence === entry.count;
       entry.count += 1;
       entry.bytes += frame.bytes.byteLength;
-      frames.set(key, entry);
+      entry.maxUnacked = Math.max(entry.maxUnacked, entry.bytes - entry.ackedBytes);
+      entry.lastFrameAt = performance.now();
+      entry.firstFrameAt ??= entry.lastFrameAt;
     }
     send(channel, frame);
   };
@@ -90,7 +102,32 @@ async function startTerminalFixture(production, options) {
     });
     const terminals = production.createTerminalController({ registry });
     // IPC handlers re-register the invoking sender on every call, so the recorder wraps that path too.
-    controller = { ...terminals, register: (owner, send) => terminals.register(owner, record(send)) };
+    controller = {
+      ...terminals,
+      register: (owner, send) => terminals.register(owner, record(send)),
+      ackTerminal(request) {
+        const result = terminals.ackTerminal(request);
+        if (result.ok) {
+          const entry = receipt(`${request.sessionId}:${request.generation}`);
+          entry.acks += 1;
+          entry.ackedBytes += request.bytes;
+          entry.lastAckAt = performance.now();
+        }
+        return result;
+      },
+      writeTerminal(request) {
+        // The IPC handler wipes the bytes after this returns, so only the length is read, first.
+        const length = request?.bytes?.byteLength ?? 0;
+        const result = terminals.writeTerminal(request);
+        if (result.ok) {
+          const entry = receipt(`${request.sessionId}:${request.generation}`);
+          entry.writes += 1;
+          entry.writtenBytes += length;
+          entry.largestWrite = Math.max(entry.largestWrite, length);
+        }
+        return result;
+      },
+    };
     controller.register(options.owner, options.send);
     const status = (session = current) => {
       const snapshot = session && registry.snapshot(ownerId, session.id)[0];
@@ -111,7 +148,12 @@ async function startTerminalFixture(production, options) {
       },
       status: () => status(),
       frames(generation) {
-        return frames.get(`${current.id}:${generation}`) ?? { count: 0, bytes: 0, consecutive: true };
+        return { ...receipt(`${current.id}:${generation}`) };
+      },
+      mark(generation) {
+        const entry = receipt(`${current.id}:${generation}`);
+        Object.assign(entry, { maxUnacked: entry.bytes - entry.ackedBytes, firstFrameAt: null, lastFrameAt: null, lastAckAt: null });
+        return { ...entry };
       },
       cleanup,
     };

@@ -56,7 +56,7 @@ export type SshCredential =
       respond(fields: readonly { echo: boolean }[], finish: (answers: readonly Uint8Array[]) => void): Promise<void>;
       dispose(): void;
     };
-export type SshFailure = "auth-denied" | "timeout" | "dns" | "network" | "channel-open-failed";
+export type SshFailure = "auth-denied" | "timeout" | "dns" | "network" | "channel-open-failed" | "resource-limit";
 type AuthResponse = AnyAuthMethod | false | { type: "password"; username: string; password: Buffer };
 export interface SshResource {
   dispose(): void;
@@ -80,9 +80,12 @@ export function createSshConnection(options: {
   authenticate(): Promise<SshCredential | undefined>;
   ready(terminal: TerminalChannel): boolean;
   failed(code: SshFailure): void;
+  /** Defaults and validation: `terminalBounds`. */
+  terminal?: TerminalBounds;
   /** Remote end only, after every preceding output chunk reached the consumer. */
   ended(end: TerminalEnd): void;
 }): SshResource & { start(): void } {
+  const bounds = terminalBounds(options.terminal);
   const client = new ssh2.Client();
   let disposed = false, started = false, verified = false, attempted = false, ready = false;
   let credential: SshCredential | undefined;
@@ -204,7 +207,12 @@ export function createSshConnection(options: {
         terminalClosed = channelDrain;
         channel.on("error", () => fail("network"));
         channel.on("close", () => channelDrain());
-        const opened = createTerminal(channel, channelDrained, (end) => { if (live() && ready) options.ended(end); });
+        const opened = createTerminal(channel, channelDrained, {
+          closed: (end) => { if (live() && ready) options.ended(end); },
+          overflowed: () => fail("resource-limit"),
+          // ssh2-internal: bytes ssh2 already handed to the TCP socket are no longer in channel.writableLength.
+          socketBacklog: () => (client as unknown as { _sock?: { writableLength?: number } })._sock?.writableLength ?? 0,
+        }, bounds);
         terminal = opened;
         if (!live()) { opened.dispose(); return; }
         ready = true;
@@ -217,21 +225,39 @@ export function createSshConnection(options: {
   return resource;
 }
 
-/** Fixed SST-012 bounds; SST-014 measures and tunes them. */
+/** Default unacknowledged output credit and queued input bytes per session (SST-014 measured). */
 export const TERMINAL_OUTPUT_WINDOW = 262_144;
-export const TERMINAL_INPUT_BACKLOG = 262_144;
+export const TERMINAL_INPUT_BACKLOG = 524_288;
+export interface TerminalBounds { outputWindow?: number; inputBacklog?: number }
+const within = (value: number, min: number, max: number) => Number.isSafeInteger(value) && value >= min && value <= max;
+/** Applies the defaults and returns a validated frozen copy, so a caller's later mutation cannot reach a session. */
+export function terminalBounds(bounds: TerminalBounds = {}): Readonly<Required<TerminalBounds>> {
+  const { outputWindow = TERMINAL_OUTPUT_WINDOW, inputBacklog = TERMINAL_INPUT_BACKLOG } = bounds;
+  if (!within(outputWindow, 65_536, 1_048_576) || !within(inputBacklog, 1, 2_097_152))
+    throw new RangeError("invalid-terminal-bounds");
+  return Object.freeze({ outputWindow, inputBacklog });
+}
+// ssh2 does not enforce its own receive window (an overrun leaves it negative and keeps buffering), so a
+// hostile peer could grow a paused readable without bound, and tiny packets cost ~210 B of heap each.
+// A compliant peer on one stream stays under 4 MiB (ssh2's 2 MiB high-water mark plus one 2 MiB window
+// granted before push reported backpressure). ssh2 shares one window between stdout and stderr, so heavy
+// interleaved stderr while paused can exceed it too; OpenSSH PTY sessions send no stderr.
+export const TERMINAL_BUFFER_LIMIT = 4_718_592;
+export const TERMINAL_CHUNK_LIMIT = 65_536;
 
 /** Every ssh2 stream quirk lives here: callers see ordered owned chunks, credit, a bounded input backlog and one end. */
 function createTerminal(
   channel: ClientChannel,
   drained: Promise<void>,
-  closed: (end: TerminalEnd) => void,
+  { closed, overflowed, socketBacklog }: { closed(end: TerminalEnd): void; overflowed(): void; socketBacklog(): number },
+  { outputWindow, inputBacklog }: Readonly<Required<TerminalBounds>>,
 ): TerminalChannel & { exited(): TerminalEnd | undefined } {
   let output: ((chunk: Uint8Array, sequence: number) => void) | undefined;
-  let unacked = 0, sequence = 0, disposed = false, finished = false, pendingCloses = 2;
+  // `buffered`: chunks pushed into either readable and not yet emitted as data.
+  let unacked = 0, sequence = 0, buffered = 0, disposed = false, finished = false, pendingCloses = 2;
   let exitSeen: TerminalEnd | undefined;
   const flow = () => {
-    const open = output !== undefined && !disposed && unacked < TERMINAL_OUTPUT_WINDOW;
+    const open = output !== undefined && !disposed && unacked < outputWindow;
     for (const stream of [channel, channel.stderr]) {
       if (open) stream.resume(); else stream.pause();
     }
@@ -240,12 +266,15 @@ function createTerminal(
   // credit pause drain per stream. OpenSSH PTY sessions send no extended data; add a merged arrival
   // queue if a non-PTY channel ever needs strict cross-stream order.
   const deliver = (data: Buffer) => {
+    buffered--;
     // An empty CHANNEL_DATA would become a frame the contract rejects, i.e. a sequence gap.
     if (disposed || !output || data.length === 0) return;
     unacked += data.length;
     // ssh2 hands out views of pooled packet buffers; the consumer gets an exact-length copy.
+    // ponytail: one frame and one acknowledgement per ssh2 chunk, measured adequate (38–50 MiB/s end to end).
+    // Upgrade path: merge chunks per tick, flushing before end/socket close and dropping on dispose.
     output(new Uint8Array(data), sequence++);
-    if (unacked >= TERMINAL_OUTPUT_WINDOW) flow();
+    if (unacked >= outputWindow) flow();
   };
   // ssh2 emits each close only after its readable drained, and both drain only with credit,
   // so the end follows every delivered chunk.
@@ -254,6 +283,29 @@ function createTerminal(
     finished = true;
     closed(exitSeen ?? { kind: "eof" });
   };
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    output = undefined;
+    channel.destroy();
+  };
+  // ssh2 delivers every CHANNEL_DATA through push, so this sees each chunk before it is buffered.
+  for (const stream of [channel, channel.stderr]) {
+    const push = stream.push.bind(stream);
+    stream.push = (chunk: Buffer | null) => {
+      if (chunk === null) return push(chunk);
+      if (disposed) return false;
+      // Counted first: a flowing readable emits data synchronously inside push.
+      if (chunk.length > 0) buffered++;
+      const result = push(chunk);
+      if (buffered > TERMINAL_CHUNK_LIMIT || channel.readableLength + channel.stderr.readableLength > TERMINAL_BUFFER_LIMIT) {
+        overflowed();
+        dispose();
+        return false;
+      }
+      return result;
+    };
+  }
   channel.on("data", deliver);
   channel.stderr.on("data", deliver);
   channel.on("exit", (code: unknown, signal: unknown) => { exitSeen = exitOf(code, signal); });
@@ -274,19 +326,15 @@ function createTerminal(
     },
     write(bytes) {
       if (disposed || finished || !channel.writable) return "closed";
-      if (channel.writableLength + bytes.byteLength > TERMINAL_INPUT_BACKLOG) return "busy";
+      // All or nothing: a refused write queues no prefix, so a bracketed paste is never cut.
+      if (channel.writableLength + socketBacklog() + bytes.byteLength > inputBacklog) return "busy";
       channel.write(Buffer.from(bytes));
       return "ok";
     },
     resize(columns, rows) {
       if (!disposed && !finished) channel.setWindow(rows, columns, 0, 0);
     },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      output = undefined;
-      channel.destroy();
-    },
+    dispose,
   };
 }
 

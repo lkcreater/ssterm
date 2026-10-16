@@ -40,6 +40,7 @@ export default defineConfig({
             "credentials.spec.ts",
             "terminal.spec.ts",
             "terminal-input.spec.ts",
+            "terminal-flow.spec.ts",
           ],
         },
       ]
@@ -57,6 +58,7 @@ export default defineConfig({
             "credentials.spec.ts",
             "terminal.spec.ts",
             "terminal-input.spec.ts",
+            "terminal-flow.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
   MAX_PASTE_BYTES,
+  MAX_QUEUED_INPUT,
   isLinkActivation,
   pasteDecision,
   pasteLines,
@@ -13,6 +14,7 @@ import {
   terminalAnsiKeys,
   terminalSearchDecorations,
 } from "../../apps/desktop/src/renderer/src/lib/terminal-theme.ts";
+import { MAX_TERMINAL_WRITE } from "../../packages/contracts/src/index.ts";
 
 test("sanitizePaste keeps text, tabs and newlines and removes C0, DEL and C1", () => {
   assert.deepEqual(sanitizePaste("ls -la\tสวัสดี 👍\r\nexit\n"), {
@@ -94,6 +96,12 @@ test("pasteDecision refuses over 256 KiB of UTF-8 and ignores empty text", () =>
   assert.equal(pasteDecision({ ...base, text: thai }).kind, "refuse");
   assert.equal(pasteDecision({ ...base, text: "abcd", maxBytes: 3 }).kind, "refuse");
   assert.deepEqual(pasteDecision({ ...base, text: "", removed: true }), { kind: "empty" });
+});
+
+test("a maximum bracketed paste fits one terminal write and the renderer input queue", () => {
+  // ESC[200~ + text + ESC[201~: one write means main accepts or refuses the paste whole.
+  assert.ok(MAX_TERMINAL_WRITE >= MAX_PASTE_BYTES + 12);
+  assert.ok(MAX_QUEUED_INPUT >= MAX_PASTE_BYTES + 12);
 });
 
 test("pasteLines splits every newline form and ignores one trailing newline", () => {
