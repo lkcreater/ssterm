@@ -8,6 +8,7 @@ import {
   isResizeTerminalRequest, isAckTerminalRequest, isTerminalActionResponse,
   type TerminalState, type TerminalStateRequest, type TerminalOutput, type TerminalTarget,
   type WriteTerminalRequest, type ResizeTerminalRequest, type AckTerminalRequest,
+  isOpenLinkRequest, isOpenLinkResponse, type OpenLinkRequest,
   isTrustState,
   isTrustStateRequest,
   isAnswerHostTrustRequest,
@@ -322,6 +323,10 @@ export function createDesktopBridge(transport: BridgeTransport): {
     ackTerminal(request: AckTerminalRequest) {
       if (!isAckTerminalRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.ackTerminal, [{ ...target(request), bytes: request.bytes }], isTerminalActionResponse);
+    },
+    openLink(request: OpenLinkRequest) {
+      if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.openLink, [{ owner: { ...request.owner }, url: request.url }], isOpenLinkResponse);
     },
     onWindowState(callback: (event: WindowStateEvent) => void): () => void {
       if (disposed || typeof callback !== "function") return () => {};

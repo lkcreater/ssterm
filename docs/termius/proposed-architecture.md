@@ -1,6 +1,6 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**SST-012 / T018: `DONE`** — [terminal byte stream / resize / exit](../terminal.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 173/173, E2E 20/20, packaged 17/17; รวมใน commit SST-012 ตามคำสั่ง “commit และทำงานทัดไป”. SST-001–011 committed (`4ded3e9` latest); SST-013–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-013 / T019: `DONE`** — [terminal input / Unicode / clipboard](../terminal-input.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 190/190, E2E 21/21, packaged 18/18; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–012 committed (`dba21d4` latest); SST-014–028 และ DS04–DS06 ทำต่อตาม loop
 
 **ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-012–028 ยังรออนุมัติ รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
@@ -159,3 +159,5 @@ SST-010 integrates the [production saved-host SSH adapter](../ssh-auth.md) throu
 SST-011 integrates the [credential prompt boundary](../auth-prompts.md): transient password/passphrase and selected keyboard-interactive, atomic prompt-specific cancellation, owner/sequence-fenced events and uncontrolled inputs. No server instructions, credential persistence/cache or renderer connect/terminal capability is added.
 
 SST-012 integrates the [terminal stream](../terminal.md): the SSH adapter owns ordered output, a 256 KiB credit window, the input backlog bound, PTY resize and remote end reporting; `SessionRegistry.terminal(owner, id, generation)` is the single capability fence; output frames go only to the owning window; xterm.js renders bytes through the declared trust boundary. Remote exit status/signal/EOF is distinct from local close, and socket loss after Ready is `Failed`/`network`. No renderer connect command is added (SST-016).
+
+SST-013 adds the [terminal input policy](../terminal-input.md): Unicode 11 widths, IUTF8, sanitized and confirmed paste, Cmd+click links through a validated main handler with native confirmation, per-pane search and an explicit menu without packaged reload/DevTools.

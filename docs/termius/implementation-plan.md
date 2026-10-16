@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-012 / T018: `DONE`** — [terminal byte stream / resize / exit](../terminal.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 173/173, E2E 20/20, packaged 17/17; รวมใน commit SST-012 ตามคำสั่ง “commit และทำงานทัดไป”. SST-001–011 committed (`4ded3e9` latest); SST-013–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-013 / T019: `DONE`** — [terminal input / Unicode / clipboard](../terminal-input.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 190/190, E2E 21/21, packaged 18/18; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–012 committed (`dba21d4` latest); SST-014–028 และ DS04–DS06 ทำต่อตาม loop
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-012–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 
@@ -115,7 +115,9 @@ Baseline macOS arm64/local-first/account-free และ product MVP ข้าง
 
 **2026-10-15 — earlier SST-004 confirmation:** “commit และทำงานถัดไปต่อ” อนุมัติ commit SST-003 (`603e600`) และ pipeline SST-004/T006/T007/T048/T049; supersedes earlier next-ticket boundary เฉพาะ SST-004 ไม่มี authorization ให้ commit SST-004, push หรือเริ่ม SST-005+ ดู [desktop evidence](../desktop-shell.md)
 
-**Latest SST-005 confirmation:** “commit และเริ่มงานถัดไป” อนุมัติ commit SST-004 (`d6e1822`) และ pipeline SST-005/T008 เท่านั้น; supersedes earlier SST-005 stop. T009/SST-006 และ commit SST-005/push ยังไม่ได้อนุมัติ.
+**Latest SST-013 confirmation and delivery:** the standing loop instruction “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ” authorizes SST-013/T019; completed through independent TEST/REVIEW/DELIVER and committed. See [evidence](../terminal-input.md).
+
+**Earlier SST-005 confirmation:** “commit และเริ่มงานถัดไป” อนุมัติ commit SST-004 (`d6e1822`) และ pipeline SST-005/T008 เท่านั้น; supersedes earlier SST-005 stop. T009/SST-006 และ commit SST-005/push ยังไม่ได้อนุมัติ.
 
 **Latest SST-007 confirmation:** “ทำงานถัดไปได้เลย” authorizes SST-007/T011–T012 after commit SST-006 `9b0ba05`; supersedes the earlier SST-007 stop only. No SST-007 commit/push or SST-008+ scope is inferred.
 

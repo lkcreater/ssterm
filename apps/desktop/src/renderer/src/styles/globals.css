@@ -450,6 +450,7 @@
 }
 /* Padding lives on the frame: the fit addon measures the host's content box. */
 .live-terminal-frame {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -461,6 +462,68 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+/* xterm.css hardcodes black/white for the IME pre-edit text; keep it on the terminal palette. */
+.live-terminal .xterm .composition-view {
+  background: var(--terminal-background);
+  color: var(--terminal-foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--terminal-cursor);
+}
+/* Above xterm's own layers (helpers 5, decorations 6–7). */
+.live-terminal-search,
+.live-terminal-feedback {
+  position: absolute;
+  right: 12px;
+  z-index: 10;
+  max-width: calc(100% - 24px);
+}
+.live-terminal-search {
+  top: 8px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.live-terminal-feedback {
+  bottom: 8px;
+  pointer-events: none;
+}
+.live-terminal-feedback > span {
+  display: block;
+  padding: 4px 8px;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+.live-terminal-search-input {
+  flex: 0 1 auto;
+  width: 220px;
+}
+/* The bar has its own Close button; the native clear control would be a second X. */
+.live-terminal-search-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+.paste-preview {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  font: 12px / 1.5 var(--font-mono);
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.paste-marker {
+  color: var(--muted-foreground);
 }
 .snippet-composer {
   display: flex;

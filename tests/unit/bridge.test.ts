@@ -69,7 +69,7 @@ test("bridge exposes only narrow methods and forwards a rebuilt, validated ping"
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
     "ackTerminal", "answerCredentials", "answerHostTrust", "bootstrap", "cancelCredentialPrompt", "credentialState", "onCredentialState",
-    "onTerminalOutput", "onTerminalState", "onTrustState", "onWindowState", "openTerminal", "ping",
+    "onTerminalOutput", "onTerminalState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping",
     "prepareKnownHostRevoke", "resizeTerminal", "revokeKnownHost", "terminalState", "trustState", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
@@ -361,4 +361,21 @@ test("terminal commands are rebuilt and written bytes are copied then wiped", as
   f.setReject();
   assert.deepEqual(await f.api.writeTerminal({ ...target, bytes }), failure("unavailable"));
   assert.ok((f.calls.at(-1)!.args[0] as { bytes: Uint8Array }).bytes.every((byte) => byte === 0));
+});
+
+test("openLink forwards a rebuilt request and validates the reply", async () => {
+  const f = fixture();
+  const owner = { windowId: 1, generation: 2 };
+  f.setReply({ ok: true, value: { opened: true } });
+  const request = { owner, url: "https://example.com/" };
+  assert.deepEqual(await f.api.openLink(request), { ok: true, value: { opened: true } });
+  const forwarded = f.calls.at(-1)!;
+  assert.deepEqual(forwarded, { channel: channels.openLink, args: [request] });
+  assert.notEqual(forwarded.args[0], request);
+  const count = f.calls.length;
+  for (const invalid of [{ owner, url: "" }, { owner, url: "a".repeat(2049) }, { owner, url: "x", extra: true }, { url: "x" }])
+    assert.deepEqual(await f.api.openLink(invalid as never), failure("invalid-request"));
+  assert.equal(f.calls.length, count);
+  f.setReply({ ok: true, value: { opened: "yes" } });
+  assert.deepEqual(await f.api.openLink(request), failure("unavailable"));
 });

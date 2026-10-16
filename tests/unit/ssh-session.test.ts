@@ -3,6 +3,7 @@ import { test, type TestContext } from "node:test";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import { createServer, type Socket } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import ssh2, { type Connection, type KeyboardAuthContext, type ServerChannel, type Session, type WindowChangeInfo } from "ssh2";
@@ -663,6 +664,20 @@ test("resize sends a remote window-change with columns and rows in order", async
   stream.resize(120, 40);
   await until(() => sizes.length === 1);
   assert.deepEqual({ cols: sizes[0]!.cols, rows: sizes[0]!.rows }, { cols: 120, rows: 40 });
+});
+
+test("the shell PTY request carries IUTF8 enabled so the remote line discipline erases whole UTF-8 characters", async (t) => {
+  // ssh2's server parser discards modes it has no name for (IUTF8 included), so the encoded request is observed client-side.
+  const { prototype } = createRequire(import.meta.url)("ssh2/lib/protocol/Protocol.js") as { prototype: { pty(...args: unknown[]): unknown } };
+  const original = prototype.pty;
+  const requested: unknown[] = [];
+  prototype.pty = function (this: unknown, ...args: unknown[]) { requested.push(args[6]); return original.apply(this, args); };
+  t.after(() => { prototype.pty = original; });
+  const f = await fixture(t);
+  await readyStream(f);
+  assert.equal(requested.length, 1);
+  assert.ok(Buffer.isBuffer(requested[0]));
+  assert.deepEqual([...(requested[0] as Buffer)], [42, 0, 0, 0, 1, 0]);
 });
 
 test("remote exit status, signal and EOF end the session only after the final output chunk, even while output is held", async (t) => {

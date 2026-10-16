@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, powerMonitor, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, session, shell } from "electron";
 import { isAbsolute, join, relative } from "node:path";
 import { realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -25,6 +25,8 @@ import { registerKnownHostHandlers } from "./known-host-runtime";
 import { createCredentialsController } from "./credentials";
 import { registerCredentialHandlers } from "./credential-runtime";
 import { createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
+import { applicationMenuTemplate } from "./menu";
+import { registerLinkHandlers } from "./links";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -60,6 +62,7 @@ let credentials: ReturnType<typeof createCredentialsController> | undefined;
 let removeCredentialHandlers: (() => void) | undefined;
 let terminals: TerminalController | undefined;
 let removeTerminalHandlers: (() => void) | undefined;
+let removeLinkHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -162,6 +165,21 @@ const boundary = new WindowBoundary(
     desktopSessions?.revokeOwner(owner);
   },
 );
+/** The user sees the exact normalized href before the OS opens it; Cancel is the default. */
+async function confirmAndOpen(href: string, window: BrowserWindow | null): Promise<boolean> {
+  if (!window || window.isDestroyed()) return false;
+  const { response } = await dialog.showMessageBox(window, {
+    type: "question",
+    message: "Open this link in your browser?",
+    detail: href,
+    buttons: ["Cancel", "Open"],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (response !== 1) return false;
+  await shell.openExternal(href);
+  return true;
+}
 let quitting = false;
 let shutdownComplete = false;
 if (ownsInstance) {
@@ -210,6 +228,7 @@ function createWindow(): void {
       nodeIntegrationInSubFrames: false,
       webviewTag: false,
       allowRunningInsecureContent: false,
+      devTools: !app.isPackaged,
     },
   });
   const contents = window.webContents;
@@ -294,6 +313,11 @@ if (ownsInstance) {
       boundary,
       controller: () => knownHosts,
     });
+    removeLinkHandlers = registerLinkHandlers({
+      ipc: ipcMain,
+      boundary,
+      open: (href, sender) => confirmAndOpen(href, BrowserWindow.fromWebContents(sender)),
+    });
     const defaultSession = session.defaultSession;
     defaultSession.setPermissionRequestHandler(
       (_contents, _permission, callback) => callback(false),
@@ -338,6 +362,9 @@ if (ownsInstance) {
         return failure("unavailable");
       }
     });
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(applicationMenuTemplate({ packaged: app.isPackaged, platform: process.platform })),
+    );
     createWindow();
     app.on("activate", () => {
       if (!quitting && BrowserWindow.getAllWindows().length === 0)
@@ -362,6 +389,7 @@ app.on("before-quit", (event) => {
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
   removeTerminalHandlers?.();
+  removeLinkHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();

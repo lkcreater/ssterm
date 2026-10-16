@@ -49,9 +49,11 @@ const { selection, ...terminalColors } = signalTerminalTheme;
 
 /**
  * The declared trust boundary for remote bytes: they reach the screen only through xterm's
- * parser via `write(Uint8Array)`, never as HTML. OSC 8 links never open anything (URL actions
- * are SST-013), every window manipulation/report stays off, and no clipboard/OSC 52 or
- * web-links addon is loaded. Logging is off so terminal content never reaches the console.
+ * parser via `write(Uint8Array)`, never as HTML. Proposed APIs are enabled only for Unicode 11
+ * widths and search decorations; neither feeds remote bytes anywhere else. No clipboard/OSC 52
+ * addon is loaded. Links (web-links addon and http(s) OSC 8) are inert here; the pane replaces
+ * `linkHandler` so only an explicit Cmd+click asks main to open the URL. Every window
+ * manipulation/report stays off and logging is off so terminal content never reaches the console.
  */
 export const xtermOptions = {
   theme: { ...terminalColors, selectionBackground: selection },
@@ -59,11 +61,27 @@ export const xtermOptions = {
   fontSize: 13,
   lineHeight: 1.4,
   scrollback: 10_000,
-  allowProposedApi: false,
+  allowProposedApi: true,
   linkHandler: { activate() {} },
   windowOptions: {},
   logLevel: "off",
+  macOptionIsMeta: false,
+  macOptionClickForcesSelection: true,
 } satisfies ITerminalOptions;
+
+/**
+ * Search match colors; xterm requires #RRGGBB. Matched text keeps its own ANSI color, so the
+ * active match sits on the background lifted slightly (foreground 14.3:1, every ANSI color at
+ * least 4.5:1) and is told apart by its amber border rather than a bright fill.
+ */
+export const terminalSearchDecorations = {
+  matchBackground: signalTerminalTheme.selection,
+  matchBorder: signalTerminalTheme.brightBlack,
+  matchOverviewRuler: signalTerminalTheme.brightBlack,
+  activeMatchBackground: "#141d30",
+  activeMatchBorder: signalTerminalTheme.yellow,
+  activeMatchColorOverviewRuler: signalTerminalTheme.yellow,
+};
 
 export const terminalStyle = {
   "--terminal-background": signalTerminalTheme.background,

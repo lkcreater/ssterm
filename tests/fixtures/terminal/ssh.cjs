@@ -15,7 +15,7 @@ async function startTerminalFixture(production, options) {
   const ownerId = production.sessionOwnerId(options.owner);
   // Receipts only: per generation frame count, byte total and whether sequences were consecutive from 0.
   const frames = new Map();
-  let lab, repository, runtime, controller, unsubscribe, current, cleaned = false;
+  let lab, repository, runtime, controller, unsubscribe, current, second, cleaned = false;
   const requireTrue = (condition, code) => {
     if (!condition) throw new Error(`TERMINAL_FIXTURE_${code}`);
   };
@@ -75,6 +75,11 @@ async function startTerminalFixture(production, options) {
       label: options.label, address: lab.host, environment: "PROD",
       port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId },
     } }).createdIds[0];
+    // Optional second (DEV) host on the same owned server, so two panes can run side by side.
+    const secondHostId = options.secondLabel ? perform({ type: "create-host", data: {
+      label: options.secondLabel, address: lab.host, environment: "DEV",
+      port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId },
+    } }).createdIds[0] : null;
     runtime = production.createSavedHostSessions({ repository, provider, transient, power });
     const registry = runtime.registry;
     unsubscribe = registry.subscribe(ownerId, (snapshot) => {
@@ -87,8 +92,8 @@ async function startTerminalFixture(production, options) {
     // IPC handlers re-register the invoking sender on every call, so the recorder wraps that path too.
     controller = { ...terminals, register: (owner, send) => terminals.register(owner, record(send)) };
     controller.register(options.owner, options.send);
-    const status = () => {
-      const snapshot = current && registry.snapshot(ownerId, current.id)[0];
+    const status = (session = current) => {
+      const snapshot = session && registry.snapshot(ownerId, session.id)[0];
       return snapshot ? {
         id: snapshot.id, generation: snapshot.generation, state: snapshot.state, cleanup: snapshot.cleanup,
         error: snapshot.error?.code ?? null, end: snapshot.end ? { ...snapshot.end } : null,
@@ -99,7 +104,12 @@ async function startTerminalFixture(production, options) {
       connect() { current = value(registry.connect(ownerId, hostId)); return status(); },
       reconnect() { current = value(registry.reconnect(ownerId, current.id)); return status(); },
       async close() { value(await registry.close(ownerId, current.id)); return status(); },
-      status,
+      connectSecond() {
+        requireTrue(secondHostId, "NO_SECOND_HOST");
+        second = value(registry.connect(ownerId, secondHostId));
+        return status(second);
+      },
+      status: () => status(),
       frames(generation) {
         return frames.get(`${current.id}:${generation}`) ?? { count: 0, bytes: 0, consecutive: true };
       },

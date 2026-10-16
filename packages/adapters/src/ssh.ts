@@ -1,4 +1,4 @@
-import ssh2, { type AnyAuthMethod, type ClientChannel, type ParsedKey } from "ssh2";
+import ssh2, { type AnyAuthMethod, type ClientChannel, type ParsedKey, type TerminalModes } from "ssh2";
 import type { HostKeyIdentity, TerminalChannel, TerminalEnd } from "@ssterm/domain";
 import { decodeHostPublicKey } from "./host-key.ts";
 
@@ -7,6 +7,9 @@ export interface PreparedPrivateKey {
   dispose(): void;
 }
 const keys = new WeakMap<PreparedPrivateKey, ParsedKey>();
+// RFC 8160 IUTF8 (opcode 42) = 1, then TTY_OP_END. ssh2 1.17's named-mode table lacks IUTF8 and silently
+// drops unknown keys, so the pre-encoded bytes are passed through; without it Backspace splits UTF-8 characters.
+const IUTF8_MODES = Buffer.from([42, 0, 0, 0, 1, 0]) as unknown as TerminalModes;
 export type PrivateKeyResult =
   | { ok: true; key: PreparedPrivateKey }
   | { ok: false; code: "credentials-required" | "invalid-private-key" | "unsupported-private-key" };
@@ -191,7 +194,7 @@ export function createSshConnection(options: {
     clearCredential();
     if (!live()) return;
     try {
-      client.shell({ term: "xterm-256color", cols: 80, rows: 24 }, (error, channel) => {
+      client.shell({ term: "xterm-256color", cols: 80, rows: 24, modes: IUTF8_MODES }, (error, channel) => {
         if (error) { fail("channel-open-failed"); return; }
         // Must precede the data listeners, which would otherwise start flowing mode.
         channel.pause();

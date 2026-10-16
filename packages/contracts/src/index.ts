@@ -4,6 +4,8 @@ import type { TrustState, TrustStateRequest, AnswerHostTrustRequest, PrepareKnow
 export * from "./known-hosts.ts";
 import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarget, WriteTerminalRequest, ResizeTerminalRequest, AckTerminalRequest, TerminalActionResponse } from "./terminals.ts";
 export * from "./terminals.ts";
+import type { OpenLinkRequest, OpenLinkResponse } from "./links.ts";
+export * from "./links.ts";
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
   | "invalid-request"
@@ -67,6 +69,7 @@ export interface DesktopAPI {
   writeTerminal(request: WriteTerminalRequest): Promise<Result<TerminalActionResponse>>;
   resizeTerminal(request: ResizeTerminalRequest): Promise<Result<TerminalActionResponse>>;
   ackTerminal(request: AckTerminalRequest): Promise<Result<TerminalActionResponse>>;
+  openLink(request: OpenLinkRequest): Promise<Result<OpenLinkResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -94,6 +97,7 @@ export const channels = Object.freeze({
   writeTerminal: "ssterm:write-terminal",
   resizeTerminal: "ssterm:resize-terminal",
   ackTerminal: "ssterm:ack-terminal",
+  openLink: "ssterm:open-link",
 });
 
 const messages: Record<ErrorCode, string> = {
