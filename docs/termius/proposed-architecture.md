@@ -1,6 +1,6 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**SST-016 / T022: `DONE`** — [hosts / groups / search UI](../catalog-ui.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 236/236, E2E 34/34, packaged 33/33; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–015 committed (`b783329` latest); SST-017–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-017 / T023: `DONE`** — [identity and key management UI](../identities.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 257/257, E2E 40/40, packaged 37/37; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–016 committed (`06cf5b3` latest); SST-018–028 และ DS04–DS06 ทำต่อตาม loop
 
 **ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-012–028 ยังรออนุมัติ รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
@@ -167,3 +167,5 @@ SST-014 bounds the [terminal flow](../terminal-flow.md): validated output credit
 SST-015 completes the [terminal lifecycle](../terminal-lifecycle.md): generation-fenced close/reconnect/dismiss from the renderer, projected failure reasons, SSH keepalive, lock recovery through an explicit Reconnect, one xterm per logical session across reconnects, and leak-free close, quit and crash cleanup.
 
 SST-016 exposes the [catalog UI](../catalog-ui.md): a pushed owner-bound catalog state without secret references, revision-fenced prepare/apply with field errors, renderer search with domain parity, and `connectHost` on the production registry.
+
+SST-017 adds [identities and SSH keys](../identities.md): main-only key import with derived metadata, Keychain writes through SecretService with lock gating, a commit observer that republishes catalog state, and a fail-closed test Keychain namespace.

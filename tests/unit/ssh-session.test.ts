@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test, type TestContext } from "node:test";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -13,14 +13,13 @@ import { openMetadata } from "../../packages/adapters/src/index.ts";
 import { createSshConnection, preparePrivateKey, TERMINAL_OUTPUT_WINDOW, TERMINAL_INPUT_BACKLOG, TERMINAL_BUFFER_LIMIT, TERMINAL_CHUNK_LIMIT, terminalBounds, type TerminalBounds, sshKeepalive, type SshKeepalive } from "../../packages/adapters/src/ssh.ts";
 import { MAX_TERMINAL_WRITE } from "../../packages/contracts/src/index.ts";
 import { createSavedHostSessions } from "../../apps/desktop/src/main/ssh.ts";
-import { createSavedHostSshAdapter, KnownHostPolicy, SessionRegistry, TransientSecrets, type SessionSnapshot } from "../../packages/services/src/index.ts";
+import { ed25519 } from "./ssh-keys.ts";
+import { createSavedHostSshAdapter, KnownHostPolicy, SecretService, SessionRegistry, TransientSecrets, type SessionSnapshot } from "../../packages/services/src/index.ts";
 
 const passphrase = Buffer.from("owned-fixture-passphrase");
 const password = Buffer.from("owned-fixture-password");
-const plainEd = Buffer.from(ssh2.utils.generateKeyPairSync("ed25519").private);
-const encryptedEd = Buffer.from(ssh2.utils.generateKeyPairSync("ed25519", {
-  passphrase, cipher: "aes256-cbc", rounds: 1,
-}).private);
+const plainEd = Buffer.from(ed25519().private);
+const encryptedEd = Buffer.from(ed25519({ passphrase, cipher: "aes256-cbc", rounds: 1 }).private);
 const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 const plainRsa = rsa.export({ type: "pkcs1", format: "pem" });
 const encryptedRsa = rsa.export({ type: "pkcs1", format: "pem", cipher: "aes-256-cbc", passphrase });
@@ -167,6 +166,33 @@ test("single-key mature parser accepts guaranteed encrypted/plain Ed25519 OpenSS
     assert.deepEqual(preparePrivateKey(bytes), { ok: false, code: "unsupported-private-key" });
   for (const bytes of [Buffer.concat([plainEd, plainEd]), Buffer.from("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----"), Buffer.alloc(0)])
     assert.deepEqual(preparePrivateKey(bytes), { ok: false, code: "invalid-private-key" });
+});
+
+test("an OpenSSH bcrypt cost above 256 rounds is refused from the header before ssh2 runs it", () => {
+  const pem = (rounds: number) => ed25519({ passphrase, cipher: "aes256-ctr", rounds }).private;
+  /** Rewrites only the kdfoptions rounds field of a real file. */
+  const withRounds = (text: string, rounds: number) => {
+    const lines = text.trim().split("\n");
+    const body = Buffer.from(lines.slice(1, -1).join(""), "base64");
+    let at = 15;
+    for (let skip = 0; skip < 2; skip++) at += 4 + body.readUInt32BE(at);
+    const options = at + 4;
+    body.writeUInt32BE(rounds, options + 4 + body.readUInt32BE(options));
+    return Buffer.from(`${lines[0]}\n${body.toString("base64").match(/.{1,70}/gu)!.join("\n")}\n${lines.at(-1)}\n`);
+  };
+  const sixteen = pem(16);
+  for (const rounds of [257, 1_000_000, 0]) {
+    const crafted = withRounds(sixteen, rounds);
+    const started = performance.now();
+    assert.deepEqual(preparePrivateKey(crafted, passphrase), { ok: false, code: "unsupported-private-key" }, String(rounds));
+    assert.deepEqual(preparePrivateKey(crafted), { ok: false, code: "unsupported-private-key" }, "refused before a passphrase is asked");
+    assert.ok(performance.now() - started < 50, `${rounds} rounds took ${performance.now() - started} ms`);
+  }
+  for (const text of [sixteen, pem(100)]) {
+    const parsed = preparePrivateKey(Buffer.from(text), passphrase);
+    assert(parsed.ok);
+    parsed.key.dispose();
+  }
 });
 
 test("actual wire trust precedes credential reads/authentication; Ready waits for shell and snapshots contain no secrets", async (t) => {
@@ -966,4 +992,52 @@ test("keepalive is validated where defaults are applied and when main composes s
   });
   for (const keepalive of invalid) assert.throws(() => build(keepalive), RangeError, JSON.stringify(keepalive));
   await build({ intervalMs: 1_000, countMax: 2 }).shutdown();
+});
+
+test("without a secure store, main still composes saved hosts: unsaved passwords prompt and saved refs fail closed", async (t) => {
+  const f = await fixture(t);
+  const dir = mkdtempSync("/private/tmp/ssterm-ssh-unavailable-");
+  const opened = await openMetadata({ path: join(dir, "metadata.db") });
+  assert(opened.ok);
+  const repository = opened.value;
+  const runtime = createSavedHostSessions({ repository, transient: new TransientSecrets(), power: new EventEmitter() });
+  t.after(async () => { await runtime.shutdown(); repository.close(); rmSync(dir, { recursive: true, force: true }); });
+  // The password was saved during an earlier launch whose secure store worked.
+  const saved = randomUUID(), promptOnly = randomUUID(), promptHost = randomUUID(), savedHost = randomUUID();
+  const earlier = new SecretService({ repository, transient: new TransientSecrets(), provider: {
+    async read() { return { status: "missing" }; }, async lookup() { return { status: "missing" }; },
+    async write() { return { status: "confirmed" }; }, async delete() { return { status: "confirmed" }; },
+  } });
+  const stored = await earlier.storeSecret({
+    kind: "password", owner: { type: "identity", id: saved, expectedRevision: null }, value: Buffer.from(password),
+    publish: (ref) => [{ type: "create-identity", id: saved, data: { label: "Saved", username: "fixture", method: "password", passwordRef: ref } }],
+  });
+  assert.equal(stored.status, "published");
+  const port = { mode: "value", port: f.resolved.port.value } as const;
+  const before = repository.snapshot();
+  assert(before.ok);
+  const committed = repository.commit({ expectedCatalogRevision: before.value.catalogRevision, changes: [
+    { type: "create-identity", id: promptOnly, data: { label: "Prompt", username: "fixture", method: "password" } },
+    { type: "create-host", id: promptHost, data: { label: "Prompt", address: "127.0.0.1", port, auth: { mode: "value", identityId: promptOnly } } },
+    { type: "create-host", id: savedHost, data: { label: "Saved", address: "127.0.0.1", port, auth: { mode: "value", identityId: saved } } },
+  ] });
+  assert(committed.ok, JSON.stringify(committed));
+  const { registry } = runtime;
+  const savedRecords: SessionSnapshot[] = [];
+  registry.subscribe("saved-owner", (snapshot) => savedRecords.push(snapshot));
+  for (const [owner, hostId] of [["prompt-owner", promptHost], ["saved-owner", savedHost]] as const) {
+    assert(registry.connect(owner, hostId).ok);
+    await until(() => !!registry.snapshot(owner)[0]?.prompt || registry.snapshot(owner)[0]?.state === "Failed");
+    const trust = registry.snapshot(owner)[0]!;
+    assert.equal(trust.prompt?.kind, "host-trust", trust.error?.code);
+    assert(registry.answerPrompt(owner, trust.id, trust.generation, trust.prompt.id, { kind: "host-trust", decision: "accept-once" }).ok);
+  }
+  const promptState = () => registry.snapshot("prompt-owner")[0]!;
+  await until(() => promptState().prompt?.kind === "credentials");
+  assert.equal(credentials(promptState())?.purpose, "password");
+  const savedState = () => registry.snapshot("saved-owner")[0]!;
+  await until(() => savedState().state === "Failed" && savedState().cleanup === "complete");
+  assert.equal(savedState().error?.code, "credentials-unavailable");
+  assert(!savedRecords.some((snapshot) => snapshot.prompt?.kind === "credentials"));
+  assert.deepEqual(f.methods, []);
 });

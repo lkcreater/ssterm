@@ -751,3 +751,53 @@
     scroll-behavior: auto !important;
   }
 }
+.identity-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+/* minmax(0, 1fr): long labels, user names and fingerprints truncate instead of widening the row. */
+.identity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+.identity-row[data-kind="key"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.identity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.credential-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--foreground);
+}
+.credential-status svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--status-color, var(--muted-foreground));
+}
+.credential-status[data-tone="saved"] {
+  --status-color: var(--connection-connected);
+}
+.credential-status[data-tone="key"] {
+  --status-color: var(--primary);
+}
+.credential-status[data-tone="unresolved"] {
+  --status-color: var(--connection-connecting);
+}
+.credential-status[data-tone="missing"] {
+  --status-color: var(--connection-error);
+}

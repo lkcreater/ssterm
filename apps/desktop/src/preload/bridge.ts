@@ -13,6 +13,12 @@ import {
   isApplyCatalogChangeRequest, isCatalogApplyResponse, isConnectHostRequest, isConnectHostResponse,
   type CatalogState, type CatalogStateRequest, type PrepareCatalogChangeRequest, type ApplyCatalogChangeRequest,
   type ConnectHostRequest,
+  isSetIdentityPasswordRequest, isSetIdentityPasswordResponse, isChooseKeyFileRequest, isChooseKeyFileResponse,
+  isImportKeyRequest, isImportKeyResponse, isDiscardKeyImportRequest, isDiscardKeyImportResponse, isRenameKeyRequest,
+  isRenameKeyResponse, isKeyTargetRequest, isForgetKeyPassphraseResponse, isDeleteKeyResponse, isRetrySecretsRequest,
+  isRetrySecretsResponse,
+  type SetIdentityPasswordRequest, type ChooseKeyFileRequest, type ImportKeyRequest, type DiscardKeyImportRequest,
+  type RenameKeyRequest, type ForgetKeyPassphraseRequest, type DeleteKeyRequest, type RetrySecretsRequest,
   isTrustState,
   isTrustStateRequest,
   isAnswerHostTrustRequest,
@@ -50,6 +56,12 @@ export interface BridgeTransport {
     listener: (event: unknown, value: unknown) => void,
   ): unknown;
 }
+
+/**
+ * contextBridge hands preload its own copy of every argument and `invoke` serializes synchronously, so the
+ * credential bytes a request carries are this world's to erase once the call settles.
+ */
+const wipe = (values: readonly (Uint8Array | null)[]) => { for (const bytes of values) bytes?.fill(0); };
 
 export function createDesktopBridge(transport: BridgeTransport): {
   api: DesktopAPI;
@@ -212,11 +224,11 @@ export function createDesktopBridge(transport: BridgeTransport): {
     },
     async answerCredentials(request: AnswerCredentialsRequest) {
       if (!isAnswerCredentialsRequest(request)) return failure("invalid-request");
-      const values = request.values.map((field) => ({ id: field.id, value: new Uint8Array(field.value) }));
       try {
         return await invoke(channels.answerCredentials, [{ owner: { ...request.owner }, sessionId: request.sessionId,
-          generation: request.generation, promptId: request.promptId, values }], isCredentialActionResponse);
-      } finally { for (const field of values) field.value.fill(0); }
+          generation: request.generation, promptId: request.promptId,
+          values: request.values.map((field) => ({ id: field.id, value: field.value })) }], isCredentialActionResponse);
+      } finally { wipe(request.values.map((field) => field.value)); }
     },
     cancelCredentialPrompt(request: CancelCredentialPromptRequest) {
       if (!isCancelCredentialPromptRequest(request)) return Promise.resolve(failure("invalid-request"));
@@ -373,6 +385,47 @@ export function createDesktopBridge(transport: BridgeTransport): {
     connectHost(request: ConnectHostRequest) {
       if (!isConnectHostRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.connectHost, [{ owner: { ...request.owner }, hostId: request.hostId }], isConnectHostResponse);
+    },
+    async setIdentityPassword(request: SetIdentityPasswordRequest) {
+      if (!isSetIdentityPasswordRequest(request)) return failure("invalid-request");
+      try {
+        return await invoke(channels.setIdentityPassword, [{ owner: { ...request.owner }, identityId: request.identityId,
+          expectedRevision: request.expectedRevision, value: request.value }], isSetIdentityPasswordResponse);
+      } finally { wipe([request.value]); }
+    },
+    chooseKeyFile(request: ChooseKeyFileRequest) {
+      if (!isChooseKeyFileRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.chooseKeyFile, [{ owner: { ...request.owner } }], isChooseKeyFileResponse);
+    },
+    async importKey(request: ImportKeyRequest) {
+      if (!isImportKeyRequest(request)) return failure("invalid-request");
+      try {
+        return await invoke(channels.importKey, [{ owner: { ...request.owner }, importId: request.importId, label: request.label,
+          passphrase: request.passphrase, savePassphrase: request.savePassphrase }], isImportKeyResponse);
+      } finally { wipe([request.passphrase]); }
+    },
+    discardKeyImport(request: DiscardKeyImportRequest) {
+      if (!isDiscardKeyImportRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.discardKeyImport, [{ owner: { ...request.owner }, importId: request.importId }], isDiscardKeyImportResponse);
+    },
+    renameKey(request: RenameKeyRequest) {
+      if (!isRenameKeyRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.renameKey, [{ owner: { ...request.owner }, keyId: request.keyId, expectedRevision: request.expectedRevision,
+        label: request.label }], isRenameKeyResponse);
+    },
+    forgetKeyPassphrase(request: ForgetKeyPassphraseRequest) {
+      if (!isKeyTargetRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.forgetKeyPassphrase, [{ owner: { ...request.owner }, keyId: request.keyId,
+        expectedRevision: request.expectedRevision }], isForgetKeyPassphraseResponse);
+    },
+    deleteKey(request: DeleteKeyRequest) {
+      if (!isKeyTargetRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.deleteKey, [{ owner: { ...request.owner }, keyId: request.keyId,
+        expectedRevision: request.expectedRevision }], isDeleteKeyResponse);
+    },
+    retrySecrets(request: RetrySecretsRequest) {
+      if (!isRetrySecretsRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.retrySecrets, [{ owner: { ...request.owner } }], isRetrySecretsResponse);
     },
     openLink(request: OpenLinkRequest) {
       if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));

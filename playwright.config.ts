@@ -44,6 +44,7 @@ export default defineConfig({
             "terminal-lifecycle.spec.ts",
             "catalog-ui.spec.ts",
             "catalog-connect.spec.ts",
+            "identities.spec.ts",
           ],
         },
       ]
@@ -65,6 +66,7 @@ export default defineConfig({
             "terminal-lifecycle.spec.ts",
             "catalog-ui.spec.ts",
             "catalog-connect.spec.ts",
+            "identities.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

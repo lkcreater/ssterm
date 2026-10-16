@@ -1,6 +1,6 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-016 / T022: `DONE`** — [hosts / groups / search UI](catalog-ui.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 236/236, E2E 34/34, packaged 33/33; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–015 committed (`b783329` latest); SST-017–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-017 / T023: `DONE`** — [identity and key management UI](identities.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 257/257, E2E 40/40, packaged 37/37; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–016 committed (`06cf5b3` latest); SST-018–028 และ DS04–DS06 ทำต่อตาม loop
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 

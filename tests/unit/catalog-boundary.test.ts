@@ -88,7 +88,23 @@ test("catalog contracts: shared validators, exact intent subset, caps and reques
   for (const intent of valid) assert.ok(isCatalogChangeIntent(intent), JSON.stringify(intent));
   for (const intent of [
     { type: "create-identity", data: { label: "L", username: "u", method: "password" } },
+    { type: "create-identity", data: { label: "L", username: "u", method: "key", keyId: id() } },
     { type: "update-identity", id: identity, expectedRevision: 1, data: { label: "L" } },
+    { type: "update-identity", id: identity, expectedRevision: 1, data: {}, forgetPassword: true },
+    { type: "update-identity", id: identity, expectedRevision: 1, data: { method: "keyboard-interactive" }, forgetPassword: false },
+    { type: "delete-identity", id: identity, expectedRevision: 1, disposition: { mode: "detach" } },
+    { type: "delete-identity", id: identity, expectedRevision: 1, disposition: { mode: "reassign", identityId: id() } },
+  ] as CatalogChangeIntent[]) assert.ok(isCatalogChangeIntent(intent), JSON.stringify(intent));
+  for (const intent of [
+    { type: "create-identity", data: { label: "L", username: "u" } },
+    { type: "create-identity", data: { label: "L", username: "u", method: "password", passwordRef: id() } },
+    { type: "create-identity", data: { label: "L", username: "u", method: "agent" } },
+    { type: "update-identity", id: identity, expectedRevision: 1, data: {} },
+    { type: "update-identity", id: identity, expectedRevision: 1, data: {}, forgetPassword: false },
+    { type: "update-identity", id: identity, expectedRevision: 1, data: { label: "L" }, forgetPassword: "yes" },
+    { type: "delete-identity", id: identity, expectedRevision: 1 },
+    { type: "delete-identity", id: identity, expectedRevision: 1, disposition: { mode: "reassign" } },
+    { type: "delete-identity", id: identity, expectedRevision: 1, disposition: { mode: "detach", identityId: id() } },
     { type: "update-tag", id: tag, expectedRevision: 1, data: { label: "x" } },
     { type: "create-host", data: { label: "Web" } },
     { type: "create-host", data: { label: "Web", address: "a", passwordRef: id() } },
@@ -120,14 +136,27 @@ test("catalog contracts: shared validators, exact intent subset, caps and reques
   const effective = { port: 22, portSource: { kind: "default" }, authSelection: "none", identityId: null, authSource: { kind: "default" } };
   const row = { id: host, revision: 1, label: "Web", address: "web.example", groupId: null, environment: null, port: { mode: "inherit" },
     auth: { mode: "inherit" }, tagIds: [], ancestry: [], effective };
-  const base = { owner, sequence: 0, availability: "ready", revision: 1, truncated: false, hosts: [row], groups: [], tags: [], identities: [] };
+  const secretStatus = { availability: "ready", cleanupPending: false };
+  const identityRow = { id: identity, revision: 1, label: "L", username: "u", method: "password", passwordSaved: true, keyId: null, pending: false };
+  const keyRow = { id: id(), revision: 1, label: "K", algorithm: "ssh-ed25519", fingerprint: `SHA256:${"a".repeat(43)}`,
+    publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA==", passphraseSaved: false, pending: false };
+  const base = { owner, sequence: 0, availability: "ready", revision: 1, truncated: false, hosts: [row], groups: [], tags: [],
+    identities: [identityRow], keys: [keyRow], secrets: secretStatus };
   assert.ok(isCatalogState(base));
   for (const broken of [
     { ...base, hosts: Array(MAX_CATALOG_ITEMS + 1).fill(row) },
     { ...base, hosts: [{ ...row, passwordRef: id() }] },
     { ...base, hosts: [{ ...row, effective: { ...effective, authSelection: "identity" } }] },
     { ...base, hosts: [{ ...row, port: { mode: "value", port: 70_000 } }] },
-    { ...base, identities: [{ id: identity, label: "L", username: "u", method: "password", passwordRef: null }] },
+    { ...base, identities: [{ ...identityRow, passwordRef: null }] },
+    { ...base, identities: [{ ...identityRow, method: "key" }] },
+    { ...base, identities: [{ ...identityRow, method: "keyboard-interactive", passwordSaved: true }] },
+    { ...base, keys: [{ ...keyRow, algorithm: "ecdsa-sha2-nistp256" }] },
+    { ...base, keys: [{ ...keyRow, publicKey: "ssh-rsa AAAA" }] },
+    { ...base, keys: [{ ...keyRow, privateKeyRef: id() }] },
+    { ...base, keys: [{ ...keyRow, fingerprint: "MD5:aa" }] },
+    { ...base, secrets: { availability: "ready" } },
+    { ...base, secrets: undefined },
     { ...base, extra: true },
   ]) assert.equal(isCatalogState(broken), false);
 });
@@ -175,7 +204,11 @@ test("state maps effective port and auth with provenance, group inherited values
   ]);
   assert.deepEqual(state.groups[1]!.port, { mode: "value", port: 2222 });
   assert.deepEqual(state.tags, [{ id: ids.tag, revision: 1, label: "prod" }]);
-  assert.deepEqual(state.identities, [{ id: ids.savedId, label: "Lab login", username: "alice", method: "password" }]);
+  assert.deepEqual(state.identities, [{
+    id: ids.savedId, revision: 1, label: "Lab login", username: "alice", method: "password", passwordSaved: true, keyId: null, pending: false,
+  }]);
+  assert.deepEqual(state.keys, []);
+  assert.deepEqual(state.secrets, { availability: "unavailable", cleanupPending: false }, "no secret store was given to the controller");
 
   const preview = s.preview({ type: "update-group", id: ids.root, expectedRevision: 1, data: { port: { mode: "value", port: 2022 } } });
   assert.deepEqual(preview.impacts.hosts.map((row) => [row.label, row.effectiveConnectionChanged, row.provenanceChanged, row.removed]).sort(),
@@ -185,7 +218,7 @@ test("state maps effective port and auth with provenance, group inherited values
   assert.ok(secrets.length >= 2);
   for (const json of [JSON.stringify(state), JSON.stringify(preview)]) {
     for (const secret of secrets) assert.equal(json.includes(secret), false, "a reference crossed the boundary");
-    for (const field of ["passwordRef", "privateKeyRef", "passphraseRef", "vaultId", "keyId", "cleanupRefIds", "before", "after", "createdAt"])
+    for (const field of ["passwordRef", "privateKeyRef", "passphraseRef", "vaultId", "operationId", "cleanupRefIds", "before", "after", "createdAt"])
       assert.equal(json.includes(`"${field}"`), false, field);
   }
 });
@@ -243,6 +276,8 @@ test("main reports fixable field errors and refuses stale targets as conflicts",
     { type: "set-host-tag", hostId: ids.loose, tagId: ids.tag, present: true, expectedHostRevision: 2 },
   ] as CatalogChangeIntent[]) assert.deepEqual(s.controller.prepareCatalogChange({ owner, intent }), failure("conflict"), intent.type);
   assert.deepEqual(s.controller.prepareCatalogChange({ owner, intent: { type: "create-identity" } as never }), failure("invalid-request"));
+  assert.deepEqual(s.controller.prepareCatalogChange({ owner, intent: { type: "update-identity", id: ids.savedId, expectedRevision: 2, data: { label: "x" } } }),
+    failure("conflict"));
   assert.equal(s.snapshot().hosts.length, 3, "nothing was applied");
 });
 
@@ -300,7 +335,8 @@ test("an unreadable repository yields an unavailable state and no previews; trun
     const controller = createCatalogController({ repository: { snapshot }, catalog: { prepare: () => assert.fail(), apply: () => assert.fail(), discard() {} } });
     controller.register(owner, () => {});
     assert.deepEqual(value(controller.catalogState(owner)),
-      { owner, sequence: 0, availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [] });
+      { owner, sequence: 0, availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [],
+        secrets: { availability: "unavailable", cleanupPending: false } });
     assert.deepEqual(controller.prepareCatalogChange({ owner, intent: { type: "create-tag", data: { label: "x" } } }), failure("unavailable"));
   }
   const s = await fixture(t);

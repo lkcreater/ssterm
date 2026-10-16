@@ -6,6 +6,14 @@ import { MAX_TERMINAL_WRITE } from "@ssterm/contracts";
 import { sshKeepalive, terminalBounds, type SshKeepalive, type TerminalBounds } from "@ssterm/adapters/ssh";
 import { createDesktopSessions, type SessionPowerEvents } from "./session-runtime";
 
+const unavailable = { status: "unavailable" } as const;
+const unavailableSecrets: SecretProvider = {
+  read: async () => unavailable,
+  lookup: async () => unavailable,
+  write: async () => unavailable,
+  delete: async () => unavailable,
+};
+
 export function createSavedHostSessions(options: {
   repository: MetadataRepository;
   provider?: SecretProvider;
@@ -29,9 +37,9 @@ export function createSavedHostSessions(options: {
       const snapshot = options.repository.snapshot();
       return snapshot.ok ? resolveHostConfig(snapshot.value, hostId) : snapshot;
     },
-    adapter: options.provider
-      ? createSavedHostSshAdapter({ provider: options.provider, policy, terminal, keepalive })
-      : undefined,
+    // Without a secure store, saved refs still fail closed as credentials-unavailable, while
+    // prompt-only identities (no saved ref) and keyboard-interactive keep working.
+    adapter: createSavedHostSshAdapter({ provider: options.provider ?? unavailableSecrets, policy, terminal, keepalive }),
   });
   return {
     ...sessions,
@@ -48,7 +56,8 @@ export { CatalogModule, SecretService, TransientSecrets } from "@ssterm/services
 export { createCredentialsController } from "./credentials";
 export { registerCredentialHandlers } from "./credential-runtime";
 export { createTerminalController, registerTerminalHandlers, terminalChannels } from "./terminals";
-export { createCatalogController, registerCatalogHandlers, catalogChannels } from "./catalog-controller";
+export { createCatalogController, registerCatalogHandlers, catalogChannels, observeCommits } from "./catalog-controller";
+export { createIdentitiesController, registerIdentityHandlers, identityChannels, secretNamespace } from "./identities";
 export { registerLinkHandlers, validateExternalUrl } from "./links";
 export { WindowBoundary } from "./boundary";
 export { sessionOwnerId } from "./session-runtime";

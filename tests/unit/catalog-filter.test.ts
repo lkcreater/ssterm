@@ -99,7 +99,8 @@ function project(meta: MetadataSnapshot): Pick<CatalogState, "hosts" | "tags" | 
   return {
     hosts,
     tags: meta.tags.map(({ id, revision, label }) => ({ id, revision, label })),
-    identities: meta.identities.map(({ id, label, username, method }) => ({ id, label, username, method })),
+    identities: meta.identities.map(({ id, revision, label, username, method, passwordRef, keyId }) =>
+      ({ id, revision, label, username, method, passwordSaved: passwordRef !== null, keyId, pending: false })),
   };
 }
 

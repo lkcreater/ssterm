@@ -57,6 +57,7 @@ import {
   type ConnectFailure,
 } from "@/components/catalog/hosts-page";
 import { GroupEditor, HostEditor } from "@/components/catalog/editors";
+import { IdentitiesPage } from "@/components/identities/identities-page";
 import {
   DeleteGroupDialog,
   DeleteHostDialog,
@@ -69,7 +70,6 @@ import {
 import iconLogo from "@/assets/icon-logo.png";
 
 const unavailable = [
-  { label: "Identities", icon: KeyRoundIcon },
   { label: "Snippets", icon: LayersIcon },
   { label: "Port forwarding", icon: WorkflowIcon },
 ] as const;
@@ -125,7 +125,7 @@ const storageProblems: Record<
   },
 };
 
-type Page = "hosts" | "terminals" | "known-hosts";
+type Page = "hosts" | "terminals" | "known-hosts" | "identities";
 type CatalogDialog =
   | { kind: "host"; id?: string; groupId?: string | null }
   | { kind: "group"; id?: string; parentId?: string | null }
@@ -135,6 +135,7 @@ const titles: Record<Page, string> = {
   hosts: "Servers",
   terminals: "Terminals",
   "known-hosts": "Known hosts",
+  identities: "Identities",
 };
 const connectMessages: Partial<Record<ErrorCode, string>> = {
   busy: "Too many sessions open; close ended panes.",
@@ -384,6 +385,17 @@ export function AppShell() {
                       <span>Known hosts</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={page === "identities"}
+                      aria-current={page === "identities" ? "page" : undefined}
+                      onClick={() => setPage("identities")}
+                      disabled={!ready}
+                    >
+                      <KeyRoundIcon />
+                      <span>Identities</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                   {unavailable.map(({ label, icon: Icon }) => (
                     <SidebarMenuItem key={label}>
                       <SidebarMenuButton disabled>
@@ -453,7 +465,9 @@ export function AppShell() {
                 </Empty>
               </div>
             )
-          ) : state && ready ? (
+          ) : page === "identities" && owner && state && ready ? (
+            <IdentitiesPage owner={owner} catalog={catalog} state={state} />
+          ) : page !== "identities" && state && ready ? (
             <HostsPage
               catalog={catalog}
               state={state}

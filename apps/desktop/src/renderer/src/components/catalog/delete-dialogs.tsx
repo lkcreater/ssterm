@@ -29,7 +29,7 @@ const layout =
   "flex max-h-[calc(100dvh-2rem)] flex-col [overflow-wrap:anywhere] data-[size=default]:sm:max-w-lg motion-reduce:animate-none";
 
 /** Prepares whenever the intent changes (including a newer revision after a conflict) and applies on confirm. */
-function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefined, onDone: () => void) {
+export function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefined, onDone: () => void) {
   const [preview, setPreview] = useState<Preview>();
   const [failure, setFailure] = useState<ErrorCode>();
   const [busy, setBusy] = useState(false);
@@ -81,7 +81,7 @@ function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefined, on
   };
 }
 
-function Failure({ code, retry }: { code: ErrorCode; retry(): Promise<void> }) {
+export function DeleteFailure({ code, retry }: { code: ErrorCode; retry(): Promise<void> }) {
   return (
     <Alert variant="destructive">
       <AlertTriangleIcon />
@@ -165,7 +165,7 @@ export function DeleteHostDialog({
             ) : null}
           </p>
           {failure ? (
-            <Failure code={failure} retry={retry} />
+            <DeleteFailure code={failure} retry={retry} />
           ) : !preview ? (
             <Spinner aria-label="Checking what will be removed" />
           ) : (
@@ -288,7 +288,7 @@ export function DeleteGroupDialog({
             </Field>
           </RadioGroup>
           {failure ? (
-            <Failure code={failure} retry={retry} />
+            <DeleteFailure code={failure} retry={retry} />
           ) : mode && !preview ? (
             <Spinner aria-label="Checking what will change" />
           ) : summary ? (

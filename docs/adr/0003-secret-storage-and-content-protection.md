@@ -44,3 +44,7 @@ The JavaScript error is `Error{code:'GenericFailure', message}`; the OS status c
 - macOS arm64 only; other platforms' bindings are not shipped.
 - Existing-owner credential replacement is a plain ref swap; changing a key's public fields together with its private key requires a new KeyMetadata record (reconciliation cannot reconstruct an extra payload).
 - Migration still refuses protected vaults; the repository checks envelope structure only, so future IPC must never forward raw snippet/secret changes; startup reconciliation has no verified-restore fence; `powerMonitor` purge wiring is untested. Details: [secret storage](../secret-storage.md#known-limitations).
+
+## SST-017 outcome — 2026-10-17
+
+The identity and key UI closes the import gap above: key metadata (algorithm, canonical public key, SHA-256 fingerprint) is derived only in main from the parsed private key during import, never supplied by the renderer, and encrypted keys must be decrypted with their passphrase at import. Private-key bytes are read by a main-process file dialog and never reach the renderer; passwords and passphrases cross IPC once as bounded byte arrays and are wiped after use. End-to-end tests isolate Keychain writes with `SSTERM_TEST_SECRET_NAMESPACE`, honoured only when a test user-data directory is set and the value matches `dev.ssterm.test.<uuid>`; any other value in test mode leaves the secret store unavailable (fail closed), and production always uses `dev.ssterm.desktop.secrets`. See [identities](../identities.md).

@@ -55,7 +55,7 @@ function project(snapshot: SessionSnapshot): TerminalSession {
 /** Fence and framing only: stream policy lives in the adapter, lifecycle in the registry. */
 export function createTerminalController(options: {
   registry: Pick<SessionRegistry, "snapshot" | "subscribe" | "terminal" | "connect" | "close" | "reconnect" | "forget" | "unlock" | "settled" | "lockEpoch">;
-  /** Whether a locked registry may unlock (storage and secret provider available). Absent: never. */
+  /** Whether a locked registry may unlock (metadata storage ready; a missing secret store fails per saved ref). Absent: never. */
   checkAccess?: () => Promise<boolean>;
 }) {
   const registrations = new Map<string, Registration>();

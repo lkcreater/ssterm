@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-016
+# Execution record — M0 ถึง SST-017
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-015/T021 `DONE`, committed `b783329`; SST-014 committed `0d665e0`. **In progress:** SST-016/T022 per the [current execution plan](#sst-016-execution-plan--2026-10-17). Earlier sections are historical. Standing authorization: loop through SST-028 with a commit per ticket ([SST-013 authorization](#sst-013-execution-plan--2026-10-16)).
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-016/T022 `DONE`, committed `06cf5b3`; SST-015 committed `b783329`. **In progress:** SST-017/T023 per the [current execution plan](#sst-017-execution-plan--2026-10-17). Earlier sections are historical. Standing authorization: loop through SST-028 with a commit per ticket ([SST-013 authorization](#sst-013-execution-plan--2026-10-16)).
 
 ## Authorization / acceptance
 
@@ -648,3 +648,29 @@ SST-015/T021 DONE through independent TEST/REVIEW/DELIVER. [Lifecycle evidence](
 ### Final SST-016 record — 2026-10-17
 
 SST-016/T022 DONE through independent TEST/REVIEW/DELIVER. [Catalog UI evidence](../catalog-ui.md) and [delivery](sst-016-delivery.md). Final source: typecheck PASS; unit 236/236; build PASS; development E2E 34/34 (a terminal-spec race that read the grid before refit was fixed and repeated 3/3); unsigned macOS arm64 package PASS; packaged 33/33. Review: one high (quadratic prepare, 10.8 s at 4,000 hosts → 65 ms) and mediums/lows fixed; tester found and the fix pass resolved a PROD badge overflow at 960×640. First production-registry connect evidence exists now.
+
+## SST-017 execution plan — 2026-10-17
+
+**Authorization / gate:** standing loop instruction; SST-016 committed `06cf5b3`. ANALYZE (one read-only explorer over SecretService, catalog identity intents, key parsing, Keychain adapter and UI patterns) is complete; the evidence and the SST-016 patterns settled the forks, so no competing-sketch arena was run.
+
+**Acceptance / baseline:** [SST-017](../termius/tickets.md#sst-017--identity-and-key-management-ui), [T023](../termius/tasks.md), F03 shared identity, denied provider and import failure; also closes the [ADR 0003](../adr/0003-secret-storage-and-content-protection.md) gap that imported key metadata was not validated against the key. CatalogModule already supports identity create/update/forget/delete with detach/reassign impacts but has no key intents and never deletes OS items; SecretService stages, writes and publishes refs with one unresolved operation per owner slot; the real Keychain reports failures as unavailable/unknown. Baseline 236 unit / 34 E2E / 33 packaged.
+
+**Settled contract:** CatalogState gains identity details (`revision`, `passwordSaved`, `keyId`, `pending`), SSH keys (`label`, `algorithm`, `fingerprint`, `publicKey`, `passphraseSaved`, `pending`) and secret-store status; refs, operation ids and cleanup ids never cross. `prepareCatalogChange` accepts identity create/update (with forget password)/delete (detach or reassign) with identity impacts. New `main/identities.ts` commands: `setIdentityPassword`, `chooseKeyFile` (main-process native dialog; bytes never reach the renderer; path never stored; 64 KiB regular files; held in transient storage purged by lock/quit), `importKey` (passphrase required for encrypted keys and verified; saving it is opt-in, default off; public metadata derived only in main), `discardKeyImport`, `renameKey`, `forgetKeyPassphrase`, `deleteKey` (refused while in use), `retrySecrets`. Passwords/passphrases are 1–16,384 bytes, copied and wiped after the awaited operation; SecretService receives a controller-owned copy. Pending writes are cancelled immediately; an unresolved slot is cancelled before restaging. A repository commit observer republishes catalog state for every writer, and applies that queue cleanup trigger reconciliation. E2E uses a test-only Keychain namespace honoured only with a test user-data directory and a `dev.ssterm.test.<uuid>` value.
+
+**UI:** sidebar Identities page with Identities and SSH keys tabs; method badges with icon and text; credential status (saved, asks when connecting, key, unresolved with Retry); usage counts; key fingerprint with copy; editor dialog with uncontrolled password input and confirmation only for destructive edits; import dialog; delete identity with detach/reassign and affected servers with PROD; alerts when the secure store is unavailable or cleanup is pending. No reveal or export.
+
+| ID / stage | Depends | Owner / exact files and deliverable | Validation / exit gate |
+|---|---|---|---|
+| SST017-P / PLAN | ANALYZE + decisions | root owns this file | `git diff --check` |
+| SST017-I1 / identities backend | P | backend coder owns `packages/contracts/src/{catalog,identities,index}.ts`, new `apps/desktop/src/main/identities.ts`, `apps/desktop/src/main/{catalog-controller,index,ssh}.ts`, `apps/desktop/src/preload/bridge.ts`, new `tests/unit/{identities,identities-boundary}.test.ts`, `tests/unit/{catalog-boundary,bridge}.test.ts`, `tests/e2e/desktop.spec.ts` (key list) | No-secret state, password set/replace/forget with cleanup, provider failures typed and cancelled, import matrix, key delete in use, observer republish, handlers wipe after await |
+| SST017-I2 / identities UI | P (contract settled) | renderer coder owns new `apps/desktop/src/renderer/src/components/identities/*`, `lib/identity-usage.ts`, `components/app-shell.tsx`, `components/catalog/editors.tsx` (identity select hints only), `styles/globals.css`, new unit tests | Usage/copy helpers; typecheck/build |
+| SST017-I3 / runtime evidence | I1 + I2 | runtime coder owns new `tests/e2e/identities.spec.ts`, `tests/fixtures/identities/*`, `tests/e2e/fixtures.ts` (test namespace + teardown clear), `playwright.config.ts` | F03 through the UI on Docker OpenSSH; encrypted key import and passphrase prompt; unsupported/too-large/invalid copy; delete with reassign/detach; store unavailable; privacy scan of SQLite/WAL; zero namespace leftovers |
+| SST017-T / R / L | I3 | independent tester and reviewer; root docs, delivery and commit | Critical/high block |
+
+**SST-017 ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+**SST-017 amendments during implementation:** an encrypted key whose type is only known after decryption is rejected at import; choosing a new file replaces the held import; main always composes the saved-host adapter, using an always-unavailable provider when no secure store exists (metadata-only identities prompt, saved references fail closed) and unlock requires metadata storage only; ssh2's own key generator emits malformed Ed25519 keys about once in 256, so tests regenerate until ssh2 parses them (production parsing is unaffected); review added a 256-round KDF cap read from the key header, lock gating for Keychain actions, a stalled-only cleanup alert and wiping of preload-world copies.
+
+### Final SST-017 record — 2026-10-17
+
+SST-017/T023 DONE through independent TEST/REVIEW/DELIVER. [Identity evidence](../identities.md) and [delivery](sst-017-delivery.md). Final source: typecheck PASS; unit 257/257; build PASS; development E2E 40/40; unsigned macOS arm64 package PASS; packaged 37/37. Keychain test namespace empty and production namespace untouched. Review: no critical/high; one medium (KDF rounds freezing main) and the lows fixed; tester lows on copy fixed. During one tester probe the user's macOS clipboard was overwritten with a fixture public key (not a secret); later probes restore it.

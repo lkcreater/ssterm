@@ -601,6 +601,9 @@ export class SessionRegistry {
     this.options.transient.purgeAll();
     return Promise.all(drains).then(() => {});
   }
+  get locked(): boolean {
+    return this.#locked;
+  }
   /** Counts locks; a request that captured it before a later lock must not unlock (see `unlock`). */
   get lockEpoch(): number {
     return this.#locks;

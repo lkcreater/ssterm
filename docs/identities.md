@@ -1,0 +1,29 @@
+# SST-017 — Identities and SSH keys
+
+**2026-10-17 · T023 · DONE through independent TEST/REVIEW/DELIVER; committed under the standing loop instruction.** Authorized by the standing loop instruction after SST-016 commit `06cf5b3`. Scope is creating, editing, importing, binding and deleting reusable credentials. Tabs, splits and settings (SST-018) are separate. [Execution plan](agent-runs/implementation-plan.md#sst-017-execution-plan--2026-10-17).
+
+## Model and boundary
+
+An identity has a label, a username and one method: password (saved in the Keychain or asked at each connection), SSH key, or keyboard-interactive. Servers and groups bind an identity through the SST-016 editors; changes apply to the next connection while open sessions keep the login they captured. The catalog state now carries identity status (`passwordSaved`, `keyId`, `pending`), SSH keys (label, algorithm, fingerprint, public key, whether a passphrase is saved) and the secure-store status. Secret references, operation ids, cleanup ids and secret bytes never cross IPC.
+
+Passwords and passphrases are entered in uncontrolled inputs, sent once as 1–16,384-byte arrays, copied in main and wiped after the awaited operation. Creating an identity with a password is two steps (metadata, then the Keychain write); if the write fails the identity still exists and asks when connecting. A pending Keychain write is cancelled at once and any unresolved write in the same slot is cancelled before a new one; if the cancel itself cannot be confirmed the user is told the change is unconfirmed rather than “nothing was saved”, and Retry resolves it. These Keychain actions respect the workspace lock: after a screen lock or sleep, the user's explicit save, import, forget, delete or Retry is the unlock, automatic cleanup waits until then, and an import interrupted by a lock is discarded. A commit observer republishes state after every write, and changes that queue Keychain cleanup run reconciliation immediately.
+
+## Import
+
+Keys are chosen with a main-process file dialog; the bytes never reach the renderer and the path is not stored. Files must be regular and at most 64 KiB, and are held for at most five minutes in transient storage that lock and quit purge. Supported formats are OpenSSH Ed25519 and PEM RSA PKCS#1, plain or encrypted; encrypted OpenSSH keys must use at most 256 bcrypt rounds (checked from the header before decryption, because the library derives keys synchronously on the main thread); OpenSSH-format RSA keys (the `ssh-keygen` default) are refused with a hint to run `ssh-keygen -p -m PEM`. An encrypted key needs its passphrase at import, which main verifies; saving it in the Keychain is opt-in. The algorithm, public key and fingerprint are derived in main from the parsed key, closing the [ADR 0003](adr/0003-secret-storage-and-content-protection.md) gap. There is no reveal, export or paste-key path.
+
+## UI
+
+The Identities page has Identities and SSH keys tabs. Rows show the method with icon and text, the credential status (saved, asks when connecting, key, unresolved with Retry), usage (direct and via groups) and, for keys, the fingerprint with Copy public key. Destructive edits (forgetting a saved password, switching method, deleting) are confirmed; deleting an identity lists affected servers and groups with PROD and requires Detach (servers get no identity) or Reassign. A key in use cannot be deleted. Alerts explain when the Keychain is unavailable or cleanup is pending.
+
+## Verification
+
+Final source: `npm run typecheck` PASS, `npm test` **257/257**, `npm run build` PASS, `npm run test:e2e` **40/40**, `npm run package:mac` PASS (unsigned arm64), `npm run test:packaged` **37/37**.
+
+[Unit tests](../tests/unit/identities.test.ts) cover the safe projection (no references, operation ids, PEM or secret bytes), password create/replace/forget with Keychain cleanup, typed provider failures with cancellation, the import matrix (plain and encrypted Ed25519 and PEM RSA; unsupported formats; size, empty and non-regular files; wrong passphrase; saved and unsaved passphrases; derived metadata), import ownership, TTL and lock purge, keys in use, the commit observer, lock gating and handler wiping after awaits. [Adapter tests](../tests/unit/ssh-session.test.ts) refuse keys with excessive KDF rounds in under 50 ms and compose saved hosts without a secure store (metadata-only identities prompt; saved references fail closed). [Identity E2E](../tests/e2e/identities.spec.ts) on Docker OpenSSH proves F03 (a group identity shared by two PROD servers connects without prompts; a replaced password leaves the live session running and fails the next connection), encrypted key import with fingerprint equal to the lab key, the passphrase prompt after forgetting it, import refusals, delete with reassign and detach, the unavailable store path and a byte scan of the SQLite files.
+
+The independent tester confirmed Keychain item counts per operation (create 1, replace stays 1, forget 0, key with passphrase 2, delete 0), fingerprints and public keys equal to `ssh-keygen` for plain and encrypted PEM RSA and Ed25519, denied-store copy, double-click and concurrent-request safety, lock during import, 960×640 Thai layouts, accessible names and an empty scan of all 55 profile files. Review found no critical/high; a medium (a crafted key's KDF rounds could freeze main) and the lows were fixed.
+
+## Boundaries and rollback
+
+Saving a passphrase after import requires re-importing the key, and importing the same key twice creates a second key entry. A 256-round key still blocks main for ≈ 2.4 s at import and connect (worker decryption is the recorded upgrade). JavaScript cannot guarantee physical zeroization; every owned copy is cleared best-effort. Rollback removes the identities controller, IPC and page and the extra catalog projection; no schema change.

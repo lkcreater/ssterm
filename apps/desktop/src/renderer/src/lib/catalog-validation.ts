@@ -2,6 +2,7 @@
 import {
   MAX_CATALOG_ADDRESS,
   validateCatalogLabel,
+  validateIdentityUsername,
   validatePort,
   type CatalogAuth,
   type CatalogChangeIntent,
@@ -33,7 +34,7 @@ export type FieldErrors = Partial<Record<Field, string>>;
 type Port = CatalogPort;
 type Auth = CatalogAuth;
 
-const messages: Record<CatalogFieldError["code"] | "too-long-address", string> = {
+const messages: Record<Exclude<CatalogFieldError["code"], "required"> | "too-long-address", string> = {
   empty: "Enter a name.",
   "too-long": "Use 200 characters or fewer.",
   control: "Remove control characters.",
@@ -51,15 +52,30 @@ const fieldMessages: Record<Field, string> = {
   group: "That group no longer exists. Choose another.",
   identity: "That identity no longer exists. Choose another.",
   tag: "That tag no longer exists.",
+  username: "Check this user name.",
+  keyId: "That key no longer exists. Choose another.",
+};
+const usernameMessages = {
+  empty: "Enter a user name.",
+  "too-long": "Use 256 characters or fewer.",
+  control: "Remove control characters.",
 };
 const message = ({ field, code }: CatalogFieldError): string =>
-  (field === "address" && code === "too-long"
-    ? messages["too-long-address"]
-    : messages[code]) || fieldMessages[field];
+  field === "username"
+    ? usernameMessages[code]
+    : code === "required"
+      ? "Choose a key, or import one."
+      : (field === "address" && code === "too-long"
+          ? messages["too-long-address"]
+          : messages[code]) || fieldMessages[field];
 
 export function labelError(value: string): string | undefined {
   const code = validateCatalogLabel(value);
   return code ? message({ field: "label", code }) : undefined;
+}
+export function usernameError(value: string): string | undefined {
+  const code = validateIdentityUsername(value.trim());
+  return code ? message({ field: "username", code }) : undefined;
 }
 // Main still normalizes (IDNA, IP forms) and reports anything this cannot see.
 export function addressError(value: string): string | undefined {

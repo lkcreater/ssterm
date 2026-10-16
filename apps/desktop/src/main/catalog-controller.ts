@@ -1,14 +1,14 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import {
   channels, failure, isApplyCatalogChangeRequest, isCatalogPrepareResponse, isCatalogState, isCatalogStateRequest,
-  isPrepareCatalogChangeRequest, validateCatalogLabel, validatePort, MAX_CATALOG_ADDRESS, MAX_CATALOG_ITEMS,
+  isPrepareCatalogChangeRequest, isKeyAlgorithm, validateCatalogLabel, validateIdentityUsername, validatePort, MAX_CATALOG_ADDRESS, MAX_CATALOG_ITEMS,
   type ApplyCatalogChangeRequest, type CatalogApplyResponse, type CatalogChangeIntent, type CatalogEffective,
-  type CatalogFieldError, type CatalogPrepareResponse, type CatalogSource, type CatalogState, type Owner,
+  type CatalogFieldError, type CatalogKey, type CatalogPrepareResponse, type CatalogSource, type CatalogState, type Owner,
   type PrepareCatalogChangeRequest, type Result,
 } from "@ssterm/contracts";
 import {
   normalizeEndpoint, normalizeTag, queryCatalogHosts, resolveGroupDefaults,
-  type ConfigSource, type GroupDefaults, type MetadataRepository, type MetadataSnapshot,
+  type ConfigSource, type GroupDefaults, type MetadataRepository, type MetadataSnapshot, type SecretOperation,
 } from "@ssterm/domain";
 import type { CatalogModule } from "@ssterm/services";
 import type { WindowBoundary } from "./boundary";
@@ -20,7 +20,10 @@ interface Registration {
   sequence: number;
   send(state: CatalogState): void;
 }
-const unavailable: Body = { availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [] };
+const unavailable: Body = {
+  availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [],
+  secrets: { availability: "unavailable", cleanupPending: false },
+};
 const rootDefaults: CatalogEffective = {
   port: 22, portSource: { kind: "default" }, authSelection: "none", identityId: null, authSource: { kind: "default" },
 };
@@ -39,12 +42,23 @@ const byLabel = <T extends { id: string; label: string }>(rows: T[]) => {
   return rows.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 };
 
-/** Builds the renderer projection. Only the fields named here cross IPC; secret references never do. */
-function project(snapshot: MetadataSnapshot): Body {
+/** A queued Keychain deletion normally retires within milliseconds; only one still queued after this needs Retry. */
+export const CLEANUP_STALL_MS = 5_000;
+const cleaning = (op: SecretOperation) => op.state === "cleanup";
+// An unparseable timestamp counts as stalled.
+const stalled = (op: SecretOperation, now: number) => cleaning(op) && !(now - Date.parse(op.updatedAt) < CLEANUP_STALL_MS);
+
+/** Builds the renderer projection. Only the fields named here cross IPC; secret references and operation ids never do. */
+function project(snapshot: MetadataSnapshot, secretStore: boolean, now: number): Body {
   const views = queryCatalogHosts(snapshot, { scope: { kind: "all" } });
   const defaults = resolveGroupDefaults(snapshot);
   if (!views.ok || !defaults.ok) return unavailable;
-  const counts = [views.value.length, snapshot.groups.length, snapshot.tags.length, snapshot.identities.length];
+  // `staged` is an in-flight write (startup reconciliation resolves one left by a crash); only a stalled one needs Retry.
+  const pending = new Set(snapshot.secretOperations
+    .filter((op) => op.action !== "delete" && (op.state === "reconcile" || op.state === "needs-input")).map((op) => op.ownerId));
+  // Only main's import creates keys; any other algorithm could not be shown faithfully.
+  const keys = snapshot.keys.filter((key) => isKeyAlgorithm(key.algorithm));
+  const counts = [views.value.length, snapshot.groups.length, snapshot.tags.length, snapshot.identities.length, keys.length];
   return {
     availability: "ready",
     revision: snapshot.catalogRevision,
@@ -61,8 +75,17 @@ function project(snapshot: MetadataSnapshot): Body {
     }))).slice(0, MAX_CATALOG_ITEMS),
     tags: byLabel(snapshot.tags.map((tag) => ({ id: tag.id, revision: tag.revision, label: tag.label }))).slice(0, MAX_CATALOG_ITEMS),
     identities: byLabel(snapshot.identities.map((identity) => ({
-      id: identity.id, label: identity.label, username: identity.username, method: identity.method,
+      id: identity.id, revision: identity.revision, label: identity.label, username: identity.username, method: identity.method,
+      passwordSaved: identity.passwordRef !== null, keyId: identity.keyId, pending: pending.has(identity.id),
     }))).slice(0, MAX_CATALOG_ITEMS),
+    keys: byLabel(keys.map((key) => ({
+      id: key.id, revision: key.revision, label: key.label, algorithm: key.algorithm as CatalogKey["algorithm"],
+      fingerprint: key.fingerprint, publicKey: key.publicKey, passphraseSaved: key.passphraseRef !== null, pending: pending.has(key.id),
+    }))).slice(0, MAX_CATALOG_ITEMS),
+    secrets: {
+      availability: secretStore ? "ready" : "unavailable",
+      cleanupPending: snapshot.secretOperations.some((op) => stalled(op, now)),
+    },
   };
 }
 
@@ -75,7 +98,8 @@ function check(snapshot: MetadataSnapshot, intent: CatalogChangeIntent): "confli
     return snapshot.tags.some((tag) => tag.id === intent.tagId) ? [] : [{ field: "tag", code: "not-found" }];
   }
   if ("expectedRevision" in intent) {
-    const rows = intent.type.endsWith("-host") ? snapshot.hosts : intent.type.endsWith("-group") ? snapshot.groups : snapshot.tags;
+    const rows = intent.type.endsWith("-host") ? snapshot.hosts : intent.type.endsWith("-group") ? snapshot.groups
+      : intent.type.endsWith("-identity") ? snapshot.identities : snapshot.tags;
     if (!current(rows, intent.id, intent.expectedRevision)) return "conflict";
   }
   const fields: CatalogFieldError[] = [];
@@ -97,6 +121,23 @@ function check(snapshot: MetadataSnapshot, intent: CatalogChangeIntent): "confli
   const authValue = data.auth as { mode: string; identityId?: string } | undefined;
   if (authValue?.mode === "value" && !snapshot.identities.some((row) => row.id === authValue.identityId))
     fields.push({ field: "identity", code: "not-found" });
+  if (typeof data.username === "string") {
+    const code = validateIdentityUsername(data.username);
+    if (code) fields.push({ field: "username", code });
+  }
+  if (intent.type === "create-identity" || intent.type === "update-identity") {
+    const before = intent.type === "update-identity" ? snapshot.identities.find((row) => row.id === intent.id) : undefined;
+    const method = intent.data.method ?? before?.method;
+    const keyId = Object.hasOwn(intent.data, "keyId") ? intent.data.keyId : before?.keyId;
+    if (method === "key") {
+      if (!keyId) fields.push({ field: "keyId", code: "required" });
+      else if (!snapshot.keys.some((row) => row.id === keyId)) fields.push({ field: "keyId", code: "not-found" });
+    }
+  }
+  if (intent.type === "delete-identity" && intent.disposition.mode === "reassign") {
+    const target = intent.disposition.identityId;
+    if (target === intent.id || !snapshot.identities.some((row) => row.id === target)) fields.push({ field: "identity", code: "not-found" });
+  }
   if (typeof data.groupId === "string" && !snapshot.groups.some((row) => row.id === data.groupId))
     fields.push({ field: "group", code: "not-found" });
   const parentId = intent.type === "delete-group"
@@ -118,14 +159,28 @@ function check(snapshot: MetadataSnapshot, intent: CatalogChangeIntent): "confli
 export function createCatalogController(options: {
   repository: Pick<MetadataRepository, "snapshot">;
   catalog: Pick<CatalogModule, "prepare" | "apply" | "discard">;
+  /** Whether main has a working secret service; defaults to unavailable. */
+  secretStore?: () => boolean;
+  /** An applied change queued Keychain deletions. */
+  cleanupQueued?: () => void;
+  /** Test clock for `CLEANUP_STALL_MS`. */
+  now?: () => number;
 }) {
   const registrations = new Map<string, Registration>();
   const previews = new Map<string, string>();
   let disposed = false;
+  let recheck: ReturnType<typeof setTimeout> | undefined;
   const body = (): Body => {
     try {
       const snapshot = options.repository.snapshot();
-      return snapshot.ok ? project(snapshot.value) : unavailable;
+      if (!snapshot.ok) return unavailable;
+      const now = options.now?.() ?? Date.now();
+      // Nothing commits when a deletion stalls, so republish once it would count as stalled.
+      if (!recheck && !disposed && snapshot.value.secretOperations.some((op) => cleaning(op) && !stalled(op, now))) {
+        recheck = setTimeout(() => { recheck = undefined; if (!disposed) publishAll(); }, CLEANUP_STALL_MS);
+        recheck.unref?.();
+      }
+      return project(snapshot.value, options.secretStore?.() === true, now);
     } catch { return unavailable; }
   };
   const state = (registration: Registration, value: Body): Result<CatalogState> => {
@@ -191,6 +246,12 @@ export function createCatalogController(options: {
             removedTunnelRules: impacts.removedTunnelRuleIds.length,
             removedHostTags: impacts.removedHostTags.length,
             removedSnippetTags: impacts.removedSnippetTags.length,
+            identity: request.intent.type === "update-identity" || request.intent.type === "delete-identity" ? {
+              directHostIds: impacts.directIdentityHostIds.slice(0, MAX_CATALOG_ITEMS),
+              directGroupIds: impacts.directIdentityGroupIds.slice(0, MAX_CATALOG_ITEMS),
+              effectiveHostIds: impacts.effectiveIdentityHostIds.slice(0, MAX_CATALOG_ITEMS),
+              removesSavedPassword: impacts.cleanupRefIds.length > 0,
+            } : null,
           },
         };
         if (!isCatalogPrepareResponse(value)) {
@@ -214,18 +275,45 @@ export function createCatalogController(options: {
           // The module consumes the plan on every attempt, so each refusal needs a fresh preview.
           return failure(["conflict", "invalid-request", "constraint", "busy"].includes(applied.error.code) ? "conflict" : "unavailable");
         publishAll();
+        if (applied.value.pendingSecretCleanupOperationIds.length) {
+          try { options.cleanupQueued?.(); } catch { /* Startup and retry reconcile again. */ }
+        }
         return { ok: true, value: { revision: applied.value.catalogRevision, createdIds: [...applied.value.createdIds] } };
       } catch { return failure("unavailable"); }
     },
+    /** Pushes the current projection to every registered owner. */
+    publishAll(): void { if (!disposed) publishAll(); },
     revokeOwner,
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      clearTimeout(recheck);
       for (const registration of [...registrations.values()]) revokeOwner(registration.owner);
     },
   };
 }
 export type CatalogController = ReturnType<typeof createCatalogController>;
+
+/** Every successful commit, from any writer, schedules one coalesced `changed` call on a later turn. */
+export function observeCommits(repository: MetadataRepository, changed: () => void): MetadataRepository {
+  let scheduled = false;
+  return {
+    snapshot: () => repository.snapshot(),
+    commit(request) {
+      const result = repository.commit(request);
+      if (result.ok && !scheduled) {
+        scheduled = true;
+        setImmediate(() => {
+          scheduled = false;
+          try { changed(); } catch { /* An observer cannot fail a committed write. */ }
+        });
+      }
+      return result;
+    },
+    backup: (request) => repository.backup(request),
+    close: () => repository.close(),
+  };
+}
 
 /** Every IPC channel `registerCatalogHandlers` owns. */
 export const catalogChannels = Object.freeze([channels.catalogState, channels.prepareCatalogChange, channels.applyCatalogChange]);

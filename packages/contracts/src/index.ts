@@ -7,6 +7,13 @@ export * from "./terminals.ts";
 import type { OpenLinkRequest, OpenLinkResponse } from "./links.ts";
 import type { CatalogState, CatalogStateRequest, PrepareCatalogChangeRequest, CatalogPrepareResponse, ApplyCatalogChangeRequest, CatalogApplyResponse, ConnectHostRequest, ConnectHostResponse } from "./catalog.ts";
 export * from "./catalog.ts";
+import type {
+  SetIdentityPasswordRequest, SetIdentityPasswordResponse, ChooseKeyFileRequest, ChooseKeyFileResponse, ImportKeyRequest,
+  ImportKeyResponse, DiscardKeyImportRequest, DiscardKeyImportResponse, RenameKeyRequest, RenameKeyResponse,
+  ForgetKeyPassphraseRequest, ForgetKeyPassphraseResponse, DeleteKeyRequest, DeleteKeyResponse, RetrySecretsRequest,
+  RetrySecretsResponse,
+} from "./identities.ts";
+export * from "./identities.ts";
 export * from "./links.ts";
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
@@ -80,6 +87,14 @@ export interface DesktopAPI {
   prepareCatalogChange(request: PrepareCatalogChangeRequest): Promise<Result<CatalogPrepareResponse>>;
   applyCatalogChange(request: ApplyCatalogChangeRequest): Promise<Result<CatalogApplyResponse>>;
   connectHost(request: ConnectHostRequest): Promise<Result<ConnectHostResponse>>;
+  setIdentityPassword(request: SetIdentityPasswordRequest): Promise<Result<SetIdentityPasswordResponse>>;
+  chooseKeyFile(request: ChooseKeyFileRequest): Promise<Result<ChooseKeyFileResponse>>;
+  importKey(request: ImportKeyRequest): Promise<Result<ImportKeyResponse>>;
+  discardKeyImport(request: DiscardKeyImportRequest): Promise<Result<DiscardKeyImportResponse>>;
+  renameKey(request: RenameKeyRequest): Promise<Result<RenameKeyResponse>>;
+  forgetKeyPassphrase(request: ForgetKeyPassphraseRequest): Promise<Result<ForgetKeyPassphraseResponse>>;
+  deleteKey(request: DeleteKeyRequest): Promise<Result<DeleteKeyResponse>>;
+  retrySecrets(request: RetrySecretsRequest): Promise<Result<RetrySecretsResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -116,6 +131,14 @@ export const channels = Object.freeze({
   prepareCatalogChange: "ssterm:prepare-catalog-change",
   applyCatalogChange: "ssterm:apply-catalog-change",
   connectHost: "ssterm:connect-host",
+  setIdentityPassword: "ssterm:set-identity-password",
+  chooseKeyFile: "ssterm:choose-key-file",
+  importKey: "ssterm:import-key",
+  discardKeyImport: "ssterm:discard-key-import",
+  renameKey: "ssterm:rename-key",
+  forgetKeyPassphrase: "ssterm:forget-key-passphrase",
+  deleteKey: "ssterm:delete-key",
+  retrySecrets: "ssterm:retry-secrets",
 });
 
 const messages: Record<ErrorCode, string> = {

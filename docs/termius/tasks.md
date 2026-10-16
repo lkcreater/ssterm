@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-016 / T022: `DONE`** — [hosts / groups / search UI](../catalog-ui.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 236/236, E2E 34/34, packaged 33/33; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–015 committed (`b783329` latest); SST-017–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-017 / T023: `DONE`** — [identity and key management UI](../identities.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 257/257, E2E 40/40, packaged 37/37; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–016 committed (`06cf5b3` latest); SST-018–028 และ DS04–DS06 ทำต่อตาม loop
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -51,7 +51,7 @@
 ## M3 — Catalog/workspace UX
 
 - [x] **T022 / SST-016:** hosts/groups/tree/drafts/validation/inherited values/connect/empty states
-- [ ] **T023 / SST-017:** identity/key CRUD/import/bind/detach/reassign UX
+- [x] **T023 / SST-017:** identity/key CRUD/import/bind/detach/reassign UX
 - [ ] **T024 / SST-018:** tabs/layout tree/basic splits/focus/close และ persistent terminal settings
 
 ## M4 — SFTP / snippets / forwarding
@@ -98,7 +98,7 @@
 
 ## Task bookkeeping
 
-Current owner: root ปิด SST-016/T022 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ และ commit ตาม loop; SST-017 เป็นต้นไปทำต่อตาม loop
+Current owner: root ปิด SST-017/T023 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ และ commit ตาม loop; SST-018 เป็นต้นไปทำต่อตาม loop
 
 T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production SSH/session tasks ยังไม่ถูกติ๊ก
 

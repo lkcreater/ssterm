@@ -4,6 +4,8 @@ import { exactObject, isCounter, isOwner, type Owner } from "./index.ts";
 export const MAX_CATALOG_ITEMS = 10_000;
 export const MAX_CATALOG_LABEL = 200;
 export const MAX_CATALOG_ADDRESS = 1024;
+/** UTF-16 units, matching the credential prompt bound. */
+export const MAX_IDENTITY_USERNAME = 256;
 
 export type CatalogEnvironment = "DEV" | "STAGING" | "PROD" | null;
 export type CatalogPort = { mode: "inherit" } | { mode: "value"; port: number };
@@ -42,7 +44,36 @@ export interface CatalogGroup {
   inherited: CatalogEffective;
 }
 export interface CatalogTag { id: string; revision: number; label: string }
-export interface CatalogIdentity { id: string; label: string; username: string; method: "password" | "key" | "keyboard-interactive" }
+export type IdentityMethod = "password" | "key" | "keyboard-interactive";
+export type KeyAlgorithm = "ssh-ed25519" | "ssh-rsa";
+/** `pending`: a Keychain change for this owner is unresolved (retry with `retrySecrets`). */
+export interface CatalogIdentity {
+  id: string;
+  revision: number;
+  label: string;
+  username: string;
+  method: IdentityMethod;
+  passwordSaved: boolean;
+  keyId: string | null;
+  pending: boolean;
+}
+export interface CatalogKey {
+  id: string;
+  revision: number;
+  label: string;
+  algorithm: KeyAlgorithm;
+  /** `SHA256:` + unpadded base64. */
+  fingerprint: string;
+  /** OpenSSH public key line without comment; public, safe to copy. */
+  publicKey: string;
+  passphraseSaved: boolean;
+  pending: boolean;
+}
+export interface CatalogSecrets {
+  availability: "ready" | "unavailable";
+  /** A removed Keychain item still awaits deletion. */
+  cleanupPending: boolean;
+}
 export interface CatalogState {
   owner: Owner;
   sequence: number;
@@ -53,6 +84,8 @@ export interface CatalogState {
   groups: CatalogGroup[];
   tags: CatalogTag[];
   identities: CatalogIdentity[];
+  keys: CatalogKey[];
+  secrets: CatalogSecrets;
 }
 
 export interface CatalogHostData {
@@ -69,7 +102,14 @@ export interface CatalogGroupData {
   port?: CatalogPort;
   auth?: CatalogAuth;
 }
-/** The renderer subset of catalog intents; updates carry only changed fields (at least one). */
+export interface CatalogIdentityData {
+  label: string;
+  username: string;
+  method: IdentityMethod;
+  /** Required for `key`; must be absent or null otherwise. */
+  keyId?: string | null;
+}
+/** The renderer subset of catalog intents; updates carry only changed fields (at least one, unless forgetting the password). */
 export type CatalogChangeIntent =
   | { type: "create-host"; data: CatalogHostData }
   | { type: "update-host"; id: string; expectedRevision: number; data: Partial<CatalogHostData> }
@@ -84,13 +124,30 @@ export type CatalogChangeIntent =
     }
   | { type: "create-tag"; data: { label: string } }
   | { type: "delete-tag"; id: string; expectedRevision: number }
-  | { type: "set-host-tag"; hostId: string; tagId: string; present: boolean; expectedHostRevision: number };
+  | { type: "set-host-tag"; hostId: string; tagId: string; present: boolean; expectedHostRevision: number }
+  | { type: "create-identity"; data: CatalogIdentityData }
+  | {
+      type: "update-identity";
+      id: string;
+      expectedRevision: number;
+      data: Partial<CatalogIdentityData>;
+      /** Also implied by switching away from `password`. */
+      forgetPassword?: boolean;
+    }
+  | {
+      type: "delete-identity";
+      id: string;
+      expectedRevision: number;
+      disposition: { mode: "detach" } | { mode: "reassign"; identityId: string };
+    };
 export type CatalogFieldError =
   | { field: "label"; code: "empty" | "too-long" | "control" | "duplicate" }
   | { field: "address"; code: "invalid" | "too-long" }
   | { field: "port"; code: "invalid" }
   | { field: "parent"; code: "cycle" | "not-found" }
-  | { field: "group" | "identity" | "tag"; code: "not-found" };
+  | { field: "group" | "identity" | "tag"; code: "not-found" }
+  | { field: "username"; code: "empty" | "too-long" | "control" }
+  | { field: "keyId"; code: "not-found" | "required" };
 export interface CatalogHostImpact {
   hostId: string;
   label: string;
@@ -99,6 +156,14 @@ export interface CatalogHostImpact {
   provenanceChanged: boolean;
   pathChanged: boolean;
 }
+/** Identity update/delete only: what references the identity before the change. */
+export interface CatalogIdentityImpact {
+  directHostIds: string[];
+  directGroupIds: string[];
+  /** Every server whose effective identity is this one, directly or via groups. */
+  effectiveHostIds: string[];
+  removesSavedPassword: boolean;
+}
 export interface CatalogImpactSummary {
   hosts: CatalogHostImpact[];
   removedHostIds: string[];
@@ -106,6 +171,7 @@ export interface CatalogImpactSummary {
   removedTunnelRules: number;
   removedHostTags: number;
   removedSnippetTags: number;
+  identity: CatalogIdentityImpact | null;
 }
 export type CatalogPrepareResponse =
   | { kind: "preview"; token: string; /** Epoch milliseconds. */ expiresAt: number; impacts: CatalogImpactSummary }
@@ -124,6 +190,11 @@ export function validateCatalogLabel(text: string): "empty" | "too-long" | "cont
   if (length < 1) return "empty";
   if (length > MAX_CATALOG_LABEL) return "too-long";
   return /[\u0000-\u001f\u007f]/u.test(label) ? "control" : null;
+}
+export function validateIdentityUsername(text: string): "empty" | "too-long" | "control" | null {
+  if (!text.trim()) return "empty";
+  if (text.length > MAX_IDENTITY_USERNAME) return "too-long";
+  return /[\u0000-\u001f\u007f]/u.test(text) ? "control" : null;
 }
 export function validatePort(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 65_535;
@@ -172,14 +243,26 @@ function isCatalogTag(v: unknown): v is CatalogTag {
   return exactObject(v, ["id", "revision", "label"]) && isCatalogId(v.id) && positive(v.revision) && label(v.label);
 }
 function isCatalogIdentity(v: unknown): v is CatalogIdentity {
-  return exactObject(v, ["id", "label", "username", "method"]) && isCatalogId(v.id) && label(v.label) && text(v.username, 1024) &&
-    (v.method === "password" || v.method === "key" || v.method === "keyboard-interactive");
+  return exactObject(v, ["id", "revision", "label", "username", "method", "passwordSaved", "keyId", "pending"]) && isCatalogId(v.id) &&
+    positive(v.revision) && label(v.label) && text(v.username, 1024) && typeof v.passwordSaved === "boolean" && typeof v.pending === "boolean" &&
+    (v.method === "key" ? isCatalogId(v.keyId) && !v.passwordSaved
+      : v.keyId === null && (v.method === "password" || (v.method === "keyboard-interactive" && !v.passwordSaved)));
+}
+export const isKeyAlgorithm = (v: unknown): v is KeyAlgorithm => v === "ssh-ed25519" || v === "ssh-rsa";
+export const isKeyFingerprint = (v: unknown): v is string => typeof v === "string" && /^SHA256:[A-Za-z0-9+/]{43}$/u.test(v);
+function isCatalogKey(v: unknown): v is CatalogKey {
+  return exactObject(v, ["id", "revision", "label", "algorithm", "fingerprint", "publicKey", "passphraseSaved", "pending"]) &&
+    isCatalogId(v.id) && positive(v.revision) && label(v.label) && isKeyAlgorithm(v.algorithm) && isKeyFingerprint(v.fingerprint) &&
+    typeof v.publicKey === "string" && v.publicKey.length <= 16_384 && v.publicKey.startsWith(`${v.algorithm} `) &&
+    /^[a-z0-9-]+ [A-Za-z0-9+/]+={0,2}$/u.test(v.publicKey) && typeof v.passphraseSaved === "boolean" && typeof v.pending === "boolean";
 }
 export function isCatalogState(v: unknown): v is CatalogState {
-  return exactObject(v, ["owner", "sequence", "availability", "revision", "truncated", "hosts", "groups", "tags", "identities"]) &&
+  return exactObject(v, ["owner", "sequence", "availability", "revision", "truncated", "hosts", "groups", "tags", "identities", "keys", "secrets"]) &&
     isOwner(v.owner) && isCounter(v.sequence) && (v.availability === "ready" || v.availability === "unavailable") &&
     isCounter(v.revision) && typeof v.truncated === "boolean" && list(v.hosts, isCatalogHost) && list(v.groups, isCatalogGroup) &&
-    list(v.tags, isCatalogTag) && list(v.identities, isCatalogIdentity);
+    list(v.tags, isCatalogTag) && list(v.identities, isCatalogIdentity) && list(v.keys, isCatalogKey) &&
+    exactObject(v.secrets, ["availability", "cleanupPending"]) && (v.secrets.availability === "ready" || v.secrets.availability === "unavailable") &&
+    typeof v.secrets.cleanupPending === "boolean";
 }
 
 /** Data keys allowed per kind; `create` requires the listed ones. */
@@ -187,6 +270,7 @@ const dataKeys = {
   host: { all: ["label", "address", "groupId", "environment", "port", "auth"], required: ["label", "address"] },
   group: { all: ["label", "parentId", "port", "auth"], required: ["label"] },
   tag: { all: ["label"], required: ["label"] },
+  identity: { all: ["label", "username", "method", "keyId"], required: ["label", "username", "method"] },
 } as const;
 function isData(v: unknown, kind: keyof typeof dataKeys, creating: boolean): boolean {
   if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
@@ -199,15 +283,26 @@ function isData(v: unknown, kind: keyof typeof dataKeys, creating: boolean): boo
     (!("address" in d) || raw(d.address, 2048)) &&
     (!("groupId" in d) || nullableId(d.groupId)) && (!("parentId" in d) || nullableId(d.parentId)) &&
     (!("environment" in d) || environment(d.environment)) && (!("port" in d) || port(d.port, false)) &&
-    (!("auth" in d) || auth(d.auth));
+    (!("auth" in d) || auth(d.auth)) && (!("username" in d) || raw(d.username, 2048)) &&
+    (!("method" in d) || d.method === "password" || d.method === "key" || d.method === "keyboard-interactive") &&
+    (!("keyId" in d) || nullableId(d.keyId));
 }
 export function isCatalogChangeIntent(v: unknown): v is CatalogChangeIntent {
   if (v === null || typeof v !== "object" || !("type" in v)) return false;
   const i = v as Record<string, unknown>;
   const target = () => isCatalogId(i.id) && positive(i.expectedRevision);
   switch (i.type) {
-    case "create-host": case "create-group": case "create-tag":
+    case "create-host": case "create-group": case "create-tag": case "create-identity":
       return exactObject(i, ["type", "data"]) && isData(i.data, i.type.slice(7) as keyof typeof dataKeys, true);
+    case "update-identity":
+      if (Object.hasOwn(i, "forgetPassword"))
+        return exactObject(i, ["type", "id", "expectedRevision", "data", "forgetPassword"]) && target() &&
+          typeof i.forgetPassword === "boolean" && (exactObject(i.data, []) ? i.forgetPassword : isData(i.data, "identity", false));
+      return exactObject(i, ["type", "id", "expectedRevision", "data"]) && target() && isData(i.data, "identity", false);
+    case "delete-identity":
+      return exactObject(i, ["type", "id", "expectedRevision", "disposition"]) && target() &&
+        ((exactObject(i.disposition, ["mode"]) && i.disposition.mode === "detach") ||
+          (exactObject(i.disposition, ["mode", "identityId"]) && i.disposition.mode === "reassign" && isCatalogId(i.disposition.identityId)));
     case "update-host": case "update-group":
       return exactObject(i, ["type", "id", "expectedRevision", "data"]) && target() && isData(i.data, i.type.slice(7) as "host" | "group", false);
     case "delete-host": case "delete-tag":
@@ -226,6 +321,7 @@ export function isCatalogChangeIntent(v: unknown): v is CatalogChangeIntent {
 const fieldCodes: Record<CatalogFieldError["field"], readonly string[]> = {
   label: ["empty", "too-long", "control", "duplicate"], address: ["invalid", "too-long"], port: ["invalid"],
   parent: ["cycle", "not-found"], group: ["not-found"], identity: ["not-found"], tag: ["not-found"],
+  username: ["empty", "too-long", "control"], keyId: ["not-found", "required"],
 };
 function isFieldError(v: unknown): v is CatalogFieldError {
   return exactObject(v, ["field", "code"]) && typeof v.field === "string" && Object.hasOwn(fieldCodes, v.field) &&
@@ -242,9 +338,12 @@ export function isCatalogPrepareResponse(v: unknown): v is CatalogPrepareRespons
   if (!exactObject(v, ["kind", "token", "expiresAt", "impacts"]) || v.kind !== "preview" || !isCatalogId(v.token) || !positive(v.expiresAt))
     return false;
   const m = v.impacts;
-  return exactObject(m, ["hosts", "removedHostIds", "removedGroupIds", "removedTunnelRules", "removedHostTags", "removedSnippetTags"]) &&
+  return exactObject(m, ["hosts", "removedHostIds", "removedGroupIds", "removedTunnelRules", "removedHostTags", "removedSnippetTags", "identity"]) &&
     list(m.hosts, isHostImpact) && ids(m.removedHostIds) && ids(m.removedGroupIds) &&
-    isCounter(m.removedTunnelRules) && isCounter(m.removedHostTags) && isCounter(m.removedSnippetTags);
+    isCounter(m.removedTunnelRules) && isCounter(m.removedHostTags) && isCounter(m.removedSnippetTags) &&
+    (m.identity === null || (exactObject(m.identity, ["directHostIds", "directGroupIds", "effectiveHostIds", "removesSavedPassword"]) &&
+      ids(m.identity.directHostIds) && ids(m.identity.directGroupIds) && ids(m.identity.effectiveHostIds) &&
+      typeof m.identity.removesSavedPassword === "boolean"));
 }
 export function isCatalogStateRequest(v: unknown): v is CatalogStateRequest {
   return exactObject(v, ["owner"]) && isOwner(v.owner);

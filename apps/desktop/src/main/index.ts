@@ -28,7 +28,8 @@ import { registerCredentialHandlers } from "./credential-runtime";
 import { createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
 import { applicationMenuTemplate } from "./menu";
 import { registerLinkHandlers } from "./links";
-import { createCatalogController, registerCatalogHandlers, type CatalogController } from "./catalog-controller";
+import { createCatalogController, observeCommits, registerCatalogHandlers, type CatalogController } from "./catalog-controller";
+import { createIdentitiesController, registerIdentityHandlers, secretNamespace, type IdentitiesController } from "./identities";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -67,6 +68,8 @@ let removeTerminalHandlers: (() => void) | undefined;
 let removeLinkHandlers: (() => void) | undefined;
 let catalog: CatalogController | undefined;
 let removeCatalogHandlers: (() => void) | undefined;
+let identities: IdentitiesController | undefined;
+let removeIdentityHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -104,7 +107,8 @@ async function initializeStorage(): Promise<void> {
       };
       return;
     }
-    repository = opened.value;
+    // Every writer (catalog, secrets, known hosts) republishes the catalog projection once per turn.
+    repository = observeCommits(opened.value, () => catalog?.publishAll());
     const snapshot = repository.snapshot();
     if (!snapshot.ok) {
       storageHealth = {
@@ -122,7 +126,9 @@ async function initializeStorage(): Promise<void> {
       // Loaded lazily so a native-binding failure leaves storage health intact and secrets unavailable.
       const { KeychainSecretProvider, PRODUCTION_SECRET_NAMESPACE } =
         await import("@ssterm/adapters/keychain");
-      secretProvider = new KeychainSecretProvider(PRODUCTION_SECRET_NAMESPACE);
+      const namespace = secretNamespace(process.env, PRODUCTION_SECRET_NAMESPACE);
+      if (!namespace) throw new Error("No isolated test secret namespace");
+      secretProvider = new KeychainSecretProvider(namespace);
       secrets = new SecretService({
         repository,
         provider: secretProvider,
@@ -165,6 +171,7 @@ const boundary = new WindowBoundary(
     credentials?.revokeOwner(owner);
     knownHosts?.revokeOwner(owner);
     catalog?.revokeOwner(owner);
+    identities?.revokeOwner(owner);
     // Stop output frames before the owner's sessions start closing.
     terminals?.revokeOwner(owner);
     desktopSessions?.revokeOwner(owner);
@@ -274,6 +281,9 @@ function createWindow(): void {
   });
 }
 
+// A locked registry reopens only while saved hosts can be resolved; a missing secure store fails per saved ref instead.
+const checkAccess = async () => storageHealth.status === "ready" && !!repository;
+
 if (ownsInstance) {
   void app.whenReady().then(async () => {
     if (quitting) return;
@@ -298,6 +308,24 @@ if (ownsInstance) {
       catalog = createCatalogController({
         repository,
         catalog: new CatalogModule({ repository }),
+        secretStore: () => !!secrets,
+        cleanupQueued: () => identities?.cleanupQueued(),
+      });
+      identities = createIdentitiesController({
+        repository,
+        secrets: () => secrets,
+        transient: transientSecrets,
+        lock: savedHostSessions.registry,
+        checkAccess,
+        pickFile: async (owner) => {
+          const window = BrowserWindow.fromId(owner.windowId);
+          if (!window || window.isDestroyed()) return undefined;
+          const chosen = await dialog.showOpenDialog(window, {
+            properties: ["openFile", "showHiddenFiles"],
+            defaultPath: join(app.getPath("home"), ".ssh"),
+          });
+          return chosen.canceled ? undefined : chosen.filePaths[0];
+        },
       });
     } else {
       desktopSessions = createDesktopSessions({
@@ -317,8 +345,7 @@ if (ownsInstance) {
     });
     terminals = createTerminalController({
       registry: desktopSessions.registry,
-      // A locked registry reopens only while saved hosts can actually be resolved and authenticated.
-      checkAccess: async () => storageHealth.status === "ready" && !!repository && !!secretProvider,
+      checkAccess,
     });
     removeTerminalHandlers = registerTerminalHandlers({
       ipc: ipcMain,
@@ -334,6 +361,11 @@ if (ownsInstance) {
       ipc: ipcMain,
       boundary,
       controller: () => catalog,
+    });
+    removeIdentityHandlers = registerIdentityHandlers({
+      ipc: ipcMain,
+      boundary,
+      controller: () => identities,
     });
     removeLinkHandlers = registerLinkHandlers({
       ipc: ipcMain,
@@ -412,12 +444,14 @@ app.on("before-quit", (event) => {
   knownHosts?.dispose();
   terminals?.dispose();
   catalog?.dispose();
+  identities?.dispose();
   knownHostPolicy?.dispose();
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
   removeTerminalHandlers?.();
   removeLinkHandlers?.();
   removeCatalogHandlers?.();
+  removeIdentityHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();

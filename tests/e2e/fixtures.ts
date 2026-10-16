@@ -6,6 +6,7 @@ import {
   type Page,
 } from "@playwright/test";
 import type { ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -23,16 +24,24 @@ export interface Desktop {
   errors: string[];
   externalRequests: string[];
   profile: string;
+  /** The Keychain namespace this launch's main uses; teardown empties it. */
+  secretNamespace: string;
   /** Idempotent; safe after the app already exited. */
   close(): Promise<void>;
 }
 
-/** Launches the desktop app on an existing temporary profile; relaunching on the same profile reopens its data. */
+const TEST_NAMESPACE = /^dev\.ssterm\.test\.[0-9a-f-]{36}$/u;
+
+/**
+ * Launches the desktop app on an existing temporary profile; relaunching on the same profile reopens its data.
+ * Each launch gets a fresh `dev.ssterm.test.<uuid>` Keychain namespace unless one is given (an invalid value
+ * exercises the fail-closed gate). `close()` always empties it, so saved secrets never survive a relaunch.
+ */
 export async function launchDesktop(
   profile: string,
-  options: { showcase?: boolean } = {},
+  options: { showcase?: boolean; secretNamespace?: string } = {},
 ): Promise<Desktop> {
-  const { showcase = false } = options;
+  const { showcase = false, secretNamespace = `dev.ssterm.test.${randomUUID()}` } = options;
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
       (item): item is [string, string] => item[1] !== undefined,
@@ -41,6 +50,7 @@ export async function launchDesktop(
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_RENDERER_URL;
   env.SSTERM_TEST_USER_DATA = profile;
+  env.SSTERM_TEST_SECRET_NAMESPACE = secretNamespace;
   const packaged = process.env.SSTERM_PACKAGED_EXECUTABLE;
   if (showcase) env.ELECTRON_RENDERER_URL = "http://127.0.0.1:5174/";
   // A packaged build must ignore even an explicitly supplied development URL.
@@ -63,6 +73,14 @@ export async function launchDesktop(
   const close = () =>
     (closing ??= (async () => {
       if (!alive()) return;
+      // Empty this launch's namespace through the shipped secrets entry while main still runs, then close.
+      let leftovers: number | string = 0;
+      if (TEST_NAMESPACE.test(secretNamespace))
+        leftovers = await app.evaluate(async ({ app }, namespace) => {
+          const require = process.getBuiltinModule("node:module").createRequire(app.getAppPath() + "/package.json");
+          const { clearTestNamespace } = require(require("node:path").join(app.getAppPath(), "out/main/secrets.js"));
+          return clearTestNamespace(namespace);
+        }, secretNamespace).catch(() => "unknown");
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         app.close().catch(() => undefined),
@@ -76,6 +94,7 @@ export async function launchDesktop(
         child.kill("SIGKILL");
         await exited;
       }
+      if (leftovers !== 0) throw new Error(`Test Keychain namespace not emptied: ${leftovers}`);
     })());
   try {
     const errors: string[] = [];
@@ -97,9 +116,9 @@ export async function launchDesktop(
     });
     if (showcase) await page.goto("http://127.0.0.1:5174/#showcase");
     await page.waitForLoadState("domcontentloaded");
-    return { app, page, errors, externalRequests, profile, close };
+    return { app, page, errors, externalRequests, profile, secretNamespace, close };
   } catch (error) {
-    await close();
+    await close().catch(() => undefined);
     throw error;
   }
 }

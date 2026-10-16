@@ -14,6 +14,41 @@ export type PrivateKeyResult =
   | { ok: true; key: PreparedPrivateKey }
   | { ok: false; code: "credentials-required" | "invalid-private-key" | "unsupported-private-key" };
 
+const OPENSSH_MAGIC = Buffer.from("openssh-key-v1\0", "latin1");
+// ponytail: ssh2 runs pure-JS bcrypt-pbkdf synchronously on main (~9 ms/round), so 256 rounds blocks import and
+// every connect for up to ~2.3 s; ssh-keygen defaults to 16. Allowing more means decrypting in a worker or
+// utilityProcess with a timeout.
+const MAX_BCRYPT_ROUNDS = 256;
+
+/** Reads only the openssh-key-v1 KDF header so a crafted bcrypt cost is refused before ssh2 spends it. */
+function opensshKdfProblem(base64: string): "invalid-private-key" | "unsupported-private-key" | undefined {
+  // 512 base64 characters cover magic, cipher, kdf name and kdf options several times over.
+  const head = Buffer.from(base64.replace(/\s+/gu, "").slice(0, 512), "base64");
+  try {
+    let at = OPENSSH_MAGIC.length;
+    if (head.length < at || !head.subarray(0, at).equals(OPENSSH_MAGIC)) return "invalid-private-key";
+    const field = () => {
+      if (head.length - at < 4) return undefined;
+      const length = head.readUInt32BE(at);
+      if (length > head.length - at - 4) return undefined;
+      at += 4 + length;
+      return head.subarray(at - length, at);
+    };
+    const cipher = field(), kdf = field(), options = field();
+    if (!cipher || !kdf || !options) return "invalid-private-key";
+    const name = kdf.toString("latin1");
+    if (name === "none") return options.length === 0 ? undefined : "invalid-private-key";
+    if (name !== "bcrypt") return "unsupported-private-key";
+    // kdfoptions: string salt, uint32 rounds.
+    if (options.length < 8 || options.readUInt32BE(0) !== options.length - 8) return "invalid-private-key";
+    const rounds = options.readUInt32BE(options.length - 4);
+    return rounds >= 1 && rounds <= MAX_BCRYPT_ROUNDS ? undefined : "unsupported-private-key";
+  } finally {
+    // An unencrypted key's private section can start inside these bytes.
+    head.fill(0);
+  }
+}
+
 /** Main-only, single-key allowlist. Parsing/decryption belongs to ssh2, never a custom decoder. */
 export function preparePrivateKey(bytes: Uint8Array, passphrase?: Uint8Array): PrivateKeyResult {
   if (!bytes.length || bytes.length > 1_048_576)
@@ -27,6 +62,9 @@ export function preparePrivateKey(bytes: Uint8Array, passphrase?: Uint8Array): P
     const footer = `-----END ${header[1]} PRIVATE KEY-----`;
     if (!text.endsWith(footer) || (text.match(/-----BEGIN /gu)?.length ?? 0) !== 1 || (text.match(/-----END /gu)?.length ?? 0) !== 1)
       return { ok: false, code: "invalid-private-key" };
+    const refused = header[1] === "OPENSSH"
+      && opensshKdfProblem(text.slice(header[0].length, Math.min(text.length - footer.length, header[0].length + 1024)));
+    if (refused) return { ok: false, code: refused };
     const result = ssh2.utils.parseKey(raw, phrase);
     if (result instanceof Error)
       return { ok: false, code: phrase === undefined && /no passphrase given/iu.test(result.message) ? "credentials-required" : "invalid-private-key" };

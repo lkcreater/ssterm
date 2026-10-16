@@ -70,9 +70,11 @@ test("bridge exposes only narrow methods and forwards a rebuilt, validated ping"
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
     "ackTerminal", "answerCredentials", "answerHostTrust", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "catalogState",
-    "closeTerminal", "connectHost", "credentialState", "dismissTerminal", "onCatalogState", "onCredentialState", "onTerminalOutput",
+    "chooseKeyFile", "closeTerminal", "connectHost", "credentialState", "deleteKey", "discardKeyImport", "dismissTerminal",
+    "forgetKeyPassphrase", "importKey", "onCatalogState", "onCredentialState", "onTerminalOutput",
     "onTerminalState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping", "prepareCatalogChange",
-    "prepareKnownHostRevoke", "reconnectTerminal", "resizeTerminal", "revokeKnownHost", "terminalState", "trustState", "writeTerminal",
+    "prepareKnownHostRevoke", "reconnectTerminal", "renameKey", "resizeTerminal", "retrySecrets", "revokeKnownHost",
+    "setIdentityPassword", "terminalState", "trustState", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -242,7 +244,7 @@ test("trust bridge filters owner, sequence, malformed data and credential prompt
 });
 
 
-test("credential bridge fences owner/sequence and copies then wipes owned answer bytes", async () => {
+test("credential bridge fences owner/sequence and wipes its world's answer bytes once the call settles", async () => {
   const f = fixture();
   await f.api.bootstrap();
   const owner = { windowId: 1, generation: 2 };
@@ -261,18 +263,19 @@ test("credential bridge fences owner/sequence and copies then wipes owned answer
   const identity = { owner, sessionId: "s", generation: 1, promptId: "p" };
   f.setReply({ ok: true, value: { accepted: true } });
   assert.deepEqual(await f.api.answerCredentials({ ...identity, values: [{ id: "password", value }] }), { ok: true, value: { accepted: true } });
-  const forwarded = f.calls.at(-1)!.args[0] as { values: { value: Uint8Array }[] };
-  assert.notEqual(forwarded.values[0]!.value, value);
-  assert.ok(forwarded.values[0]!.value.every((byte) => byte === 0));
-  assert.equal(new TextDecoder().decode(value), "owned-answer");
+  const forwarded = f.calls.at(-1)!.args[0] as { values: { id: string; value: Uint8Array }[] };
+  assert.equal(forwarded.values[0]!.value, value, "no second copy");
+  // Here the caller's buffer stands in for the copy contextBridge gives preload.
+  assert.ok(value.every((byte) => byte === 0), "preload's copy is wiped");
   const count = f.calls.length;
   assert.deepEqual(await f.api.answerCredentials({ ...identity, values: [{ id: "password", value }], extra: true } as never), failure("invalid-request"));
   assert.equal(f.calls.length, count);
   assert.deepEqual(await f.api.cancelCredentialPrompt(identity), { ok: true, value: { accepted: true } });
   assert.equal(f.calls.at(-1)!.channel, channels.cancelCredentialPrompt);
   f.setReject();
-  assert.deepEqual(await f.api.answerCredentials({ ...identity, values: [{ id: "password", value }] }), failure("unavailable"));
-  assert.ok((f.calls.at(-1)!.args[0] as typeof forwarded).values[0]!.value.every((byte) => byte === 0));
+  const rejected = new TextEncoder().encode("owned-answer");
+  assert.deepEqual(await f.api.answerCredentials({ ...identity, values: [{ id: "password", value: rejected }] }), failure("unavailable"));
+  assert.ok(rejected.every((byte) => byte === 0), "wiped when the call fails too");
   f.dispose(); assert.equal(f.listeners.size, 0);
 });
 
@@ -398,7 +401,7 @@ test("catalog and connect commands are rebuilt, validated both ways and catalog 
   const hostId = "0b7c7f3e-6a54-4c52-9a6e-3c1f1f9b2d10";
   const token = "5f0f5c1e-2b7a-4d3c-8e9f-0a1b2c3d4e5f";
   const state = (sequence: number, generation = 2) => ({ owner: { windowId: 1, generation }, sequence, availability: "ready", revision: 3,
-    truncated: false, hosts: [], groups: [], tags: [], identities: [] });
+    truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [], secrets: { availability: "ready", cleanupPending: false } });
   f.setReply({ ok: true, value: state(4) });
   assert.deepEqual(await f.api.catalogState({ owner }), { ok: true, value: state(4) });
   assert.deepEqual(f.calls.at(-1), { channel: channels.catalogState, args: [{ owner }] });
@@ -413,7 +416,7 @@ test("catalog and connect commands are rebuilt, validated both ways and catalog 
   assert.deepEqual(await f.api.catalogState({ owner }), failure("stale-owner"));
 
   const intent = { type: "update-host" as const, id: hostId, expectedRevision: 1, data: { port: { mode: "value" as const, port: 2222 } } };
-  const preview = { kind: "preview", token, expiresAt: 1000, impacts: { hosts: [], removedHostIds: [], removedGroupIds: [], removedTunnelRules: 0, removedHostTags: 0, removedSnippetTags: 0 } };
+  const preview = { kind: "preview", token, expiresAt: 1000, impacts: { hosts: [], removedHostIds: [], removedGroupIds: [], removedTunnelRules: 0, removedHostTags: 0, removedSnippetTags: 0, identity: null } };
   f.setReply({ ok: true, value: preview });
   assert.deepEqual(await f.api.prepareCatalogChange({ owner, intent }), { ok: true, value: preview });
   const sent = f.calls.at(-1)!;
@@ -435,6 +438,58 @@ test("catalog and connect commands are rebuilt, validated both ways and catalog 
     f.api.prepareCatalogChange({ owner, intent: { ...intent, data: {} } }),
     f.api.applyCatalogChange({ owner, token: "t" }),
     f.api.connectHost({ owner, hostId: "host-1" }),
+  ]) assert.deepEqual(await invalid, failure("invalid-request"));
+  assert.equal(f.calls.length, count);
+});
+
+test("identity commands send rebuilt requests, wipe preload's credential copies and validate replies", async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const identityId = "0b7c7f3e-6a54-4c52-9a6e-3c1f1f9b2d10";
+  const importId = "5f0f5c1e-2b7a-4d3c-8e9f-0a1b2c3d4e5f";
+  const value = new TextEncoder().encode("fixture-password");
+  const capture = () => { const args = f.calls.at(-1)!.args[0] as Record<string, unknown>; return args; };
+  f.setReply({ ok: true, value: { status: "saved" } });
+  assert.deepEqual(await f.api.setIdentityPassword({ owner, identityId, expectedRevision: 1, value }), { ok: true, value: { status: "saved" } });
+  const sentPassword = capture();
+  assert.equal(f.calls.at(-1)!.channel, channels.setIdentityPassword);
+  assert.deepEqual(Object.keys(sentPassword).sort(), ["expectedRevision", "identityId", "owner", "value"]);
+  // The caller's buffer stands in for the copy contextBridge gives preload.
+  assert.ok(value.every((byte) => byte === 0), "preload's copy is wiped after the call");
+
+  f.setReply({ ok: true, value: { status: "imported", keyId: identityId, fingerprint: `SHA256:${"A".repeat(43)}`, passphrase: { status: "saved" } } });
+  const passphrase = new TextEncoder().encode("fixture-passphrase");
+  assert.ok((await f.api.importKey({ owner, importId, label: "Lab key", passphrase, savePassphrase: true })).ok);
+  const sentImport = capture();
+  assert.equal(f.calls.at(-1)!.channel, channels.importKey);
+  assert.equal(sentImport.passphrase, passphrase);
+  assert.ok(passphrase.every((byte) => byte === 0));
+  f.setReply({ ok: true, value: { status: "secret-store", reason: "nope" } });
+  assert.deepEqual(await f.api.importKey({ owner, importId, label: "Lab key", passphrase: null, savePassphrase: false }), failure("unavailable"),
+    "a malformed reply is refused");
+
+  for (const [call, channel, reply] of [
+    [() => f.api.chooseKeyFile({ owner }), channels.chooseKeyFile, { status: "chosen", importId, suggestedLabel: "id_ed25519", encrypted: true, algorithm: null, fingerprint: null }],
+    [() => f.api.discardKeyImport({ owner, importId }), channels.discardKeyImport, { status: "discarded" }],
+    [() => f.api.renameKey({ owner, keyId: identityId, expectedRevision: 1, label: "x" }), channels.renameKey, { status: "renamed" }],
+    [() => f.api.forgetKeyPassphrase({ owner, keyId: identityId, expectedRevision: 1 }), channels.forgetKeyPassphrase, { status: "forgotten", cleanup: "pending" }],
+    [() => f.api.deleteKey({ owner, keyId: identityId, expectedRevision: 1 }), channels.deleteKey, { status: "in-use", identityIds: [identityId] }],
+    [() => f.api.retrySecrets({ owner }), channels.retrySecrets, { status: "retried" }],
+  ] as const) {
+    f.setReply({ ok: true, value: reply });
+    assert.deepEqual(await call(), { ok: true, value: reply }, channel);
+    assert.equal(f.calls.at(-1)!.channel, channel);
+  }
+  const count = f.calls.length;
+  for (const invalid of [
+    f.api.setIdentityPassword({ owner, identityId, expectedRevision: 1, value: new Uint8Array() }),
+    f.api.setIdentityPassword({ owner, identityId, expectedRevision: 1, value: new Uint8Array(16 * 1024 + 1) }),
+    f.api.setIdentityPassword({ owner, identityId, expectedRevision: 1, value: "password" as never }),
+    f.api.importKey({ owner, importId, label: "k", passphrase: null, savePassphrase: true }),
+    f.api.importKey({ owner, importId: "id", label: "k", passphrase: null, savePassphrase: false }),
+    f.api.chooseKeyFile({ owner, path: "/etc/passwd" } as never),
+    f.api.deleteKey({ owner, keyId: identityId, expectedRevision: 0 }),
   ]) assert.deepEqual(await invalid, failure("invalid-request"));
   assert.equal(f.calls.length, count);
 });
