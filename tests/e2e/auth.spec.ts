@@ -8,7 +8,10 @@ test("shipped saved-host SSH authenticates from catalog and real Keychain refere
     await new Promise<void>((done) => setImmediate(done));
     const require = process.getBuiltinModule("node:module").createRequire(app.getAppPath() + "/package.json");
     const path = require("node:path");
-    const production = require(path.join(app.getAppPath(), "out/main/ssh.js"));
+    const production = {
+      ...require(path.join(app.getAppPath(), "out/main/ssh.js")),
+      ...require(path.join(app.getAppPath(), "out/main/secrets.js")),
+    };
     const { runSavedHostSmoke } = require(fixturePath);
     return runSavedHostSmoke(production, app.getPath("temp"));
   }, resolve("tests/fixtures/auth/ssh.cjs"));

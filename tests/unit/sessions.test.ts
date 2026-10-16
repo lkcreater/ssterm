@@ -735,3 +735,52 @@ test("closing or locking a failed session after cleanup publishes Closed once", 
     await h.registry.dispose();
   }
 });
+
+test("credential prompt cancellation is atomic and bound to owner, generation and the current credential prompt", async () => {
+  const h = harness(); const session = h.connect(); await tick();
+  const context = h.contexts[0]!; context.verifyingHost();
+  const hostPending = context.requestPrompt(trust);
+  const host = h.registry.snapshot("owner-1")[0]!.prompt!;
+  assert(!h.registry.cancelPrompt("owner-1", session.id, 1, host.id).ok);
+  value(h.registry.answerPrompt("owner-1", session.id, 1, host.id, { kind: "host-trust", decision: "accept-once" }));
+  await hostPending; context.authenticating();
+  const firstPending = context.requestPrompt({ ...credential, purpose: "password", attempt: 1 });
+  const first = h.registry.snapshot("owner-1")[0]!.prompt!;
+  assert(!h.registry.cancelPrompt("other", session.id, 1, first.id).ok);
+  assert(!h.registry.cancelPrompt("owner-1", session.id, 2, first.id).ok);
+  assert(!h.registry.cancelPrompt("owner-1", session.id, 1, "stale").ok);
+  value(h.registry.answerPrompt("owner-1", session.id, 1, first.id, { kind: "credentials", values: [{ id: "password", value: Buffer.from("owned-fixture") }] }));
+  const firstAnswer = await firstPending; assert(firstAnswer.kind === "credentials"); firstAnswer.use(() => {});
+  const secondPending = context.requestPrompt({ ...credential, purpose: "password", attempt: 2 });
+  const second = h.registry.snapshot("owner-1")[0]!.prompt!;
+  assert(!h.registry.cancelPrompt("owner-1", session.id, 1, first.id).ok);
+  assert.equal(h.registry.snapshot("owner-1")[0]!.state, "AwaitingInput");
+  value(h.registry.cancelPrompt("owner-1", session.id, 1, second.id));
+  assert.equal(context.signal.aborted, true);
+  await assert.rejects(secondPending, /cancelled/u);
+  await tick();
+  const closed = h.registry.snapshot("owner-1")[0]!;
+  assert.equal(closed.state, "Failed"); assert.equal(closed.error?.code, "prompt-cancelled");
+  assert.equal(closed.prompt, undefined); assert.equal(h.transient.size, 0);
+  assert(!h.registry.cancelPrompt("owner-1", session.id, 1, second.id).ok);
+  await h.registry.dispose();
+});
+
+test("credential prompt metadata and answer sizes are bounded without advancing a rejected prompt", async () => {
+  const h = harness(); const session = h.connect(); await tick();
+  const context = h.contexts[0]!; context.verifyingHost(); context.authenticating();
+  for (const invalid of [{ ...credential, attempt: 4 }, { ...credential, purpose: "untrusted-server-label" }])
+    await assert.rejects(context.requestPrompt(invalid as never), /invalid/u);
+  const fields = (["response-1", "response-2", "response-3", "response-4", "response-5"] as const).map((id) => ({ id, echo: false }));
+  const pending = context.requestPrompt({ kind: "credentials", purpose: "keyboard-interactive", attempt: 3, fields });
+  const prompt = h.registry.snapshot("owner-1")[0]!.prompt!;
+  assert.equal(prompt.kind === "credentials" && prompt.attempt, 3);
+  for (const size of [16_385, 16_384]) {
+    const values = fields.map(({ id }) => ({ id, value: Buffer.alloc(size) }));
+    assert(!h.registry.answerPrompt("owner-1", session.id, 1, prompt.id, { kind: "credentials", values }).ok);
+    assert.equal(h.registry.snapshot("owner-1")[0]!.prompt!.id, prompt.id);
+  }
+  value(h.registry.cancelPrompt("owner-1", session.id, 1, prompt.id));
+  await assert.rejects(pending, /cancelled/u);
+  await h.registry.dispose();
+});

@@ -1,0 +1,43 @@
+# SST-011 — Transient authentication prompts
+
+**2026-10-16 · T017 · DONE through independent TEST/REVIEW/DELIVER; included in the authorized SST-011 delivery commit.** Authorized by “ทำงานถัดไปเลย” after SST-010 commit `76d473f`. Scope is password/passphrase entry and explicitly selected keyboard-interactive authentication; no commit/push or SST-012+ implementation. [Execution plan](agent-runs/implementation-plan.md).
+
+## Authentication and lifetimes
+
+The saved-host adapter retains the captured identity and shared known-host verification from [SST-010](ssh-auth.md). A null/missing saved password may request transient input after host trust. A missing private key fails closed; a prompt cannot reconstruct that key. Locked, denied or unavailable secret-store reads retain their fixed failure and do not silently switch methods.
+
+Encrypted supported OpenSSH Ed25519/PEM RSA keys use the mature parser to detect whether a passphrase is needed. A missing or unusable saved phrase can request up to three entered decrypt attempts. No alternate identity, algorithm downgrade or credential method is attempted. A wrong saved password still produces `auth-denied` after the selected strategy; local passphrase retries do not send authentication attempts to the server before successful decryption and public-metadata validation.
+
+An explicitly selected keyboard-interactive identity uses only that method. Each challenge supports up to eight fields, 16 KiB per field and 64 KiB total, preserving the server's echo flags. Three nonempty challenge rounds are allowed. ssh2 1.17.0 internally answers zero-field informational rounds before the application callback; they create no dialog or secret state and remain subject to the overall connection deadline. Raw server names/instructions/questions are not projected: the UI uses the app's generic `Response N` labels.
+
+Input is never saved to Keychain or metadata and there is no cross-session or per-connection credential cache. SessionRegistry owns one pending prompt per attempt, a 60-second prompt deadline and a 120-second overall connect deadline. Scratch bytes are registered for immediate abort cleanup before awaiting a provider or a user response; already acquired private-key bytes are wiped even if a later read never settles. Late returned provider/answer buffers are also wiped. Library protocol encoding requires immutable UTF-8 strings at its last boundary, so this is best-effort lifetime control rather than a guarantee of full JS/crypto-memory zeroization.
+
+## Prompt boundary and UI
+
+Credential state projects only owner/sequence, prompt identifiers, purpose/attempt, finite field IDs/echo flags and the captured label/environment/username/endpoint. It carries no SecretRef, key, credential or upstream error. Submit and Cancel require the exact current owner, session ID, generation and prompt ID. Atomic `cancelPrompt` affects credentials only and fails the current attempt with `prompt-cancelled`; a stale dialog cannot cancel a newer prompt or reconnect.
+
+The controller/IPC handlers reuse the registered main-frame sender and WindowBoundary checks. Preload reconstructs validated DTOs; main copies answers into owned transient values and clears received bytes. Ordered owner-bound events and subscribe-before-snapshot prevent stale prompts reappearing. Lock, suspend, owner revocation and quit remove pending prompts and dispose transport resources. No renderer connect or terminal capability is added.
+
+The dialog uses uncontrolled inputs, clears them before awaiting submit/cancel and on prompt changes/unmount, and stores no answers in React state. It identifies the captured execution target and PROD environment, honors echo flags, keyboard focus/Enter/Escape, IME composition, reduced motion and minimum-window overflow. Multiple sessions stay separate; host-trust dialogs take precedence over credential entry.
+
+## Verification
+
+Final environment: macOS arm64, Node 24.11.1, Electron 44.7.2, Docker 28.5.2. Independent `npm run typecheck`, unit `npm test` **157/157** and `git diff --check` passed with owned loopback/Keychain host access. Root build and unsigned arm64 package passed. Full development E2E **19/19** and packaged E2E **16/16** passed on final source, zero skipped/unexpected/flaky.
+
+[Backend tests](../tests/unit/ssh-session.test.ts) and [registry tests](../tests/unit/sessions.test.ts) cover retry/exhaustion, missing private key/provider denial, zero/multi-round keyboard behavior, exact cancellation and stale/cross-session replies, timeout/lock/owner revocation and late-second-read scratch wiping. [Boundary/bridge tests](../tests/unit/credentials-boundary.test.ts) cover sender/frame/URL/owner, strict DTO bounds and byte wiping on accepted/rejected paths.
+
+[Runtime E2E](../tests/e2e/credentials.spec.ts) invokes shipped [main composition](../apps/desktop/src/main/ssh.ts), [credential controller](../apps/desktop/src/main/credentials.ts), [handler factory](../apps/desktop/src/main/credential-runtime.ts) and actual preload/UI via an external [owned fixture](../tests/fixtures/credentials/ssh.cjs). It proves real Docker/OpenSSH unsaved password and encrypted Ed25519 wrong-then-correct phrase, three-attempt exhaustion, Escape/Cancel/stale generation rejection, real loopback keyboard zero/multiple rounds/mixed echo/round exhaustion, simultaneous prompts and preserved partial input, delayed challenge cancellation, 15-second fixture prompt timeout and lock cleanup. The 6,000-character Thai input (18,000 UTF-8 bytes) produces local limit feedback, clears inputs and preserves the same prompt without IPC dispatch. Focus/Tab/return, synthetic IME composing Enter, resize and reduced motion also pass; physical Thai IME remains a manual later gate.
+
+The final empty-input screenshots at 1280×800 and 960×640 (reduced motion) were inspected. Captured target and PROD are visible, inputs/actions remain within the window and no secret value appears. Measured composited contrast: heading/Thai target/field labels 10.37:1, PROD 8.58:1, Continue 7.14:1, muted attempt text 4.82:1. Runtime receipts show safe events, no plaintext metadata and no saved passphrase; cleanup asserts zero test-Keychain items and removed fixtures. Credential test traces/video are absent; failure cleanup clears DOM before diagnostics.
+
+Independent REVIEW and focused re-review passed with no remaining actionable findings. The initial full E2E exposed a fixture race during keyed dialog transitions; the fill helper now waits for exactly one dialog matching the current registry target/attempt and expected enabled fields, without weakening assertions. Low review feedback led to UTF-8 byte preflight and consistent round-limit wording. A fresh-process smoke blocks native Keychain loads and still imports production SSH composition; ASAR inspection confirms lazy native loading and excludes project fixtures/tests/spikes. [Delivery](agent-runs/sst-011-delivery.md) records limitations and rollback.
+
+Runtime evidence invokes the production client and actual renderer/preload/controller through project-owned loopback SSH fixtures and isolated test-Keychain namespaces. Credential traces are disabled and screenshots capture empty inputs only. Required cases include wrong-then-correct phrase, retry exhaustion, Cancel/Escape, multiple keyboard fields/rounds/echo flags, zero-field challenges, concurrent session separation, stale responses/cancels, timeout/lock and delayed provider reads. Every cleanup step is attempted even if another fails; fixture/private bytes, namespace items and containers/listeners must be removed.
+
+## Boundaries and rollback
+
+No schema/dependency version change is planned. Production session composition no longer statically re-exports the Keychain binding: it must remain behind the existing guarded lazy import so binding unavailability cannot crash bootstrap. Runtime tests load native-provider exports explicitly from the main-only `secrets.js` entry.
+
+Terminal byte delivery/resize/exit remains SST-012; terminal input/Thai/IME/clipboard remains SST-013. Host/identity management and release readiness remain later tickets. Generic response labels deliberately do not reproduce arbitrary remote instructions; users must know their authentication challenge order.
+
+Rollback removes credential handlers/dialog composition and restores SST-010's credentials-required behavior after disposing pending sessions. Catalog, known-host records and OS-secret journal remain compatible; no user-data deletion or migration is needed.

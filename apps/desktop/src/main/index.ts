@@ -22,6 +22,8 @@ import { createDesktopSessions } from "./session-runtime";
 import { createSavedHostSessions } from "./ssh";
 import { createKnownHostsController } from "./known-hosts";
 import { registerKnownHostHandlers } from "./known-host-runtime";
+import { createCredentialsController } from "./credentials";
+import { registerCredentialHandlers } from "./credential-runtime";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -53,6 +55,8 @@ let desktopSessions: ReturnType<typeof createDesktopSessions> | undefined;
 let knownHostPolicy: KnownHostPolicy | undefined;
 let knownHosts: ReturnType<typeof createKnownHostsController> | undefined;
 let removeKnownHostHandlers: (() => void) | undefined;
+let credentials: ReturnType<typeof createCredentialsController> | undefined;
+let removeCredentialHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -148,6 +152,7 @@ const boundary = new WindowBoundary(
   },
   () => storageHealth,
   (owner) => {
+    credentials?.revokeOwner(owner);
     knownHosts?.revokeOwner(owner);
     desktopSessions?.revokeOwner(owner);
   },
@@ -267,6 +272,12 @@ if (ownsInstance) {
         }),
       });
     }
+    credentials = createCredentialsController({ registry: desktopSessions.registry });
+    removeCredentialHandlers = registerCredentialHandlers({
+      ipc: ipcMain,
+      boundary,
+      controller: () => credentials,
+    });
     removeKnownHostHandlers = registerKnownHostHandlers({
       ipc: ipcMain,
       boundary,
@@ -292,6 +303,10 @@ if (ownsInstance) {
       try {
         const result = boundary.bootstrap(event, args);
         if (result.ok) {
+          credentials?.register(result.value.owner, (state) => {
+            if (!event.sender.isDestroyed())
+              event.sender.send(channels.credentialStateChanged, state);
+          });
           knownHosts?.register(result.value.owner, (state) => {
             if (!event.sender.isDestroyed())
               event.sender.send(channels.trustStateChanged, state);
@@ -326,9 +341,11 @@ app.on("before-quit", (event) => {
   if (quitting) return;
   quitting = true;
   boundary.dispose();
+  credentials?.dispose();
   knownHosts?.dispose();
   knownHostPolicy?.dispose();
   removeKnownHostHandlers?.();
+  removeCredentialHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();

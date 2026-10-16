@@ -68,7 +68,7 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "answerHostTrust", "bootstrap", "onTrustState", "onWindowState", "ping",
+    "answerCredentials", "answerHostTrust", "bootstrap", "cancelCredentialPrompt", "credentialState", "onCredentialState", "onTrustState", "onWindowState", "ping",
     "prepareKnownHostRevoke", "revokeKnownHost", "trustState",
   ]);
   assert.ok(Object.isFrozen(api));
@@ -236,4 +236,39 @@ test("trust bridge filters owner, sequence, malformed data and credential prompt
   assert.deepEqual(await api.revokeKnownHost({ owner, token: "token" }), { ok: true, value: { accepted: true } });
   dispose();
   assert.equal(listeners.size, 0);
+});
+
+
+test("credential bridge fences owner/sequence and copies then wipes owned answer bytes", async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const state = (sequence: number) => ({ owner, sequence, availability: "ready", prompts: [] });
+  const received: unknown[] = [];
+  f.api.onCredentialState((value) => received.push(value));
+  f.emit(state(1)); f.emit(state(1));
+  f.emit({ ...state(2), owner: { windowId: 2, generation: 2 } });
+  f.emit({ ...state(2), values: [] });
+  f.emit(state(2));
+  assert.deepEqual(received, [state(1), state(2)]);
+  f.setReply({ ok: true, value: state(3) });
+  assert.deepEqual(await f.api.credentialState({ owner }), { ok: true, value: state(3) });
+  f.emit(state(3)); f.emit(state(4)); assert.equal(received.length, 3);
+  const value = new TextEncoder().encode("owned-answer");
+  const identity = { owner, sessionId: "s", generation: 1, promptId: "p" };
+  f.setReply({ ok: true, value: { accepted: true } });
+  assert.deepEqual(await f.api.answerCredentials({ ...identity, values: [{ id: "password", value }] }), { ok: true, value: { accepted: true } });
+  const forwarded = f.calls.at(-1)!.args[0] as { values: { value: Uint8Array }[] };
+  assert.notEqual(forwarded.values[0]!.value, value);
+  assert.ok(forwarded.values[0]!.value.every((byte) => byte === 0));
+  assert.equal(new TextDecoder().decode(value), "owned-answer");
+  const count = f.calls.length;
+  assert.deepEqual(await f.api.answerCredentials({ ...identity, values: [{ id: "password", value }], extra: true } as never), failure("invalid-request"));
+  assert.equal(f.calls.length, count);
+  assert.deepEqual(await f.api.cancelCredentialPrompt(identity), { ok: true, value: { accepted: true } });
+  assert.equal(f.calls.at(-1)!.channel, channels.cancelCredentialPrompt);
+  f.setReject();
+  assert.deepEqual(await f.api.answerCredentials({ ...identity, values: [{ id: "password", value }] }), failure("unavailable"));
+  assert.ok((f.calls.at(-1)!.args[0] as typeof forwarded).values[0]!.value.every((byte) => byte === 0));
+  f.dispose(); assert.equal(f.listeners.size, 0);
 });

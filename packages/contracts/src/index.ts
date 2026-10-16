@@ -1,3 +1,5 @@
+import type { CredentialState, CredentialStateRequest, AnswerCredentialsRequest, CancelCredentialPromptRequest, CredentialActionResponse } from "./credentials.ts";
+export * from "./credentials.ts";
 import type { TrustState, TrustStateRequest, AnswerHostTrustRequest, PrepareKnownHostRevokeRequest, RevokeKnownHostRequest, KnownHostRevokePreview, TrustActionResponse } from "./known-hosts.ts";
 export * from "./known-hosts.ts";
 /** Serializable values crossing the isolated preload boundary. */
@@ -46,6 +48,10 @@ export interface WindowStateEvent {
 }
 export interface DesktopAPI {
   bootstrap(): Promise<Result<BootstrapData>>;
+  credentialState(request: CredentialStateRequest): Promise<Result<CredentialState>>;
+  onCredentialState(callback: (state: CredentialState) => void): () => void;
+  answerCredentials(request: AnswerCredentialsRequest): Promise<Result<CredentialActionResponse>>;
+  cancelCredentialPrompt(request: CancelCredentialPromptRequest): Promise<Result<CredentialActionResponse>>;
   trustState(request: TrustStateRequest): Promise<Result<TrustState>>;
   onTrustState(callback: (state: TrustState) => void): () => void;
   answerHostTrust(request: AnswerHostTrustRequest): Promise<Result<TrustActionResponse>>;
@@ -60,6 +66,10 @@ export interface DesktopAPI {
 // These names are never exposed through contextBridge.
 export const channels = Object.freeze({
   bootstrap: "ssterm:bootstrap",
+  credentialState: "ssterm:credential-state",
+  credentialStateChanged: "ssterm:credential-state-changed",
+  answerCredentials: "ssterm:answer-credentials",
+  cancelCredentialPrompt: "ssterm:cancel-credential-prompt",
   ping: "ssterm:ping",
   windowState: "ssterm:window-state",
   trustState: "ssterm:trust-state",

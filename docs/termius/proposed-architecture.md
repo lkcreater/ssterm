@@ -1,8 +1,8 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**SST-010 / T016: `DONE`** — [production saved-host SSH authentication](../ssh-auth.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 141/141, E2E 18/18, packaged 15/15; รวมใน commit SST-010 ตามคำสั่ง “commit”. SST-001–009 committed (`0e71f80` latest); SST-011–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-011 / T017: `DONE`** — [transient authentication prompts](../auth-prompts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 157/157, E2E 19/19, packaged 16/16; รวมใน commit SST-011 ตามคำสั่ง “commit”. SST-001–010 committed (`76d473f` latest); SST-012–028 และ DS04–DS06 ยังรออนุมัติ
 
-**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-011–028 ยังรออนุมัติ รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
+**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-012–028 ยังรออนุมัติ รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
 ## Baseline / stack decision
 
@@ -155,3 +155,5 @@ SST-007 implements the HostCatalog/config resolver contracts in [domain/services
 SST-008 implements the engine-independent [SessionRegistry and desktop lifecycle composition](../sessions.md): private frozen config capture, owner/attempt generation fencing, typed metadata snapshots/prompts/errors and bounded resource teardown. Host-trust prompts stay VerifyingHost; credential prompts enter AwaitingInput. No renderer IPC or production SSH/trust/auth Adapter is added; those remain SST-009/010+.
 
 SST-010 integrates the [production saved-host SSH adapter](../ssh-auth.md) through the shared policy and Keychain provider. Main captures current inherited metadata, reads only selected published SecretRefs after trust, checks private/public key identity and owns a paused interactive shell. Missing-credential prompts and terminal byte delivery remain SST-011/012; no connect/credential renderer capability is introduced.
+
+SST-011 integrates the [credential prompt boundary](../auth-prompts.md): transient password/passphrase and selected keyboard-interactive, atomic prompt-specific cancellation, owner/sequence-fenced events and uncontrolled inputs. No server instructions, credential persistence/cache or renderer connect/terminal capability is added.

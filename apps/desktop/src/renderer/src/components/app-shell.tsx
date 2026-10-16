@@ -45,6 +45,8 @@ import {
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { useDesktopState } from "@/hooks/use-desktop-state";
+import { useCredentials } from "@/hooks/use-credentials";
+import { CredentialPrompts } from "@/components/auth/credential-prompts";
 import { useKnownHosts } from "@/hooks/use-known-hosts";
 import {
   KnownHostsWorkspace,
@@ -114,6 +116,7 @@ export function AppShell() {
   const [page, setPage] = useState<"servers" | "known-hosts">("servers");
   const owner = desktop.status === "ready" ? desktop.data.owner : undefined;
   const trust = useKnownHosts(owner);
+  const credentials = useCredentials(owner);
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
     storage?.status === "blocked" ? storageProblems[storage.code] : undefined;
@@ -307,6 +310,7 @@ export function AppShell() {
         </main>
       </SidebarProvider>
       <HostTrustDialogs state={trust.state} />
+      <CredentialPrompts state={trust.state?.prompts.length ? undefined : credentials.state} />
       <footer className="app-statusbar">
         <CircleIcon className="size-3" aria-hidden="true" />
         <span>No connections</span>

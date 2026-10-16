@@ -1,10 +1,10 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-010 / T016: `DONE`** — [production saved-host SSH authentication](ssh-auth.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 141/141, E2E 18/18, packaged 15/15; รวมใน commit SST-010 ตามคำสั่ง “commit”. SST-001–009 committed (`0e71f80` latest); SST-011–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-011 / T017: `DONE`** — [transient authentication prompts](auth-prompts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 157/157, E2E 19/19, packaged 16/16; รวมใน commit SST-011 ตามคำสั่ง “commit”. SST-001–010 committed (`76d473f` latest); SST-012–028 และ DS04–DS06 ยังรออนุมัติ
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 
-**สถานะ: M0 เสร็จแล้ว (2026-10-15)** — SST-001 ADR และ SST-002 isolated SSH/backend spike ผ่าน pipeline; ดู [ผลทดสอบ](spikes/ssh-compatibility.md) SST-003/T004–T005 ได้รับอนุมัติเฉพาะงานเอกสารและอยู่ `DONE`; ดู [domain/storage specification](termius/domain-storage-spec.md) storage/secrets/catalog services ส่งมอบแล้ว; SST-011–028 ยังรออนุมัติ
+**สถานะ: M0 เสร็จแล้ว (2026-10-15)** — SST-001 ADR และ SST-002 isolated SSH/backend spike ผ่าน pipeline; ดู [ผลทดสอบ](spikes/ssh-compatibility.md) SST-003/T004–T005 ได้รับอนุมัติเฉพาะงานเอกสารและอยู่ `DONE`; ดู [domain/storage specification](termius/domain-storage-spec.md) storage/secrets/catalog services ส่งมอบแล้ว; SST-012–028 ยังรออนุมัติ
 
 UI stack ที่ผู้ใช้เลือก: **React + Electron + shadcn/ui + Tailwind CSS** โดยใช้ TypeScript ตาม baseline
 

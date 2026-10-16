@@ -1,8 +1,8 @@
 # Implementation plan
 
-**SST-010 / T016: `DONE`** — [production saved-host SSH authentication](../ssh-auth.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 141/141, E2E 18/18, packaged 15/15; รวมใน commit SST-010 ตามคำสั่ง “commit”. SST-001–009 committed (`0e71f80` latest); SST-011–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-011 / T017: `DONE`** — [transient authentication prompts](../auth-prompts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 157/157, E2E 19/19, packaged 16/16; รวมใน commit SST-011 ตามคำสั่ง “commit”. SST-001–010 committed (`76d473f` latest); SST-012–028 และ DS04–DS06 ยังรออนุมัติ
 
-**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-011–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
+**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-012–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 
 ## Product baseline / scoped authorization
 
@@ -111,7 +111,7 @@ Fixtures ต้องเป็น project-owned local lab data ไม่ใช�
 
 Current: SST-001/T001/T047 และ SST-002/T002/T003 `DONE`; [execution record](../agent-runs/implementation-plan.md#sst-003-execution-plan--2026-10-15) บันทึก scope/pipeline ถัดไป และ [backend report](../spikes/ssh-compatibility.md) เก็บ actual M0 runtime evidence
 
-Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 คำสั่งถัดไป supersedes stop condition สำหรับ SST-003 และ SST-004; SST-011–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004 ไม่ขออนุมัติซ้ำสำหรับ SST-003 ที่ได้รับอนุมัติแล้ว
+Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 คำสั่งถัดไป supersedes stop condition สำหรับ SST-003 และ SST-004; SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004 ไม่ขออนุมัติซ้ำสำหรับ SST-003 ที่ได้รับอนุมัติแล้ว
 
 **2026-10-15 — earlier SST-004 confirmation:** “commit และทำงานถัดไปต่อ” อนุมัติ commit SST-003 (`603e600`) และ pipeline SST-004/T006/T007/T048/T049; supersedes earlier next-ticket boundary เฉพาะ SST-004 ไม่มี authorization ให้ commit SST-004, push หรือเริ่ม SST-005+ ดู [desktop evidence](../desktop-shell.md)
 
@@ -122,3 +122,5 @@ Baseline macOS arm64/local-first/account-free และ product MVP ข้าง
 **Latest SST-008 confirmation:** “commit และเริ่มงานถัดไป” authorizes committing SST-007 (`c124b1b`) then SST-008/T013–T014 lifecycle/ownership through delivery. Does not authorize SST-008 commit/push, SST-009+ or DS04–DS06.
 
 **Latest SST-010 confirmation and delivery:** “ทำ ticket ถัดไปได้เลย” authorized SST-010/T016 only on 2026-10-16; completed through independent TEST/REVIEW/DELIVER. No SST-010 commit/push or SST-011+/DS04–DS06 authorization. See [auth evidence](../ssh-auth.md) and [execution record](../agent-runs/implementation-plan.md#sst-010-execution-plan--2026-10-16).
+
+**Latest SST-011 confirmation and delivery:** “ทำงานถัดไปเลย” after SST-010 `76d473f` authorizes SST-011/T017 only and supersedes older SST-010 stop notes for that ticket. Completed through independent TEST/REVIEW/DELIVER; no SST-011 commit/push or SST-012+/DS04–DS06 authorization. See [prompt evidence](../auth-prompts.md).

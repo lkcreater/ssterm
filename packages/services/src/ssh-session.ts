@@ -1,7 +1,7 @@
 import type { SecretItem, SecretProvider } from "@ssterm/domain";
-import { createSshConnection, preparePrivateKey, type SshCredential } from "@ssterm/adapters/ssh";
+import { createSshConnection, preparePrivateKey, type SshCredential, type PrivateKeyResult } from "@ssterm/adapters/ssh";
 import type { KnownHostPolicy } from "./known-hosts.ts";
-import type { SessionAdapter, SessionContext, SessionErrorCode } from "./sessions.ts";
+import type { SessionAdapter, SessionContext, SessionErrorCode, PromptFieldId } from "./sessions.ts";
 
 /** Main-only composition. Resolved metadata is captured by the registry; bytes are fetched only after host trust. */
 export function createSavedHostSshAdapter(options: {
@@ -13,7 +13,7 @@ export function createSavedHostSshAdapter(options: {
       const { config, signal } = context;
       if (signal.aborted) return;
       const identity = config.auth.identity;
-      if (!identity || config.auth.selection !== "identity" || identity.method === "keyboard-interactive") {
+      if (!identity || config.auth.selection !== "identity") {
         context.failed("credentials-required");
         return;
       }
@@ -61,14 +61,19 @@ export function createSavedHostSshAdapter(options: {
 async function loadCredential(context: SessionContext, provider: SecretProvider): Promise<SshCredential | undefined> {
   const { signal, config } = context;
   const identity = config.auth.identity!;
-  const buffers: Buffer[] = [];
+  const buffers = new Set<Buffer>();
+  const purge = () => { for (const buffer of buffers) buffer.fill(0); buffers.clear(); };
+  // Wipe acquired bytes immediately on abort, including while another provider
+  // read or a credential prompt remains unresolved.
+  signal.addEventListener("abort", purge, { once: true });
   const fail = (code: SessionErrorCode) => { if (!signal.aborted) context.failed(code); };
-  const read = async (item: SecretItem): Promise<Buffer | undefined> => {
+  const read = async (item: SecretItem, allowMissing = false): Promise<Buffer | undefined> => {
     if (signal.aborted) return;
     try {
       const result = await provider.read(item);
       if (result.status !== "present") {
-        fail(result.status === "missing" ? "credentials-required" : "credentials-unavailable");
+        if (!(allowMissing && result.status === "missing"))
+          fail(result.status === "missing" ? "credentials-required" : "credentials-unavailable");
         return;
       }
       try {
@@ -78,17 +83,55 @@ async function loadCredential(context: SessionContext, provider: SecretProvider)
           return;
         }
         const value = Buffer.from(result.value);
-        buffers.push(value);
+        buffers.add(value);
         return value;
       } finally { result.value.fill(0); }
     } catch { fail("credentials-unavailable"); return; }
   };
+  const promptValue = async (purpose: "password" | "passphrase", attempt: 1 | 2 | 3): Promise<Buffer | undefined> => {
+    const answer = await context.requestPrompt({ kind: "credentials", purpose, attempt, fields: [{ id: purpose, echo: false }] });
+    if (signal.aborted || answer.kind !== "credentials") return;
+    return answer.use((values) => {
+      const value = values[purpose];
+      if (!value) return;
+      const copy = Buffer.from(value);
+      buffers.add(copy);
+      return copy;
+    });
+  };
   try {
+    if (identity.method === "keyboard-interactive") {
+      let rounds = 0;
+      return {
+        type: "keyboard-interactive", dispose() {},
+        async respond(fields, finish) {
+          if (signal.aborted) return;
+          if (!fields.length) { finish([]); return; }
+          if (++rounds > 3 || fields.length > 8 || fields.some((field) => typeof field.echo !== "boolean")) {
+            fail("resource-limit"); return;
+          }
+          try {
+            const ids = fields.map((_, index) => `response-${index + 1}` as PromptFieldId);
+            const answer = await context.requestPrompt({
+              kind: "credentials", purpose: "keyboard-interactive", attempt: rounds as 1 | 2 | 3,
+              fields: fields.map((field, index) => ({ id: ids[index]!, echo: field.echo })),
+            });
+            if (signal.aborted || answer.kind !== "credentials") return;
+            answer.use((values) => {
+              if (!signal.aborted) finish(ids.map((id) => values[id]!));
+            });
+          } catch { if (!signal.aborted) fail("prompt-cancelled"); }
+        },
+      };
+    }
     if (identity.method === "password") {
-      if (!identity.passwordRef) { fail("credentials-required"); return; }
-      const password = await read({ vaultId: identity.vaultId, kind: "password", ref: identity.passwordRef });
+      const saved = identity.passwordRef
+        ? await read({ vaultId: identity.vaultId, kind: "password", ref: identity.passwordRef }, true)
+        : undefined;
+      if (signal.aborted) return;
+      const password = saved ?? await promptValue("password", 1);
       if (!password || signal.aborted) return;
-      // The transport owns this copy until authentication completes or it is disposed.
+      // The transport owns this copy until authentication completes or disposal.
       const owned = Buffer.from(password);
       return { type: "password", password: owned, dispose() { owned.fill(0); } };
     }
@@ -96,17 +139,32 @@ async function loadCredential(context: SessionContext, provider: SecretProvider)
     if (!metadata) { fail("credentials-required"); return; }
     const privateKey = await read({ vaultId: metadata.vaultId, kind: "private-key", ref: metadata.privateKeyRef });
     if (!privateKey || signal.aborted) return;
-    const phrase = metadata.passphraseRef ? await read({ vaultId: metadata.vaultId, kind: "passphrase", ref: metadata.passphraseRef }) : undefined;
-    if (signal.aborted || (metadata.passphraseRef && !phrase)) return;
-    const parsed = preparePrivateKey(privateKey, phrase);
-    if (!parsed.ok) { fail(parsed.code); return; }
+    // Probe with the mature parser before any passphrase prompt: malformed and
+    // unsupported plaintext formats must fail rather than ask for unrelated input.
+    let parsed: PrivateKeyResult = preparePrivateKey(privateKey);
+    if (!parsed.ok && parsed.code === "credentials-required") {
+      const saved = metadata.passphraseRef
+        ? await read({ vaultId: metadata.vaultId, kind: "passphrase", ref: metadata.passphraseRef }, true)
+        : undefined;
+      if (signal.aborted) return;
+      if (saved) {
+        parsed = preparePrivateKey(privateKey, saved);
+        saved.fill(0); buffers.delete(saved);
+      }
+      for (let attempt = 1; !parsed.ok && attempt <= 3; attempt++) {
+        const phrase = await promptValue("passphrase", attempt as 1 | 2 | 3);
+        if (!phrase || signal.aborted) return;
+        parsed = preparePrivateKey(privateKey, phrase);
+        phrase.fill(0); buffers.delete(phrase);
+      }
+    }
+    if (!parsed.ok) { fail(parsed.code === "credentials-required" ? "invalid-private-key" : parsed.code); return; }
     const key = parsed.key;
     if (key.identity.algorithm !== metadata.algorithm || key.identity.publicKey !== metadata.publicKey || key.identity.fingerprint !== metadata.fingerprint) {
-      key.dispose();
-      fail("key-mismatch");
-      return;
+      key.dispose(); fail("key-mismatch"); return;
     }
     if (signal.aborted) { key.dispose(); return; }
     return { type: "publickey", key, dispose() { key.dispose(); } };
-  } finally { for (const buffer of buffers) buffer.fill(0); }
+  } catch { if (!signal.aborted) fail("prompt-cancelled"); return; }
+  finally { signal.removeEventListener("abort", purge); purge(); }
 }

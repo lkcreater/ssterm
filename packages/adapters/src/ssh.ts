@@ -47,7 +47,12 @@ export function preparePrivateKey(bytes: Uint8Array, passphrase?: Uint8Array): P
 
 export type SshCredential =
   | { type: "password"; password: Buffer; dispose(): void }
-  | { type: "publickey"; key: PreparedPrivateKey; dispose(): void };
+  | { type: "publickey"; key: PreparedPrivateKey; dispose(): void }
+  | {
+      type: "keyboard-interactive";
+      respond(fields: readonly { echo: boolean }[], finish: (answers: readonly Uint8Array[]) => void): Promise<void>;
+      dispose(): void;
+    };
 export type SshFailure = "auth-denied" | "timeout" | "dns" | "network" | "channel-open-failed";
 type AuthResponse = AnyAuthMethod | false | { type: "password"; username: string; password: Buffer };
 export interface SshResource {
@@ -131,10 +136,27 @@ export function createSshConnection(options: {
               if (!loaded) { respond(false); return; }
               credential = loaded;
               if (loaded.type === "password") respond({ type: "password", username: options.username, password: loaded.password });
-              else {
+              else if (loaded.type === "publickey") {
                 const key = keys.get(loaded.key);
                 if (key) respond({ type: "publickey", username: options.username, key });
                 else respond(false);
+              } else {
+                respond({
+                  type: "keyboard-interactive", username: options.username,
+                  prompt(_name, _instructions, _language, prompts, finish) {
+                    if (!live()) return;
+                    // Upstream labels/instructions never leave the transport. ssh2
+                    // handles zero-field rounds itself before invoking this callback.
+                    void loaded.respond(prompts.map(({ echo }) => ({ echo: echo === true })), (answers) => {
+                      if (!live()) return;
+                      try {
+                        // ssh2's info-response encoder requires strings. Borrowed bytes
+                        // are converted only for this synchronous protocol write.
+                        finish(answers.map((answer) => Buffer.from(answer.buffer, answer.byteOffset, answer.byteLength).toString("utf8")));
+                      } catch { fail("network"); }
+                    }).catch(() => fail("network"));
+                  },
+                });
               }
             }, () => { respond(false); fail("network"); });
           },

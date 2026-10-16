@@ -19,10 +19,12 @@ export function createDesktopSessions(options: {
   adapter?: RegistryOptions["adapter"];
   transient: TransientSecrets;
   power: SessionPowerEvents;
+  limits?: RegistryOptions["limits"];
 }) {
   const registry = new SessionRegistry({
     resolve: options.resolve,
     transient: options.transient,
+    limits: options.limits,
     // Storage/provider failures and callers without an adapter remain fail closed.
     adapter: options.adapter ?? {
       start: (context) => context.failed("subsystem-unavailable"),

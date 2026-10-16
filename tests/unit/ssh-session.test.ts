@@ -4,7 +4,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createServer, type Socket } from "node:net";
-import ssh2, { type Connection } from "ssh2";
+import ssh2, { type Connection, type KeyboardAuthContext } from "ssh2";
 import type { KeyMetadata, ResolvedHostConfig, SecretItem, SecretProvider, SecretRead } from "../../packages/domain/src/index.ts";
 import { openMetadata } from "../../packages/adapters/src/index.ts";
 import { createSshConnection, preparePrivateKey } from "../../packages/adapters/src/ssh.ts";
@@ -43,7 +43,20 @@ async function until(check: () => boolean): Promise<void> {
   while (!check() && Date.now() < limit) await new Promise((resolve) => setTimeout(resolve, 5));
   assert(check(), "Expected owned SSH fixture state within 5 seconds");
 }
-async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: boolean; holdShell?: boolean; connectMs?: number } = {}) {
+function credentials(snapshot: SessionSnapshot) {
+  const prompt = snapshot.prompt;
+  return prompt?.kind === "credentials" ? prompt : undefined;
+}
+function answerCredentials(registry: SessionRegistry, snapshot: SessionSnapshot, values: readonly string[]): void {
+  const prompt = snapshot.prompt;
+  assert(prompt?.kind === "credentials");
+  assert.equal(values.length, prompt.fields.length);
+  const input = values.map((value, index) => ({ id: prompt.fields[index]!.id, value: Buffer.from(value) }));
+  try {
+    assert(registry.answerPrompt("fixture-owner", snapshot.id, snapshot.generation, prompt.id, { kind: "credentials", values: input }).ok);
+  } finally { for (const field of input) field.value.fill(0); }
+}
+async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: boolean; holdShell?: boolean; connectMs?: number; promptMs?: number; interactive?: (auth: KeyboardAuthContext) => void } = {}) {
   const dir = mkdtempSync("/private/tmp/ssterm-ssh-session-");
   const opened = await openMetadata({ path: join(dir, "metadata.db") });
   assert(opened.ok);
@@ -60,6 +73,7 @@ async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: bo
     client.on("authentication", (auth) => {
       methods.push(auth.method);
       if (options.deny) { auth.reject(["password", "publickey", "keyboard-interactive"]); return; }
+      if (auth.method === "keyboard-interactive" && options.interactive) { options.interactive(auth); return; }
       if (auth.method === "password" && Buffer.from(auth.password).equals(password)) auth.accept();
       else if (auth.method === "publickey") auth.accept();
       else auth.reject(["password", "publickey"]);
@@ -99,7 +113,7 @@ async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: bo
   const registry = new SessionRegistry({
     resolve: () => ({ ok: true, value: resolved }),
     transient: new TransientSecrets(), adapter: createSavedHostSshAdapter({ provider, policy }),
-    limits: { connectMs: options.connectMs ?? 10_000 },
+    limits: { connectMs: options.connectMs ?? 10_000, promptMs: options.promptMs ?? 60_000 },
   });
   const snapshots: SessionSnapshot[] = [];
   registry.subscribe("fixture-owner", (snapshot) => snapshots.push(snapshot));
@@ -180,7 +194,7 @@ test("host rejection and cancellation while trust is pending read/send no creden
 });
 
 test("missing/locked/denied/unavailable/thrown credentials fail closed with finite outcomes and no auth attempt", async (t) => {
-  for (const status of ["missing", "locked", "denied", "unavailable", "error", "throw", "oversize"] as const) {
+  for (const status of ["locked", "denied", "unavailable", "error", "throw", "oversize"] as const) {
     const f = await fixture(t);
     f.reader(async () => {
       if (status === "throw") throw new Error("fixture-sensitive-provider-detail");
@@ -190,7 +204,7 @@ test("missing/locked/denied/unavailable/thrown credentials fail closed with fini
     });
     await f.connect(); f.trust();
     await until(() => f.current().state === "Failed" && f.current().cleanup === "complete");
-    assert.equal(f.current().error?.code, status === "missing" ? "credentials-required" : "credentials-unavailable");
+    assert.equal(f.current().error?.code, "credentials-unavailable");
     assert.deepEqual(f.methods, []);
     assert(!JSON.stringify(f.current()).includes("fixture-sensitive"));
     assert(f.returned.every((value) => value.every((byte) => byte === 0)));
@@ -238,8 +252,15 @@ test("metadata mismatch, absent passphrase and malformed private key stop before
     if (fault === "passphrase") saved.passphraseRef = null;
     f.resolved.auth.key = saved;
     f.reader(async (item) => ({ status: "present", value: Buffer.from(item.kind === "passphrase" ? passphrase : fault === "malformed" ? "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----" : encryptedEd) }));
-    await f.connect(); f.trust(); await until(() => f.current().state === "Failed");
-    assert.equal(f.current().error?.code, fault === "passphrase" ? "credentials-required" : fault === "malformed" ? "invalid-private-key" : "key-mismatch");
+    await f.connect(); f.trust();
+    if (fault === "passphrase") {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        await until(() => f.current().state === "AwaitingInput" && f.current().prompt?.kind === "credentials" && credentials(f.current())?.attempt === attempt);
+        answerCredentials(f.registry, f.current(), ["wrong-fixture-phrase"]);
+      }
+    }
+    await until(() => f.current().state === "Failed");
+    assert.equal(f.current().error?.code, fault === "passphrase" || fault === "malformed" ? "invalid-private-key" : "key-mismatch");
     assert.deepEqual(f.methods, []);
   }
 });
@@ -349,4 +370,184 @@ test("server rekey uses shared trust policy without another authentication trans
   assert.equal(f.current().prompt, undefined);
   assert.equal(f.reads.length, 1);
   assert.deepEqual(f.methods, ["password"]);
+});
+
+test("missing saved passwords prompt transiently after trust without storing an answer", async (t) => {
+  for (const missing of ["reference", "provider"] as const) {
+    const f = await fixture(t);
+    if (missing === "reference") f.resolved.auth.identity = { ...f.resolved.auth.identity!, passwordRef: null };
+    else f.reader(async () => ({ status: "missing" }));
+    await f.connect(); assert.deepEqual(f.reads, []); f.trust();
+    await until(() => f.current().state === "AwaitingInput");
+    const prompt = f.current().prompt;
+    assert(prompt?.kind === "credentials");
+    assert.equal(prompt.purpose, "password"); assert.equal(prompt.attempt, 1);
+    answerCredentials(f.registry, f.current(), [password.toString()]);
+    await until(() => f.current().state === "Ready");
+    assert.deepEqual(f.methods, ["password"]);
+    assert(!JSON.stringify(f.snapshots).includes(password.toString()));
+  }
+});
+
+test("incorrect saved and entered passphrases retry locally, and a correct answer opens the selected key", async (t) => {
+  const f = await fixture(t);
+  f.resolved.auth.identity = { ...f.resolved.auth.identity!, method: "key", keyId: entity.id };
+  f.resolved.auth.key = metadata(encryptedEd, passphrase);
+  f.reader(async (item) => ({ status: "present", value: Buffer.from(item.kind === "passphrase" ? "incorrect-saved-phrase" : encryptedEd) }));
+  await f.connect(); f.trust();
+  for (const [index, phrase] of ["incorrect-entered-phrase", passphrase.toString()].entries()) {
+    await until(() => f.current().state === "AwaitingInput" && f.current().prompt?.kind === "credentials" && credentials(f.current())?.attempt === index + 1);
+    assert.deepEqual(f.methods, []);
+    assert.equal(f.current().prompt?.kind === "credentials" && credentials(f.current())?.purpose, "passphrase");
+    answerCredentials(f.registry, f.current(), [phrase]);
+  }
+  await until(() => f.current().state === "Ready");
+  assert(f.methods.every((method) => method === "publickey"));
+  assert(f.returned.every((value) => value.every((byte) => byte === 0)));
+});
+
+test("credential prompt cancel, timeout, lock and owner close fence late answers", async (t) => {
+  for (const end of ["cancel", "timeout", "lock", "owner"] as const) {
+    const f = await fixture(t, { promptMs: end === "timeout" ? 50 : 60_000 });
+    f.resolved.auth.identity = { ...f.resolved.auth.identity!, passwordRef: null };
+    await f.connect(); f.trust(); await until(() => f.current().state === "AwaitingInput");
+    const snapshot = f.current(); assert(snapshot.prompt);
+    if (end === "cancel") assert(f.registry.cancelPrompt("fixture-owner", snapshot.id, snapshot.generation, snapshot.prompt.id).ok);
+    else if (end === "lock") await f.registry.lock();
+    else if (end === "owner") await f.registry.closeOwner("fixture-owner");
+    await until(() => ["Failed", "Closed"].includes(f.current().state) && f.current().cleanup === "complete");
+    if (end === "cancel" || end === "timeout") assert.equal(f.current().error?.code, end === "cancel" ? "prompt-cancelled" : "timeout");
+    assert(!f.registry.answerPrompt("fixture-owner", snapshot.id, snapshot.generation, snapshot.prompt.id, { kind: "credentials", values: [{ id: "password", value: Buffer.from(password) }] }).ok);
+    assert.deepEqual(f.methods, []);
+  }
+});
+
+test("keyboard-interactive supports zero-field and multiple echo-aware rounds without exposing upstream text", async (t) => {
+  const received: string[][] = [];
+  const f = await fixture(t, {
+    interactive(auth) {
+      auth.prompt([], "fixture-sensitive-title", "fixture-sensitive-instructions", (empty) => {
+        assert.deepEqual(empty, []);
+        auth.prompt([{ prompt: "fixture-sensitive-OTP", echo: false }, { prompt: "fixture-sensitive-public", echo: true }], "fixture-sensitive-title", (first) => {
+          received.push(first);
+          auth.prompt([{ prompt: "fixture-sensitive-final", echo: false }], "fixture-sensitive-title", (second) => { received.push(second); auth.accept(); });
+        });
+      });
+    },
+  });
+  f.resolved.auth.identity = { ...f.resolved.auth.identity!, method: "keyboard-interactive", passwordRef: null };
+  await f.connect(); f.trust();
+  await until(() => f.current().state === "AwaitingInput");
+  let prompt = f.current().prompt; assert(prompt?.kind === "credentials");
+  assert.equal(prompt.purpose, "keyboard-interactive");
+  assert.deepEqual(prompt.fields, [{ id: "response-1", echo: false }, { id: "response-2", echo: true }]);
+  answerCredentials(f.registry, f.current(), ["fixture-otp", "fixture-account"]);
+  await until(() => f.current().state === "AwaitingInput" && f.current().prompt?.kind === "credentials" && credentials(f.current())?.attempt === 2);
+  prompt = f.current().prompt; assert(prompt?.kind === "credentials");
+  assert.deepEqual(prompt.fields, [{ id: "response-1", echo: false }]);
+  answerCredentials(f.registry, f.current(), ["fixture-final"]);
+  await until(() => f.current().state === "Ready");
+  assert.deepEqual(received, [["fixture-otp", "fixture-account"], ["fixture-final"]]);
+  assert.deepEqual(f.methods, ["keyboard-interactive"]); assert.deepEqual(f.reads, []);
+  assert(!/fixture-sensitive|fixture-otp|fixture-account|fixture-final/u.test(JSON.stringify(f.snapshots)));
+});
+
+test("keyboard-interactive rejects excessive fields/rounds and server denial without authentication fallback", async (t) => {
+  for (const mode of ["fields", "rounds", "deny"] as const) {
+    const f = await fixture(t, {
+      interactive(auth) {
+        let count = 0;
+        const ask = () => {
+          count++;
+          auth.prompt(Array.from({ length: mode === "fields" ? 9 : 1 }, () => ({ prompt: "fixture-untrusted-text", echo: false })), "fixture-title", () => {
+            if (mode === "deny") auth.reject(["password", "keyboard-interactive"]);
+            else if (count < 4) ask();
+          });
+        };
+        ask();
+      },
+    });
+    f.resolved.auth.identity = { ...f.resolved.auth.identity!, method: "keyboard-interactive" };
+    await f.connect(); f.trust();
+    if (mode !== "fields") {
+      for (let round = 1; round <= (mode === "rounds" ? 3 : 1); round++) {
+        await until(() => f.current().state === "AwaitingInput" && f.current().prompt?.kind === "credentials" && credentials(f.current())?.attempt === round);
+        answerCredentials(f.registry, f.current(), ["fixture-response"]);
+      }
+    }
+    await until(() => f.current().state === "Failed" && f.current().cleanup === "complete");
+    assert.equal(f.current().error?.code, mode === "deny" ? "auth-denied" : "resource-limit");
+    assert.deepEqual(f.methods, ["keyboard-interactive"]);
+  }
+});
+
+test("a late passphrase provider response after abort is wiped and never starts authentication", async (t) => {
+  const f = await fixture(t);
+  f.resolved.auth.identity = { ...f.resolved.auth.identity!, method: "key", keyId: entity.id };
+  f.resolved.auth.key = metadata(encryptedEd, passphrase);
+  let release!: (value: SecretRead) => void;
+  f.reader(async (item) => item.kind === "private-key" ? { status: "present", value: Buffer.from(encryptedEd) } : new Promise((resolve) => { release = resolve; }));
+  await f.connect(); f.trust(); await until(() => f.reads.length === 2);
+  await f.registry.cancel("fixture-owner", f.current().id);
+  const late = Buffer.from(passphrase); release({ status: "present", value: late });
+  await until(() => late.every((byte) => byte === 0));
+  assert(f.returned.every((value) => value.every((byte) => byte === 0)));
+  assert.deepEqual(f.methods, []); assert.equal(f.current().cleanup, "complete");
+});
+
+test("simultaneous credential prompts keep their captured session target and reject crossed answers", async (t) => {
+  const f = await fixture(t);
+  f.resolved.auth.identity = { ...f.resolved.auth.identity!, passwordRef: null };
+  assert(f.registry.connect("fixture-owner", "fixture-host").ok);
+  assert(f.registry.connect("fixture-owner", "fixture-host").ok);
+  await until(() => f.registry.snapshot("fixture-owner").filter((session) => session.prompt?.kind === "host-trust").length === 2);
+  for (const snapshot of f.registry.snapshot("fixture-owner")) {
+    assert(snapshot.prompt);
+    assert(f.registry.answerPrompt("fixture-owner", snapshot.id, snapshot.generation, snapshot.prompt.id, { kind: "host-trust", decision: "accept-once" }).ok);
+  }
+  await until(() => f.registry.snapshot("fixture-owner").every((session) => session.state === "AwaitingInput"));
+  const [first, second] = f.registry.snapshot("fixture-owner"); assert(first?.prompt && second?.prompt);
+  assert(!f.registry.answerPrompt("fixture-owner", first.id, first.generation, second.prompt.id, { kind: "credentials", values: [{ id: "password", value: Buffer.from(password) }] }).ok);
+  answerCredentials(f.registry, second, [password.toString()]);
+  await until(() => f.registry.snapshot("fixture-owner").find((session) => session.id === second.id)?.state === "Ready");
+  assert.equal(f.registry.snapshot("fixture-owner").find((session) => session.id === first.id)?.state, "AwaitingInput");
+  answerCredentials(f.registry, first, [password.toString()]);
+  await until(() => f.registry.snapshot("fixture-owner").every((session) => session.state === "Ready"));
+});
+
+test("missing private keys and unavailable stored passphrases never become credential prompts", async (t) => {
+  for (const outcome of ["missing-key", "locked-phrase", "denied-phrase", "unavailable-phrase"] as const) {
+    const f = await fixture(t);
+    f.resolved.auth.identity = { ...f.resolved.auth.identity!, method: "key", keyId: entity.id };
+    f.resolved.auth.key = metadata(encryptedEd, passphrase);
+    f.reader(async (item) => {
+      if (outcome === "missing-key") return { status: "missing" };
+      if (item.kind === "private-key") return { status: "present", value: Buffer.from(encryptedEd) };
+      return { status: outcome === "locked-phrase" ? "locked" : outcome === "denied-phrase" ? "denied" : "unavailable" };
+    });
+    await f.connect(); f.trust();
+    await until(() => f.current().state === "Failed" && f.current().cleanup === "complete");
+    assert.equal(f.current().error?.code, outcome === "missing-key" ? "credentials-required" : "credentials-unavailable");
+    assert(!f.snapshots.some((snapshot) => snapshot.prompt?.kind === "credentials"));
+    assert.deepEqual(f.methods, []);
+  }
+});
+
+test("cancelled and timed-out keyboard challenges never send late responses", async (t) => {
+  for (const end of ["cancel", "timeout"] as const) {
+    let responses = 0;
+    const f = await fixture(t, {
+      promptMs: end === "timeout" ? 50 : 60_000,
+      interactive(auth) { auth.prompt([{ prompt: "fixture-sensitive-otp", echo: false }], "fixture-title", () => { responses++; auth.accept(); }); },
+    });
+    f.resolved.auth.identity = { ...f.resolved.auth.identity!, method: "keyboard-interactive" };
+    await f.connect(); f.trust(); await until(() => f.current().state === "AwaitingInput");
+    const snapshot = f.current(); assert(snapshot.prompt);
+    if (end === "cancel") assert(f.registry.cancelPrompt("fixture-owner", snapshot.id, snapshot.generation, snapshot.prompt.id).ok);
+    await until(() => f.current().state === "Failed" && f.current().cleanup === "complete");
+    assert.equal(f.current().error?.code, end === "cancel" ? "prompt-cancelled" : "timeout");
+    assert(!f.registry.answerPrompt("fixture-owner", snapshot.id, snapshot.generation, snapshot.prompt.id, { kind: "credentials", values: [{ id: "response-1", value: Buffer.from("late-owned-otp") }] }).ok);
+    assert.equal(responses, 0);
+    assert.deepEqual(f.methods, ["keyboard-interactive"]);
+  }
 });

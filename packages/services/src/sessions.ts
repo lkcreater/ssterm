@@ -76,6 +76,8 @@ export type SessionPromptSpec =
     ))
   | {
       kind: "credentials";
+      purpose?: "password" | "passphrase" | "keyboard-interactive";
+      attempt?: 1 | 2 | 3;
       fields: readonly { id: PromptFieldId; echo: boolean }[];
     };
 export type SessionPrompt = SessionPromptSpec & { id: string };
@@ -280,7 +282,9 @@ function promptSpec(input: SessionPromptSpec): SessionPromptSpec | undefined {
   }
   if (
     input.kind !== "credentials" ||
-    Object.keys(input).some((key) => !["kind", "fields"].includes(key)) ||
+    Object.keys(input).some((key) => !["kind", "fields", "purpose", "attempt"].includes(key)) ||
+    (input.purpose !== undefined && !["password", "passphrase", "keyboard-interactive"].includes(input.purpose)) ||
+    (input.attempt !== undefined && ![1, 2, 3].includes(input.attempt)) ||
     !Array.isArray(input.fields) ||
     input.fields.length < 1 ||
     input.fields.length > 8
@@ -301,7 +305,11 @@ function promptSpec(input: SessionPromptSpec): SessionPromptSpec | undefined {
     ids.add(field.id);
     fields.push({ id: field.id, echo: field.echo });
   }
-  return { kind: "credentials", fields };
+  return {
+    kind: "credentials", fields,
+    ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
+    ...(input.attempt === undefined ? {} : { attempt: input.attempt }),
+  };
 }
 
 /** Main-only lifecycle and ownership. It exposes metadata projections, never resolved config or credential bytes. */
@@ -398,6 +406,14 @@ export class SessionRegistry {
       observers.delete(callback);
       if (observers.size === 0) this.#observers.delete(ownerId);
     };
+  }
+  cancelPrompt(ownerId: string, id: string, generation: number, promptId: string): SessionResult<void> {
+    const current = this.#owned(ownerId, id);
+    if (!current) return failure("not-found");
+    if (!this.#live(current) || current.generation !== generation || !current.prompt || current.prompt.spec.id !== promptId || current.prompt.spec.kind !== "credentials")
+      return failure("invalid-state");
+    this.#fail(current, "prompt-cancelled");
+    return success(undefined);
   }
   answerPrompt(
     ownerId: string,

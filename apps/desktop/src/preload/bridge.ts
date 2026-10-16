@@ -1,5 +1,9 @@
 import {
   channels,
+  isCredentialState, isCredentialStateRequest, isAnswerCredentialsRequest,
+  isCancelCredentialPromptRequest, isCredentialActionResponse,
+  type CredentialState, type CredentialStateRequest, type AnswerCredentialsRequest,
+  type CancelCredentialPromptRequest,
   isTrustState,
   isTrustStateRequest,
   isAnswerHostTrustRequest,
@@ -46,6 +50,14 @@ export function createDesktopBridge(transport: BridgeTransport): {
   let owner: Owner | undefined;
   let sequence = -1;
   let trustSequence = -1;
+  let credentialSequence = -1;
+  const credentialCallbacks = new Set<(state: CredentialState) => void>();
+  const credentialListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !owner || !isCredentialState(value) ||
+      value.owner.windowId !== owner.windowId || value.owner.generation !== owner.generation || value.sequence <= credentialSequence) return;
+    credentialSequence = value.sequence;
+    for (const callback of credentialCallbacks) callback(value);
+  };
   const trustCallbacks = new Set<(state: TrustState) => void>();
   const trustListener = (_event: unknown, value: unknown): void => {
     if (
@@ -101,6 +113,7 @@ export function createDesktopBridge(transport: BridgeTransport): {
           owner = { ...next.owner };
           sequence = next.window.sequence;
           trustSequence = -1;
+          credentialSequence = -1;
         } else if (
           next.owner.windowId === owner.windowId &&
           next.owner.generation === owner.generation
@@ -119,6 +132,44 @@ export function createDesktopBridge(transport: BridgeTransport): {
         [{ owner: { ...request.owner }, requestId: request.requestId }],
         isPingResponse,
       );
+    },
+    async credentialState(request: CredentialStateRequest) {
+      if (!isCredentialStateRequest(request)) return failure("invalid-request");
+      const result = await invoke(channels.credentialState, [{ owner: { ...request.owner } }], isCredentialState);
+      if (!result.ok) return result;
+      if (!owner || result.value.owner.windowId !== owner.windowId || result.value.owner.generation !== owner.generation ||
+        request.owner.windowId !== owner.windowId || request.owner.generation !== owner.generation) return failure("stale-owner");
+      credentialSequence = Math.max(credentialSequence, result.value.sequence);
+      return result;
+    },
+    onCredentialState(callback: (state: CredentialState) => void): () => void {
+      if (disposed || typeof callback !== "function") return () => {};
+      let active = true;
+      const subscribed = (state: CredentialState) => { if (active) callback(state); };
+      const unsubscribe = () => {
+        if (!active) return;
+        active = false;
+        credentialCallbacks.delete(subscribed);
+        if (credentialCallbacks.size === 0) transport.removeListener(channels.credentialStateChanged, credentialListener);
+        subscriptions.delete(unsubscribe);
+      };
+      if (credentialCallbacks.size === 0) transport.on(channels.credentialStateChanged, credentialListener);
+      credentialCallbacks.add(subscribed);
+      subscriptions.add(unsubscribe);
+      return unsubscribe;
+    },
+    async answerCredentials(request: AnswerCredentialsRequest) {
+      if (!isAnswerCredentialsRequest(request)) return failure("invalid-request");
+      const values = request.values.map((field) => ({ id: field.id, value: new Uint8Array(field.value) }));
+      try {
+        return await invoke(channels.answerCredentials, [{ owner: { ...request.owner }, sessionId: request.sessionId,
+          generation: request.generation, promptId: request.promptId, values }], isCredentialActionResponse);
+      } finally { for (const field of values) field.value.fill(0); }
+    },
+    cancelCredentialPrompt(request: CancelCredentialPromptRequest) {
+      if (!isCancelCredentialPromptRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.cancelCredentialPrompt, [{ owner: { ...request.owner }, sessionId: request.sessionId,
+        generation: request.generation, promptId: request.promptId }], isCredentialActionResponse);
     },
     async trustState(request: TrustStateRequest) {
       if (!isTrustStateRequest(request)) return failure("invalid-request");

@@ -1,6 +1,6 @@
 # SST-010 — Saved-host SSH authentication
 
-**2026-10-16 · T016 · DONE through independent TEST/REVIEW/DELIVER; included in the authorized SST-010 delivery commit.** Authorized by “ทำ ticket ถัดไปได้เลย” after SST-009 commit `0e71f80`. No commit/push or SST-011+ implementation is included. [Execution plan](agent-runs/implementation-plan.md).
+**2026-10-16 · T016 · DONE through independent TEST/REVIEW/DELIVER; committed `76d473f`.** Authorized by “ทำ ticket ถัดไปได้เลย” after SST-009 commit `0e71f80`. A subsequent “commit” instruction authorized this commit; no push. Current prompt behavior is documented in [SST-011](auth-prompts.md). [Execution plan](agent-runs/implementation-plan.md).
 
 ## Production composition
 
@@ -10,7 +10,7 @@ Each connect/reconnect reads the current catalog, resolves host/group inheritanc
 
 The [main-only transport](../packages/adapters/src/ssh.ts) uses pinned ssh2 1.17.0 with its algorithm negotiation defaults. Its raw `hostVerifier` key goes through the production shared policy before the selected authentication handler reads any credential. Unknown/rejected/changed/cancelled trust cannot read or send credentials; Remember/Replace must complete before authentication. Matching trust needs no prompt. Rekeys also consult the policy without repeating the initial Authenticating transition; a rekey requiring a new prompt fails closed because the current lifecycle permits trust prompts only during initial verification.
 
-Successful SSH authentication opens an interactive `xterm-256color` shell (80×24). Session Ready requires that channel, not just an authenticated TCP connection. Both output streams stay paused without a data consumer until SST-012 implements ordered terminal delivery. No input, execution command, raw transport, credential or connect capability is added to preload/renderer; host/identity UI remains SST-016/017.
+Successful SSH authentication opens an interactive `xterm-256color` shell (80×24). Session Ready requires that channel, not just an authenticated TCP connection. Both output streams stay paused without a data consumer until SST-012 implements ordered terminal delivery. SST-010 adds no input, execution command, raw transport, credential or connect capability to preload/renderer; SST-011 later adds only the narrow credential prompt boundary; host/identity UI remains SST-016/017.
 
 ## Supported credentials and errors
 
@@ -18,7 +18,7 @@ The selected supported private-key files are **single-key OpenSSH Ed25519** and 
 
 Only published opaque references reach SecretProvider. Provider returns and owned byte copies are overwritten, including values arriving after cancellation. Password/passphrase reads are bounded to 16 KiB each, private-key reads to 64 KiB. Transport/parser references are discarded after authentication, error or disposal; JS garbage collection and upstream crypto objects prevent a guarantee that every internal copy is overwritten.
 
-Fixed public errors distinguish `credentials-required`, `credentials-unavailable`, `invalid-private-key`, `unsupported-private-key` and `key-mismatch`. Missing password/secret/passphrase and keyboard-interactive configurations require SST-011 prompts; they do not silently become an empty password or another method. A deliberately stored empty password remains an explicit credential. Wrong credentials map to `auth-denied`; DNS, timeout, network and shell-open errors retain their existing finite codes. Raw provider/ssh2 messages, stacks and attached fields are never public.
+Fixed public errors distinguish `credentials-required`, `credentials-unavailable`, `invalid-private-key`, `unsupported-private-key` and `key-mismatch`. [SST-011](auth-prompts.md) now supplies transient password/passphrase prompts and selected keyboard-interactive; they do not silently become an empty password or another method. A deliberately stored empty password remains an explicit credential. Wrong credentials map to `auth-denied`; DNS, timeout, network and shell-open errors retain their existing finite codes. Raw provider/ssh2 messages, stacks and attached fields are never public.
 
 ## Ownership and cleanup
 
@@ -40,6 +40,6 @@ Independent REVIEW and focused re-review passed with no unresolved findings abov
 
 ## Remaining scope
 
-Missing-credential/passphrase retry/cancel prompts and keyboard-interactive are SST-011. Terminal byte delivery/resize/exit is SST-012; input/Thai/IME/clipboard is SST-013; measured flow-control budgets are SST-014. Connect/identity management UI is SST-016/017. SFTP/tunnel callers and signing/release readiness remain later tickets. This service acceptance does not imply that the application already presents a usable terminal workspace.
+Missing-credential/passphrase retry/cancel prompts and selected keyboard-interactive are delivered by [SST-011](auth-prompts.md). The verification counts in this document record SST-010; current regression evidence is in that handoff. Terminal byte delivery/resize/exit is SST-012; input/Thai/IME/clipboard is SST-013; measured flow-control budgets are SST-014. Connect/identity management UI is SST-016/017. SFTP/tunnel callers and signing/release readiness remain later tickets. This service acceptance does not imply that the application already presents a usable terminal workspace.
 
 Rollback is a source change reverting the production adapter injection to the unavailable adapter; persisted catalog, secrets and known-host records need no migration or deletion. Dispose owned sessions before closing storage, preserve user data and revert only task-owned changes if requested.
