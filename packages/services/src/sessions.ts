@@ -4,6 +4,9 @@ import {
   type ResolvedHostConfig,
   type StoreResult,
   type HostKeyAlgorithm,
+  type TerminalChannel,
+  type TerminalEnd,
+  type TerminalStream,
 } from "@ssterm/domain";
 import { TransientSecrets, type TransientSecret } from "./transient.ts";
 
@@ -120,6 +123,8 @@ export interface SessionSnapshot {
   };
   prompt?: SessionPrompt;
   error?: SessionError;
+  /** Present only when the remote side ended this generation. */
+  end?: TerminalEnd;
   cleanup: "none" | "pending" | "complete" | "timeout" | "failed";
 }
 export interface SessionResource {
@@ -135,9 +140,10 @@ export interface SessionContext {
   verifyingHost(): boolean;
   authenticating(): boolean;
   requestPrompt(spec: SessionPromptSpec): Promise<SessionPromptAnswer>;
-  ready(terminal: SessionResource): boolean;
+  ready(terminal: TerminalChannel): boolean;
   failed(code: SessionErrorCode): void;
-  ended(): void;
+  /** Remote end; omitted detail means EOF without status. */
+  ended(end?: TerminalEnd): void;
 }
 export interface SessionAdapter {
   start(context: SessionContext): void | Promise<void>;
@@ -176,6 +182,9 @@ interface Generation {
   active: boolean;
   controller: AbortController;
   config?: ResolvedHostConfig;
+  target?: SessionSnapshot["target"];
+  terminal?: TerminalChannel;
+  end?: TerminalEnd;
   error?: SessionError;
   prompt?: PendingPrompt;
   resources: Set<ResourceEntry>;
@@ -591,6 +600,13 @@ export class SessionRegistry {
     this.#locked = false;
     return true;
   }
+  /** The single terminal capability fence: exact owner, session and generation while live and Ready. */
+  terminal(ownerId: string, id: string, generation: number): TerminalStream | undefined {
+    const current = this.#owned(ownerId, id);
+    return current?.generation === generation && current.state === "Ready" && this.#live(current)
+      ? current.terminal
+      : undefined;
+  }
   dispose(): Promise<void> {
     this.#disposed = true;
     const drained = this.lock();
@@ -646,6 +662,17 @@ export class SessionRegistry {
           return;
         }
         current.config = freeze(structuredClone(result.value));
+        const config = current.config;
+        // Kept after teardown releases config so an ended session still names its target.
+        current.target = {
+          label: config.hostRef.label,
+          address: config.address,
+          port: config.port.value,
+          username: config.auth.identity?.username ?? null,
+          environment: config.environment,
+          hostRevision: config.hostRef.revision,
+          catalogRevision: config.catalogRevision,
+        };
         this.#emit(current);
         if (!this.#live(current)) return;
         const context: SessionContext = Object.freeze({
@@ -660,7 +687,7 @@ export class SessionRegistry {
             this.#transition(current, ["VerifyingHost"], "Authenticating"),
           requestPrompt: (spec: SessionPromptSpec) =>
             this.#prompt(current, spec),
-          ready: (terminal: SessionResource) => {
+          ready: (terminal: TerminalChannel) => {
             if (
               !this.#live(current) ||
               current.state !== "Authenticating" ||
@@ -670,6 +697,7 @@ export class SessionRegistry {
               return false;
             }
             if (!this.#own(current, terminal)) return false;
+            current.terminal = terminal;
             current.state = "Ready";
             this.#scheduler.clear(current.connectTimer);
             delete current.connectTimer;
@@ -678,8 +706,9 @@ export class SessionRegistry {
           },
           failed: (code: SessionErrorCode) =>
             this.#fail(current, finiteCode(code)),
-          ended: () => {
+          ended: (end?: TerminalEnd) => {
             if (this.#live(current)) {
+              current.end = end ?? { kind: "eof" };
               this.#fence(current, "Closing");
               void this.#teardown(current);
             }
@@ -858,6 +887,7 @@ export class SessionRegistry {
       current.teardownDone = true;
       current.resources.clear();
       delete current.config;
+      delete current.terminal;
       if (current.state === "Closing") current.state = "Closed";
       this.#emit(current);
       complete();
@@ -865,26 +895,14 @@ export class SessionRegistry {
     return current.teardown;
   }
   #snapshot(current: Generation): SessionSnapshot {
-    const config = current.config;
     return {
       id: current.id,
       generation: current.generation,
       hostId: current.hostId,
       state: current.state,
       cleanup: current.cleanup,
-      ...(config
-        ? {
-            target: {
-              label: config.hostRef.label,
-              address: config.address,
-              port: config.port.value,
-              username: config.auth.identity?.username ?? null,
-              environment: config.environment,
-              hostRevision: config.hostRef.revision,
-              catalogRevision: config.catalogRevision,
-            },
-          }
-        : {}),
+      ...(current.target ? { target: { ...current.target } } : {}),
+      ...(current.end ? { end: { ...current.end } } : {}),
       ...(current.prompt
         ? { prompt: structuredClone(current.prompt.spec) }
         : {}),

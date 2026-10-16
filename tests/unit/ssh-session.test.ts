@@ -4,10 +4,11 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createServer, type Socket } from "node:net";
-import ssh2, { type Connection, type KeyboardAuthContext } from "ssh2";
+import { setTimeout as delay } from "node:timers/promises";
+import ssh2, { type Connection, type KeyboardAuthContext, type ServerChannel, type Session, type WindowChangeInfo } from "ssh2";
 import type { KeyMetadata, ResolvedHostConfig, SecretItem, SecretProvider, SecretRead } from "../../packages/domain/src/index.ts";
 import { openMetadata } from "../../packages/adapters/src/index.ts";
-import { createSshConnection, preparePrivateKey } from "../../packages/adapters/src/ssh.ts";
+import { createSshConnection, preparePrivateKey, TERMINAL_OUTPUT_WINDOW, TERMINAL_INPUT_BACKLOG } from "../../packages/adapters/src/ssh.ts";
 import { createSavedHostSshAdapter, KnownHostPolicy, SessionRegistry, TransientSecrets, type SessionSnapshot } from "../../packages/services/src/index.ts";
 
 const passphrase = Buffer.from("owned-fixture-passphrase");
@@ -56,7 +57,7 @@ function answerCredentials(registry: SessionRegistry, snapshot: SessionSnapshot,
     assert(registry.answerPrompt("fixture-owner", snapshot.id, snapshot.generation, prompt.id, { kind: "credentials", values: input }).ok);
   } finally { for (const field of input) field.value.fill(0); }
 }
-async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: boolean; holdShell?: boolean; connectMs?: number; promptMs?: number; interactive?: (auth: KeyboardAuthContext) => void } = {}) {
+async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: boolean; holdShell?: boolean; connectMs?: number; promptMs?: number; interactive?: (auth: KeyboardAuthContext) => void; shell?: (channel: ServerChannel, session: Session) => void } = {}) {
   const dir = mkdtempSync("/private/tmp/ssterm-ssh-session-");
   const opened = await openMetadata({ path: join(dir, "metadata.db") });
   assert(opened.ok);
@@ -84,7 +85,10 @@ async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: bo
       session.on("shell", (acceptShell, rejectShell) => {
         shells++;
         if (options.denyShell) { rejectShell?.(); return; }
-        finishShell = () => { const channel = acceptShell(); channel.write("owned fixture output"); };
+        finishShell = () => {
+          const channel = acceptShell();
+          if (options.shell) options.shell(channel, session); else channel.write("owned fixture output");
+        };
         if (!options.holdShell) finishShell();
       });
     }));
@@ -265,13 +269,15 @@ test("metadata mismatch, absent passphrase and malformed private key stop before
   }
 });
 
-test("auth denial does not fall back; channel rejection has a finite error; remote close cleans resources", async (t) => {
+test("auth denial does not fall back; channel rejection has a finite error; connection loss after Ready fails and cleans resources", async (t) => {
   for (const mode of ["deny", "denyShell", "close"] as const) {
     const f = await fixture(t, { deny: mode === "deny", denyShell: mode === "denyShell" });
     await f.connect(); f.trust();
     if (mode === "close") {
       await until(() => f.current().state === "Ready"); f.clients[0]!.end();
-      await until(() => f.current().state === "Closed");
+      await until(() => f.current().state === "Failed");
+      assert.equal(f.current().error?.code, "network");
+      assert.equal(f.current().end, undefined);
     } else {
       await until(() => f.current().state === "Failed");
       assert.equal(f.current().error?.code, mode === "deny" ? "auth-denied" : "channel-open-failed");
@@ -550,4 +556,193 @@ test("cancelled and timed-out keyboard challenges never send late responses", as
     assert.equal(responses, 0);
     assert.deepEqual(f.methods, ["keyboard-interactive"]);
   }
+});
+
+const owner = "fixture-owner";
+async function readyStream(f: Awaited<ReturnType<typeof fixture>>) {
+  await f.connect(); f.trust(); await until(() => f.current().state === "Ready");
+  const { id, generation } = f.current();
+  const stream = f.registry.terminal(owner, id, generation);
+  assert(stream);
+  return stream;
+}
+const length = (chunks: readonly Uint8Array[]) => chunks.reduce((total, chunk) => total + chunk.length, 0);
+
+test("terminal output is held until open, then merges stdout/stderr in arrival order as owned chunks with consecutive sequences and bounded credit", async (t) => {
+  let server!: ServerChannel;
+  const f = await fixture(t, { shell(channel) { server = channel; channel.write("pre-open|"); } });
+  const stream = await readyStream(f);
+  await delay(50);
+  const chunks: Uint8Array[] = [], sequences: number[] = [];
+  let unacked = 0, maxUnacked = 0, largest = 0;
+  stream.open((chunk, sequence) => {
+    chunks.push(chunk); sequences.push(sequence);
+    unacked += chunk.length; maxUnacked = Math.max(maxUnacked, unacked); largest = Math.max(largest, chunk.length);
+  });
+  stream.open(() => assert.fail("a second consumer must be ignored"));
+  const settle = async (expected: string) => {
+    await until(() => Buffer.concat(chunks).toString() === expected);
+    stream.ack(unacked); unacked = 0;
+  };
+  await settle("pre-open|");
+  server.write("A"); await settle("pre-open|A");
+  server.stderr.write("B"); await settle("pre-open|AB");
+  server.write("C"); await settle("pre-open|ABC");
+
+  const bulk = Buffer.from(Array.from({ length: 300_000 }, (_, index) => `${String(index).padStart(10, "0")}\n`).join(""));
+  assert(bulk.length >= 3 * 1_048_576);
+  const expected = Buffer.concat([Buffer.from("pre-open|ABC"), bulk]);
+  server.write(bulk);
+  let stalls = 0;
+  while (length(chunks) < expected.length) {
+    await until(() => unacked >= TERMINAL_OUTPUT_WINDOW || length(chunks) === expected.length);
+    if (unacked >= TERMINAL_OUTPUT_WINDOW) {
+      const held = length(chunks);
+      await delay(30);
+      assert.equal(length(chunks), held, "output must stop while the credit window is exhausted");
+      stalls++;
+    }
+    stream.ack(unacked); unacked = 0;
+  }
+  assert(stalls >= 10, `expected repeated credit pauses, saw ${stalls}`);
+  assert(maxUnacked <= TERMINAL_OUTPUT_WINDOW + largest);
+  assert(Buffer.concat(chunks).equals(expected));
+  assert.deepEqual(sequences, sequences.map((_, index) => index));
+  assert(chunks.every((chunk) => chunk.byteOffset === 0 && chunk.buffer.byteLength === chunk.byteLength));
+});
+
+test("terminal input reaches the remote in call order from owned copies", async (t) => {
+  const inbound: Buffer[] = [];
+  const f = await fixture(t, { shell(channel) { channel.on("data", (data: Buffer) => inbound.push(Buffer.from(data))); } });
+  const stream = await readyStream(f);
+  let expected = "";
+  for (let index = 0; index < 1000; index++) {
+    const bytes = Buffer.from(`${index},`);
+    expected += `${index},`;
+    assert.equal(stream.write(bytes), "ok");
+    bytes.fill(0);
+  }
+  await until(() => length(inbound) >= expected.length);
+  assert.equal(Buffer.concat(inbound).toString(), expected);
+});
+
+test("input over the backlog bound is refused without queuing, and writes after the remote end are closed", async (t) => {
+  let server!: ServerChannel;
+  const f = await fixture(t, { shell(channel) { server = channel; channel.pause(); } });
+  const stream = await readyStream(f);
+  stream.open(() => {});
+  const accepted: Buffer[] = [];
+  let result: string = "ok";
+  for (let index = 0; index < 256 && result === "ok"; index++) {
+    const bytes = Buffer.alloc(65_536, (index % 250) + 1);
+    result = stream.write(bytes);
+    if (result === "ok") accepted.push(Buffer.from(bytes));
+    bytes.fill(0);
+  }
+  assert.equal(result, "busy");
+  assert.equal(stream.write(Buffer.alloc(TERMINAL_INPUT_BACKLOG, 0xff)), "busy");
+  const inbound: Buffer[] = [];
+  server.on("data", (data: Buffer) => inbound.push(Buffer.from(data)));
+  server.resume();
+  const sent = Buffer.concat(accepted);
+  await until(() => length(inbound) >= sent.length);
+  await delay(30);
+  assert(Buffer.concat(inbound).equals(sent), "accepted input arrives intact and refused input is never sent");
+  server.end();
+  await until(() => f.current().state === "Closed");
+  assert.deepEqual(f.current().end, { kind: "eof" });
+  assert.equal(stream.write(Buffer.from("late")), "closed");
+});
+
+test("resize sends a remote window-change with columns and rows in order", async (t) => {
+  const sizes: WindowChangeInfo[] = [];
+  const f = await fixture(t, {
+    shell(_channel, session) { session.on("window-change", (accept, _reject, info) => { sizes.push(info); accept?.(); }); },
+  });
+  const stream = await readyStream(f);
+  stream.resize(120, 40);
+  await until(() => sizes.length === 1);
+  assert.deepEqual({ cols: sizes[0]!.cols, rows: sizes[0]!.rows }, { cols: 120, rows: 40 });
+});
+
+test("remote exit status, signal and EOF end the session only after the final output chunk, even while output is held", async (t) => {
+  for (const [mode, expected] of [
+    ["status", { kind: "exit", code: 7 }],
+    ["signal", { kind: "signal", signal: "SIGKILL" }],
+    ["eof", { kind: "eof" }],
+  ] as const) {
+    let server!: ServerChannel;
+    const f = await fixture(t, { shell(channel) { server = channel; } });
+    const stream = await readyStream(f);
+    const log: string[] = [];
+    f.registry.subscribe(owner, (snapshot) => { if (snapshot.end && !log.includes("end")) log.push("end"); });
+    server.write(Buffer.alloc(TERMINAL_OUTPUT_WINDOW * 2, 0x61));
+    server.write("tail");
+    if (mode === "status") server.exit(7);
+    else if (mode === "signal") server.exit("KILL", false, "fixture-sensitive-signal-text");
+    server.end();
+    await delay(50);
+    assert.equal(f.current().state, "Ready", "an unviewed stream holds the remote end");
+    const chunks: Uint8Array[] = [];
+    let unacked = 0, acking = false;
+    stream.open((chunk) => {
+      chunks.push(chunk); log.push("output");
+      if (acking) stream.ack(chunk.length); else unacked += chunk.length;
+    });
+    await until(() => unacked >= TERMINAL_OUTPUT_WINDOW);
+    await delay(30);
+    assert.equal(f.current().state, "Ready", "a credit-paused stream holds the remote end");
+    acking = true; stream.ack(unacked);
+    await until(() => f.current().state === "Closed" && f.current().cleanup === "complete");
+    assert.deepEqual(f.current().end, expected);
+    assert.equal(f.current().error, undefined);
+    assert.equal(log.indexOf("end"), log.length - 1);
+    assert(Buffer.concat(chunks).toString().endsWith("tail"));
+    assert.equal(length(chunks), TERMINAL_OUTPUT_WINDOW * 2 + 4);
+    assert.equal(stream.write(Buffer.from("late")), "closed");
+    assert(!JSON.stringify(f.snapshots).includes("fixture-sensitive"));
+  }
+});
+
+test("an exit received before connection loss is still reported as the remote end", async (t) => {
+  let server!: ServerChannel;
+  const f = await fixture(t, { shell(channel) { server = channel; channel.write("unviewed output"); } });
+  await readyStream(f);
+  server.exit(7);
+  f.clients[0]!.end();
+  await until(() => f.current().state === "Closed" && f.current().cleanup === "complete");
+  assert.deepEqual(f.current().end, { kind: "exit", code: 7 });
+  assert.equal(f.current().error, undefined);
+});
+
+test("local close has no remote end and revokes the stream; reconnect yields a fresh stream that lock revokes", async (t) => {
+  const f = await fixture(t);
+  await f.connect();
+  const { id } = f.current();
+  assert.equal(f.registry.terminal(owner, id, 1), undefined, "not Ready");
+  f.trust(); await until(() => f.current().state === "Ready");
+  const first = f.registry.terminal(owner, id, 1);
+  assert(first);
+  assert.equal(f.registry.terminal("other-owner", id, 1), undefined);
+  assert.equal(f.registry.terminal(owner, id, 2), undefined);
+  await f.registry.close(owner, id);
+  assert.equal(f.current().state, "Closed");
+  assert.equal(f.current().end, undefined);
+  assert.equal(f.current().target?.label, "Owned SSH");
+  assert.equal(f.registry.terminal(owner, id, 1), undefined);
+  assert.equal(first.write(Buffer.from("late")), "closed");
+
+  assert(f.registry.reconnect(owner, id).ok);
+  await until(() => !!f.current().prompt); f.trust();
+  await until(() => f.current().state === "Ready");
+  assert.equal(f.current().generation, 2);
+  assert.equal(f.registry.terminal(owner, id, 1), undefined, "stale generation");
+  const second = f.registry.terminal(owner, id, 2);
+  assert(second && second !== first);
+  const sequences: number[] = [];
+  second.open((_chunk, sequence) => sequences.push(sequence));
+  await until(() => sequences.length > 0);
+  assert.equal(sequences[0], 0);
+  await f.registry.lock();
+  assert.equal(f.registry.terminal(owner, id, 2), undefined, "locked");
 });

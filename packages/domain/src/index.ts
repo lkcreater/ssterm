@@ -271,6 +271,28 @@ export interface SecretProvider {
   write(item: SecretItem, value: Uint8Array): Promise<SecretWrite>;
   delete(item: SecretItem): Promise<SecretDelete>;
 }
+/** How the remote side ended one interactive channel. Local close/cancel never produces one. */
+export type TerminalEnd =
+  | { kind: 'exit'; code: number }
+  | { kind: 'signal'; signal: string }
+  | { kind: 'eof' };
+export type TerminalWrite = 'ok' | 'busy' | 'closed';
+/** Main-only byte stream of one session generation. Output stays paused until `open`, then flows within a fixed unacknowledged window. */
+export interface TerminalStream {
+  /** Binds the single consumer and returns true; later calls bind nothing and return false. Chunks are exact-length owned copies numbered 0, 1, 2, ... without gaps. `output` must not throw. */
+  open(output: (chunk: Uint8Array, sequence: number) => void): boolean;
+  /** Returns credit for consumed bytes, clamped to bytes delivered. */
+  ack(bytes: number): void;
+  /** Copies input in call order. `busy`: backlog over the fixed bound, nothing queued. */
+  write(bytes: Uint8Array): TerminalWrite;
+  /** Remote PTY size; the caller validates integer ranges. */
+  resize(columns: number, rows: number): void;
+}
+/** Lifecycle owner's view. Only the session registry holds this; consumers receive `TerminalStream`. */
+export interface TerminalChannel extends TerminalStream {
+  dispose(): void;
+  readonly drained: Promise<void>;
+}
 export interface BackupManifest {
   format: 'ssterm-metadata-backup-v1';
   schemaVersion: number;

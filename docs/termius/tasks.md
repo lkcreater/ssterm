@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-011 / T017: `DONE`** — [transient authentication prompts](../auth-prompts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 157/157, E2E 19/19, packaged 16/16; รวมใน commit SST-011 ตามคำสั่ง “commit”. SST-001–010 committed (`76d473f` latest); SST-012–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-012 / T018: `DONE`** — [terminal byte stream / resize / exit](../terminal.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 173/173, E2E 20/20, packaged 17/17; รวมใน commit SST-012 ตามคำสั่ง “commit และทำงานทัดไป”. SST-001–011 committed (`4ded3e9` latest); SST-013–028 และ DS04–DS06 ยังรออนุมัติ
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -43,7 +43,7 @@
 - [x] **T015 / SST-009:** KnownHost repository/policy และ accept-once/remember/reject/changed-key UI — [evidence](../known-hosts.md)
 - [x] **T016 / SST-010:** password/imported key connection, error translation, supported format list
 - [x] **T017 / SST-011:** passphrase/keyboard-interactive prompt broker, cancel/retry/timeout/lifetime
-- [ ] **T018 / SST-012:** terminal renderer, ordered stream, input routing, PTY resize, EOF/exit
+- [x] **T018 / SST-012:** terminal renderer, ordered stream, input routing, PTY resize, EOF/exit
 - [ ] **T019 / SST-013:** Thai/Unicode/IME, clipboard/paste, focus/shortcuts/search/URL behavior
 - [ ] **T020 / SST-014:** bounded queues/scrollback/concurrency, backpressure และ measured performance budget
 - [ ] **T021 / SST-015:** unexpected disconnect/manual reconnect/cancel/app quit cleanup
@@ -98,7 +98,7 @@
 
 ## Task bookkeeping
 
-Current owner: root ปิด SST-011/T017 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ; รวมใน commit SST-011 ตามคำสั่ง “commit”. SST-001–010 committed (`76d473f` latest); SST-012 เป็นต้นไปยังไม่เริ่ม
+Current owner: root ปิด SST-012/T018 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ; รวมใน commit SST-012 ตามคำสั่ง “commit และทำงานทัดไป”. SST-001–011 committed (`4ded3e9` latest); SST-013 เป็นต้นไปยังไม่เริ่ม
 
 T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production SSH/session tasks ยังไม่ถูกติ๊ก
 

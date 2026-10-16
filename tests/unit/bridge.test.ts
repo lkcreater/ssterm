@@ -68,8 +68,9 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "answerCredentials", "answerHostTrust", "bootstrap", "cancelCredentialPrompt", "credentialState", "onCredentialState", "onTrustState", "onWindowState", "ping",
-    "prepareKnownHostRevoke", "revokeKnownHost", "trustState",
+    "ackTerminal", "answerCredentials", "answerHostTrust", "bootstrap", "cancelCredentialPrompt", "credentialState", "onCredentialState",
+    "onTerminalOutput", "onTerminalState", "onTrustState", "onWindowState", "openTerminal", "ping",
+    "prepareKnownHostRevoke", "resizeTerminal", "revokeKnownHost", "terminalState", "trustState", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -271,4 +272,93 @@ test("credential bridge fences owner/sequence and copies then wipes owned answer
   assert.deepEqual(await f.api.answerCredentials({ ...identity, values: [{ id: "password", value }] }), failure("unavailable"));
   assert.ok((f.calls.at(-1)!.args[0] as typeof forwarded).values[0]!.value.every((byte) => byte === 0));
   f.dispose(); assert.equal(f.listeners.size, 0);
+});
+
+test("terminal output reaches subscribers for the current owner only, with sequence gaps preserved", async () => {
+  const f = fixture();
+  const owner = { windowId: 1, generation: 2 };
+  const frame = (sequence: number, extra: Record<string, unknown> = {}) =>
+    ({ owner, sessionId: "s-1", generation: 1, sequence, bytes: new Uint8Array([sequence + 1]), ...extra });
+  const received: unknown[] = [];
+  f.api.onTerminalOutput((value) => received.push(value));
+  f.emit(frame(0));
+  assert.equal(received.length, 0, "nothing is delivered before bootstrap");
+  await f.api.bootstrap();
+  f.emit(frame(0));
+  f.emit(frame(0));
+  f.emit(frame(5));
+  f.emit(frame(1, { owner: { windowId: 1, generation: 1 } }));
+  f.emit(frame(1, { owner: { windowId: 2, generation: 2 } }));
+  f.emit(frame(1, { text: "<b>x</b>" }));
+  f.emit(frame(1, { bytes: [1, 2] }));
+  f.emit(frame(1, { bytes: new Uint8Array(0) }));
+  f.emit(frame(1, { bytes: new Uint8Array(1_048_577) }));
+  assert.deepEqual(received, [frame(0), frame(0), frame(5)]);
+  f.dispose();
+  f.emit(frame(6));
+  assert.equal(received.length, 3);
+  assert.equal(f.listeners.size, 0);
+});
+
+test("terminal state is owner/sequence fenced and resets when ownership changes", async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const state = (sequence: number, generation = 2) => ({ owner: { windowId: 1, generation }, sequence, sessions: [] });
+  const received: unknown[] = [];
+  f.api.onTerminalState((value) => received.push(value));
+  f.emit(state(1)); f.emit(state(1)); f.emit({ ...state(2), extra: 1 }); f.emit(state(2));
+  f.setReply({ ok: true, value: state(4) });
+  assert.deepEqual(await f.api.terminalState({ owner }), { ok: true, value: state(4) });
+  f.emit(state(3)); f.emit(state(4)); f.emit(state(5));
+  assert.deepEqual(received, [state(1), state(2), state(5)]);
+  f.setReply({ ok: true, value: {
+    app: { name: "ssterm", version: "0.1.0", platform: "darwin" }, owner: { windowId: 1, generation: 3 },
+    window: { focused: false, sequence: 0 }, storage: { status: "ready", schemaVersion: 1 },
+  } });
+  await f.api.bootstrap();
+  f.emit(state(6)); f.emit(state(1, 3));
+  assert.deepEqual(received.at(-1), state(1, 3));
+  assert.equal(received.length, 4);
+  f.setReply({ ok: true, value: state(9) });
+  assert.deepEqual(await f.api.terminalState({ owner }), failure("stale-owner"));
+});
+
+test("terminal commands are rebuilt and written bytes are copied then wiped", async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const target = { owner, sessionId: "s-1", generation: 1 };
+  const bytes = new TextEncoder().encode("typed");
+  f.setReply({ ok: true, value: { accepted: true } });
+  assert.deepEqual(await f.api.writeTerminal({ ...target, bytes }), { ok: true, value: { accepted: true } });
+  const forwarded = f.calls.at(-1)!;
+  assert.equal(forwarded.channel, channels.writeTerminal);
+  const sent = forwarded.args[0] as { bytes: Uint8Array };
+  assert.deepEqual(Object.keys(sent).sort(), ["bytes", "generation", "owner", "sessionId"]);
+  assert.notEqual(sent.bytes, bytes);
+  assert.ok(sent.bytes.every((byte) => byte === 0));
+  assert.equal(new TextDecoder().decode(bytes), "typed");
+  f.setReply({ ok: false, error: { code: "busy", message: "The session is not accepting input. Try again." } });
+  assert.deepEqual(await f.api.writeTerminal({ ...target, bytes }), failure("busy"));
+  f.setReply({ ok: true, value: { accepted: true } });
+  assert.deepEqual(await f.api.openTerminal(target), { ok: true, value: { accepted: true } });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.openTerminal, args: [target] });
+  assert.ok((await f.api.resizeTerminal({ ...target, columns: 120, rows: 40 })).ok);
+  assert.deepEqual(f.calls.at(-1), { channel: channels.resizeTerminal, args: [{ ...target, columns: 120, rows: 40 }] });
+  assert.ok((await f.api.ackTerminal({ ...target, bytes: 5 })).ok);
+  assert.deepEqual(f.calls.at(-1), { channel: channels.ackTerminal, args: [{ ...target, bytes: 5 }] });
+  const count = f.calls.length;
+  for (const invalid of [
+    f.api.writeTerminal({ ...target, bytes: new Uint8Array(0) }),
+    f.api.writeTerminal({ ...target, bytes: new Uint8Array(65_537) }),
+    f.api.writeTerminal({ ...target, bytes, extra: true } as never),
+    f.api.resizeTerminal({ ...target, columns: 0, rows: 24 }),
+    f.api.ackTerminal({ ...target, bytes: 1.5 }),
+    f.api.openTerminal({ ...target, generation: 0 }),
+  ]) assert.deepEqual(await invalid, failure("invalid-request"));
+  assert.equal(f.calls.length, count);
+  f.setReject();
+  assert.deepEqual(await f.api.writeTerminal({ ...target, bytes }), failure("unavailable"));
+  assert.ok((f.calls.at(-1)!.args[0] as { bytes: Uint8Array }).bytes.every((byte) => byte === 0));
 });

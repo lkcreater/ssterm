@@ -1,6 +1,6 @@
 # Termius → ssterm: investigation และ implementation backlog
 
-**SST-011 / T017: `DONE`** — [transient authentication prompts](../auth-prompts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 157/157, E2E 19/19, packaged 16/16; รวมใน commit SST-011 ตามคำสั่ง “commit”. SST-001–010 committed (`76d473f` latest); SST-012–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-012 / T018: `DONE`** — [terminal byte stream / resize / exit](../terminal.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 173/173, E2E 20/20, packaged 17/17; รวมใน commit SST-012 ตามคำสั่ง “commit และทำงานทัดไป”. SST-001–011 committed (`4ded3e9` latest); SST-013–028 และ DS04–DS06 ยังรออนุมัติ
 
 **วันที่:** 2026-10-14; M0 update 2026-10-15 · **เป้าหมาย investigation:** Termius desktop 9.43.1, macOS arm64 · **สถานะ:** M0 complete; SST-003/T004–T005 documentation-only `DONE`
 
@@ -51,4 +51,4 @@ REA วิเคราะห์ source ที่เลือก 10 รายก�
 
 ผู้ใช้อนุมัติ M0 และ commit ทีละงาน: SST-001 ส่งมอบ/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 ผ่าน Node/packaged checks และ delivery แล้ว ดู [backend result](../spikes/ssh-compatibility.md) และ [execution record](../agent-runs/implementation-plan.md) คำสั่งถัดไป “ทำงาน ถัดไปต่อได้” อนุมัติเฉพาะ SST-003/T004–T005 documentation-only; [spec](domain-storage-spec.md) อยู่ `DONE` ผ่าน independent TEST/REVIEW ส่วน SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
-SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0
+SST-012 ส่งมอบและ commit แล้ว; SST-013–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0

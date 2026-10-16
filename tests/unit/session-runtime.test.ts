@@ -50,6 +50,11 @@ function fixture() {
             dispose: () => {
               disposed += 1;
             },
+            drained: Promise.resolve(),
+            open: () => true,
+            ack() {},
+            write: () => "ok",
+            resize() {},
           }),
           true,
         );

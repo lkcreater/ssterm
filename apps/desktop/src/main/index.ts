@@ -24,6 +24,7 @@ import { createKnownHostsController } from "./known-hosts";
 import { registerKnownHostHandlers } from "./known-host-runtime";
 import { createCredentialsController } from "./credentials";
 import { registerCredentialHandlers } from "./credential-runtime";
+import { createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -57,6 +58,8 @@ let knownHosts: ReturnType<typeof createKnownHostsController> | undefined;
 let removeKnownHostHandlers: (() => void) | undefined;
 let credentials: ReturnType<typeof createCredentialsController> | undefined;
 let removeCredentialHandlers: (() => void) | undefined;
+let terminals: TerminalController | undefined;
+let removeTerminalHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -154,6 +157,8 @@ const boundary = new WindowBoundary(
   (owner) => {
     credentials?.revokeOwner(owner);
     knownHosts?.revokeOwner(owner);
+    // Stop output frames before the owner's sessions start closing.
+    terminals?.revokeOwner(owner);
     desktopSessions?.revokeOwner(owner);
   },
 );
@@ -278,6 +283,12 @@ if (ownsInstance) {
       boundary,
       controller: () => credentials,
     });
+    terminals = createTerminalController({ registry: desktopSessions.registry });
+    removeTerminalHandlers = registerTerminalHandlers({
+      ipc: ipcMain,
+      boundary,
+      controller: () => terminals,
+    });
     removeKnownHostHandlers = registerKnownHostHandlers({
       ipc: ipcMain,
       boundary,
@@ -311,6 +322,9 @@ if (ownsInstance) {
             if (!event.sender.isDestroyed())
               event.sender.send(channels.trustStateChanged, state);
           });
+          terminals?.register(result.value.owner, (channel, value) => {
+            if (!event.sender.isDestroyed()) event.sender.send(channel, value);
+          });
         }
         return result;
       } catch {
@@ -343,9 +357,11 @@ app.on("before-quit", (event) => {
   boundary.dispose();
   credentials?.dispose();
   knownHosts?.dispose();
+  terminals?.dispose();
   knownHostPolicy?.dispose();
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
+  removeTerminalHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();

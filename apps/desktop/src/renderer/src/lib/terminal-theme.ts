@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import type { ITerminalOptions } from "@xterm/xterm";
 
 /** Terminal color ownership is independent of application semantic tokens. */
 export const signalTerminalTheme = Object.freeze({
@@ -42,13 +43,34 @@ export const terminalAnsiKeys = [
   "brightWhite",
 ] as const;
 
+export const terminalFont =
+  '"JetBrains Mono Variable", "Noto Sans Thai Variable", ui-monospace, monospace';
+const { selection, ...terminalColors } = signalTerminalTheme;
+
+/**
+ * The declared trust boundary for remote bytes: they reach the screen only through xterm's
+ * parser via `write(Uint8Array)`, never as HTML. OSC 8 links never open anything (URL actions
+ * are SST-013), every window manipulation/report stays off, and no clipboard/OSC 52 or
+ * web-links addon is loaded. Logging is off so terminal content never reaches the console.
+ */
+export const xtermOptions = {
+  theme: { ...terminalColors, selectionBackground: selection },
+  fontFamily: terminalFont,
+  fontSize: 13,
+  lineHeight: 1.4,
+  scrollback: 10_000,
+  allowProposedApi: false,
+  linkHandler: { activate() {} },
+  windowOptions: {},
+  logLevel: "off",
+} satisfies ITerminalOptions;
+
 export const terminalStyle = {
   "--terminal-background": signalTerminalTheme.background,
   "--terminal-foreground": signalTerminalTheme.foreground,
   "--terminal-cursor": signalTerminalTheme.cursor,
   "--terminal-selection": signalTerminalTheme.selection,
-  "--terminal-font":
-    '"JetBrains Mono Variable", "Noto Sans Thai Variable", ui-monospace, monospace',
+  "--terminal-font": terminalFont,
   "--terminal-size": "13px",
   "--terminal-line-height": "1.4",
 } as CSSProperties;

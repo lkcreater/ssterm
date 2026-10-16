@@ -38,6 +38,7 @@ export { openMetadata } from "@ssterm/adapters";
 export { CatalogModule, SecretService, TransientSecrets } from "@ssterm/services";
 export { createCredentialsController } from "./credentials";
 export { registerCredentialHandlers } from "./credential-runtime";
+export { createTerminalController, registerTerminalHandlers } from "./terminals";
 export { WindowBoundary } from "./boundary";
 export { sessionOwnerId } from "./session-runtime";
 export { channels } from "@ssterm/contracts";

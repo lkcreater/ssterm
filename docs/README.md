@@ -1,6 +1,6 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-011 / T017: `DONE`** — [transient authentication prompts](auth-prompts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 157/157, E2E 19/19, packaged 16/16; รวมใน commit SST-011 ตามคำสั่ง “commit”. SST-001–010 committed (`76d473f` latest); SST-012–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-012 / T018: `DONE`** — [terminal byte stream / resize / exit](terminal.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 173/173, E2E 20/20, packaged 17/17; รวมใน commit SST-012 ตามคำสั่ง “commit และทำงานทัดไป”. SST-001–011 committed (`4ded3e9` latest); SST-013–028 และ DS04–DS06 ยังรออนุมัติ
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 

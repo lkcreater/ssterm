@@ -51,7 +51,7 @@ export function createSavedHostSshAdapter(options: {
         authenticate: () => loadCredential(context, options.provider),
         ready: (channel) => context.ready(channel),
         failed: (code) => context.failed(code),
-        ended: () => context.ended(),
+        ended: (end) => context.ended(end),
       });
       if (context.own(connection) && !signal.aborted) connection.start();
     },

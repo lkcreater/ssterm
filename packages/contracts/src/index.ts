@@ -2,12 +2,15 @@ import type { CredentialState, CredentialStateRequest, AnswerCredentialsRequest,
 export * from "./credentials.ts";
 import type { TrustState, TrustStateRequest, AnswerHostTrustRequest, PrepareKnownHostRevokeRequest, RevokeKnownHostRequest, KnownHostRevokePreview, TrustActionResponse } from "./known-hosts.ts";
 export * from "./known-hosts.ts";
+import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarget, WriteTerminalRequest, ResizeTerminalRequest, AckTerminalRequest, TerminalActionResponse } from "./terminals.ts";
+export * from "./terminals.ts";
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
   | "invalid-request"
   | "unauthorized"
   | "stale-owner"
   | "conflict"
+  | "busy"
   | "unavailable";
 export type Result<T> =
   | { ok: true; value: T }
@@ -57,6 +60,13 @@ export interface DesktopAPI {
   answerHostTrust(request: AnswerHostTrustRequest): Promise<Result<TrustActionResponse>>;
   prepareKnownHostRevoke(request: PrepareKnownHostRevokeRequest): Promise<Result<KnownHostRevokePreview>>;
   revokeKnownHost(request: RevokeKnownHostRequest): Promise<Result<TrustActionResponse>>;
+  terminalState(request: TerminalStateRequest): Promise<Result<TerminalState>>;
+  onTerminalState(callback: (state: TerminalState) => void): () => void;
+  onTerminalOutput(callback: (output: TerminalOutput) => void): () => void;
+  openTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
+  writeTerminal(request: WriteTerminalRequest): Promise<Result<TerminalActionResponse>>;
+  resizeTerminal(request: ResizeTerminalRequest): Promise<Result<TerminalActionResponse>>;
+  ackTerminal(request: AckTerminalRequest): Promise<Result<TerminalActionResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -77,6 +87,13 @@ export const channels = Object.freeze({
   answerHostTrust: "ssterm:answer-host-trust",
   prepareKnownHostRevoke: "ssterm:prepare-known-host-revoke",
   revokeKnownHost: "ssterm:revoke-known-host",
+  terminalState: "ssterm:terminal-state",
+  terminalStateChanged: "ssterm:terminal-state-changed",
+  terminalOutput: "ssterm:terminal-output",
+  openTerminal: "ssterm:open-terminal",
+  writeTerminal: "ssterm:write-terminal",
+  resizeTerminal: "ssterm:resize-terminal",
+  ackTerminal: "ssterm:ack-terminal",
 });
 
 const messages: Record<ErrorCode, string> = {
@@ -84,6 +101,7 @@ const messages: Record<ErrorCode, string> = {
   unauthorized: "The request is not authorized.",
   "stale-owner": "The window has changed. Reload its state.",
   conflict: "The state changed. Refresh and try again.",
+  busy: "The session is not accepting input. Try again.",
   unavailable: "The application is unavailable.",
 };
 export function failure<T = never>(code: ErrorCode): Result<T> {

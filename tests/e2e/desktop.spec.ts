@@ -11,18 +11,25 @@ test("renders the local shell offline with bundled fonts and isolated renderer",
   if (!result.ok) throw new Error("Bootstrap failed");
   expect(result.value.app.name).toBe("ssterm");
   expect(await page.evaluate(() => Object.keys(window.ssterm).sort())).toEqual([
+    "ackTerminal",
     "answerCredentials",
     "answerHostTrust",
     "bootstrap",
     "cancelCredentialPrompt",
     "credentialState",
     "onCredentialState",
+    "onTerminalOutput",
+    "onTerminalState",
     "onTrustState",
     "onWindowState",
+    "openTerminal",
     "ping",
     "prepareKnownHostRevoke",
+    "resizeTerminal",
     "revokeKnownHost",
+    "terminalState",
     "trustState",
+    "writeTerminal",
   ]);
   expect(
     await page.evaluate(

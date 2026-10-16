@@ -38,6 +38,7 @@ export default defineConfig({
             "known-hosts.spec.ts",
             "auth.spec.ts",
             "credentials.spec.ts",
+            "terminal.spec.ts",
           ],
         },
       ]
@@ -53,6 +54,7 @@ export default defineConfig({
             "known-hosts.spec.ts",
             "auth.spec.ts",
             "credentials.spec.ts",
+            "terminal.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

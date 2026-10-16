@@ -1,5 +1,5 @@
-import ssh2, { type AnyAuthMethod, type ParsedKey } from "ssh2";
-import type { HostKeyIdentity } from "@ssterm/domain";
+import ssh2, { type AnyAuthMethod, type ClientChannel, type ParsedKey } from "ssh2";
+import type { HostKeyIdentity, TerminalChannel, TerminalEnd } from "@ssterm/domain";
 import { decodeHostPublicKey } from "./host-key.ts";
 
 export interface PreparedPrivateKey {
@@ -75,14 +75,15 @@ export function createSshConnection(options: {
   signal: AbortSignal;
   verifyHost(publicKey: Uint8Array, initial: boolean): Promise<boolean>;
   authenticate(): Promise<SshCredential | undefined>;
-  ready(channel: SshResource): boolean;
+  ready(terminal: TerminalChannel): boolean;
   failed(code: SshFailure): void;
-  ended(): void;
+  /** Remote end only, after every preceding output chunk reached the consumer. */
+  ended(end: TerminalEnd): void;
 }): SshResource & { start(): void } {
   const client = new ssh2.Client();
   let disposed = false, started = false, verified = false, attempted = false, ready = false;
   let credential: SshCredential | undefined;
-  let terminal: SshResource | undefined;
+  let terminal: ReturnType<typeof createTerminal> | undefined;
   let terminalClosed: (() => void) | undefined;
   let resolveDrain!: () => void;
   const drained = new Promise<void>((resolve) => { resolveDrain = resolve; });
@@ -168,14 +169,23 @@ export function createSshConnection(options: {
       }
     },
   };
-  client.on("error", (error: unknown) => { clearCredential(); fail(failure(error)); });
+  client.on("error", (error: unknown) => {
+    clearCredential();
+    // A reset after the remote exit still ends with that exit, as on close (G1).
+    const exit = ready ? terminal?.exited() : undefined;
+    if (!exit) fail(failure(error)); else if (live()) options.ended(exit);
+  });
   client.on("close", () => {
     clearCredential();
     // A paused readable may defer its channel close event until data is consumed.
     // The socket close is the authoritative fence for all its SSH channels.
     terminalClosed?.();
     resolveDrain();
-    if (live()) { if (ready) options.ended(); else fail("network"); }
+    if (!live()) return;
+    // ssh2 reports socket loss before any channel close, and sshd keeps TCP open after a
+    // remote exit, so only an exit already received makes this a remote end.
+    const exit = ready ? terminal?.exited() : undefined;
+    if (exit) options.ended(exit); else fail("network");
   });
   client.on("ready", () => {
     clearCredential();
@@ -183,25 +193,103 @@ export function createSshConnection(options: {
     try {
       client.shell({ term: "xterm-256color", cols: 80, rows: 24 }, (error, channel) => {
         if (error) { fail("channel-open-failed"); return; }
+        // Must precede the data listeners, which would otherwise start flowing mode.
         channel.pause();
         channel.stderr.pause();
-        let channelDisposed = false;
         let channelDrain!: () => void;
-        const channelResource: SshResource = {
-          drained: new Promise<void>((resolve) => { channelDrain = resolve; }),
-          dispose() { if (!channelDisposed) { channelDisposed = true; channel.destroy(); } },
-        };
+        const channelDrained = new Promise<void>((resolve) => { channelDrain = resolve; });
         terminalClosed = channelDrain;
         channel.on("error", () => fail("network"));
-        channel.on("close", () => { channelDrain(); if (live() && ready) options.ended(); });
-        terminal = channelResource;
-        if (!live()) { channelResource.dispose(); return; }
+        channel.on("close", () => channelDrain());
+        const opened = createTerminal(channel, channelDrained, (end) => { if (live() && ready) options.ended(end); });
+        terminal = opened;
+        if (!live()) { opened.dispose(); return; }
         ready = true;
-        if (!options.ready(channelResource)) channelResource.dispose();
+        if (!options.ready(opened)) opened.dispose();
       });
     } catch { fail("channel-open-failed"); }
   });
   options.signal.addEventListener("abort", resource.dispose, { once: true });
   if (options.signal.aborted) resource.dispose();
   return resource;
+}
+
+/** Fixed SST-012 bounds; SST-014 measures and tunes them. */
+export const TERMINAL_OUTPUT_WINDOW = 262_144;
+export const TERMINAL_INPUT_BACKLOG = 262_144;
+
+/** Every ssh2 stream quirk lives here: callers see ordered owned chunks, credit, a bounded input backlog and one end. */
+function createTerminal(
+  channel: ClientChannel,
+  drained: Promise<void>,
+  closed: (end: TerminalEnd) => void,
+): TerminalChannel & { exited(): TerminalEnd | undefined } {
+  let output: ((chunk: Uint8Array, sequence: number) => void) | undefined;
+  let unacked = 0, sequence = 0, disposed = false, finished = false, pendingCloses = 2;
+  let exitSeen: TerminalEnd | undefined;
+  const flow = () => {
+    const open = output !== undefined && !disposed && unacked < TERMINAL_OUTPUT_WINDOW;
+    for (const stream of [channel, channel.stderr]) {
+      if (open) stream.resume(); else stream.pause();
+    }
+  };
+  // ponytail: stdout/stderr interleave in arrival order while flowing, but chunks buffered during a
+  // credit pause drain per stream. OpenSSH PTY sessions send no extended data; add a merged arrival
+  // queue if a non-PTY channel ever needs strict cross-stream order.
+  const deliver = (data: Buffer) => {
+    // An empty CHANNEL_DATA would become a frame the contract rejects, i.e. a sequence gap.
+    if (disposed || !output || data.length === 0) return;
+    unacked += data.length;
+    // ssh2 hands out views of pooled packet buffers; the consumer gets an exact-length copy.
+    output(new Uint8Array(data), sequence++);
+    if (unacked >= TERMINAL_OUTPUT_WINDOW) flow();
+  };
+  // ssh2 emits each close only after its readable drained, and both drain only with credit,
+  // so the end follows every delivered chunk.
+  const settle = () => {
+    if (--pendingCloses > 0) return;
+    finished = true;
+    closed(exitSeen ?? { kind: "eof" });
+  };
+  channel.on("data", deliver);
+  channel.stderr.on("data", deliver);
+  channel.on("exit", (code: unknown, signal: unknown) => { exitSeen = exitOf(code, signal); });
+  channel.once("close", settle);
+  channel.stderr.once("close", settle);
+  return {
+    drained,
+    exited: () => exitSeen,
+    open(sink) {
+      if (output || disposed) return false;
+      output = sink;
+      flow();
+      return true;
+    },
+    ack(bytes) {
+      unacked = Math.max(0, unacked - bytes);
+      flow();
+    },
+    write(bytes) {
+      if (disposed || finished || !channel.writable) return "closed";
+      if (channel.writableLength + bytes.byteLength > TERMINAL_INPUT_BACKLOG) return "busy";
+      channel.write(Buffer.from(bytes));
+      return "ok";
+    },
+    resize(columns, rows) {
+      if (!disposed && !finished) channel.setWindow(rows, columns, 0, 0);
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      output = undefined;
+      channel.destroy();
+    },
+  };
+}
+
+/** ssh2 exit args: (status) or (null, "SIG<NAME>", dumped, description). The description is server text and is dropped. */
+function exitOf(code: unknown, signal: unknown): TerminalEnd {
+  if (typeof code === "number" && Number.isInteger(code) && code >= 0 && code <= 0xffff_ffff) return { kind: "exit", code };
+  if (typeof signal === "string" && /^SIG[A-Z0-9]{1,16}$/u.test(signal)) return { kind: "signal", signal };
+  return { kind: "eof" };
 }

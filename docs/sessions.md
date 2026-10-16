@@ -21,7 +21,7 @@ The injected Adapter starts with a context containing the private captured confi
 
 Idle describes the unallocated state; `connect` allocates directly into Connecting. Valid progression is Connecting → VerifyingHost → Authenticating → Ready. Ready requires adoption of an interactive channel resource, not TCP connection or authentication alone. Credential prompts enter AwaitingInput and resume Authenticating; host-trust prompts stay VerifyingHost. Explicit trust rejection fences authentication with `host-key-untrusted`. Invalid phase changes reject.
 
-Failure fences callbacks and retains a Failed record. Cancel/close from any active phase or Failed proceeds through Closing to Closed. Adapter end/EOF closes the attempt. Reconnect keeps the logical session ID, increments attempt generation, uses a fresh transport/config and has no input queue to replay. Late resolver, phase, prompt and capability completions cannot revive the old attempt.
+Failure fences callbacks and retains a Failed record. Cancel/close from any active phase or Failed proceeds through Closing to Closed. A remote end (exit status, exit signal or EOF) closes the attempt and is projected as `end`; a socket loss after Ready without an exit fails it with `network` ([terminal](terminal.md)). Reconnect keeps the logical session ID, increments attempt generation, uses a fresh transport/config and has no input queue to replay. Late resolver, phase, prompt and capability completions cannot revive the old attempt.
 
 Snapshots/events explicitly construct ID/generation, host ID, state, cleanup status, optional target metadata, prompt metadata and fixed error code/message. The target contains label/address/port/username/environment and host/catalog revisions. Full config/provenance, auth references, secret values and raw adapter errors never cross this public Interface. The private config is independently cloned and frozen; catalog edits cannot retarget it.
 
@@ -35,7 +35,7 @@ Credential answers are copied into owned `TransientSecrets`; a synchronous `use`
 
 Default limits: 32 retained sessions, 32 resources per attempt, 128 observers, 60-second prompt timeout, 120-second connection timeout and two-second drain timeout. Credential input is bounded to 16 KiB per field/64 KiB total. Constructor limits can reduce caps, with bounded deadline increases for fixtures. An injected scheduler tests deadlines deterministically.
 
-Resource `dispose()` must synchronously revoke usability and initiate destruction. Optional `drained` promises represent final engine cleanup. Teardown catches thrown/rejected cleanup and reports `complete`, `failed` or `timeout`; it never waits indefinitely or reactivates callbacks. A completed wait alone does not prove successful cleanup: inspect its cleanup status. Terminal byte flow/backpressure, SFTP and tunnel capabilities remain later tickets.
+Resource `dispose()` must synchronously revoke usability and initiate destruction. Optional `drained` promises represent final engine cleanup. Teardown catches thrown/rejected cleanup and reports `complete`, `failed` or `timeout`; it never waits indefinitely or reactivates callbacks. A completed wait alone does not prove successful cleanup: inspect its cleanup status. SST-012 adds the fenced terminal stream ([terminal](terminal.md)); measured flow-control budgets (SST-014), SFTP and tunnel capabilities remain later tickets.
 
 ## Desktop lock, window and quit integration
 

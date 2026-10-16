@@ -16,7 +16,7 @@ Input is never saved to Keychain or metadata and there is no cross-session or pe
 
 Credential state projects only owner/sequence, prompt identifiers, purpose/attempt, finite field IDs/echo flags and the captured label/environment/username/endpoint. It carries no SecretRef, key, credential or upstream error. Submit and Cancel require the exact current owner, session ID, generation and prompt ID. Atomic `cancelPrompt` affects credentials only and fails the current attempt with `prompt-cancelled`; a stale dialog cannot cancel a newer prompt or reconnect.
 
-The controller/IPC handlers reuse the registered main-frame sender and WindowBoundary checks. Preload reconstructs validated DTOs; main copies answers into owned transient values and clears received bytes. Ordered owner-bound events and subscribe-before-snapshot prevent stale prompts reappearing. Lock, suspend, owner revocation and quit remove pending prompts and dispose transport resources. No renderer connect or terminal capability is added.
+The controller/IPC handlers reuse the registered main-frame sender and WindowBoundary checks. Preload reconstructs validated DTOs; main copies answers into owned transient values and clears received bytes. Ordered owner-bound events and subscribe-before-snapshot prevent stale prompts reappearing. Lock, suspend, owner revocation and quit remove pending prompts and dispose transport resources. No renderer connect or terminal capability is added by SST-011; SST-012 later adds the [terminal](terminal.md) boundary.
 
 The dialog uses uncontrolled inputs, clears them before awaiting submit/cancel and on prompt changes/unmount, and stores no answers in React state. It identifies the captured execution target and PROD environment, honors echo flags, keyboard focus/Enter/Escape, IME composition, reduced motion and minimum-window overflow. Multiple sessions stay separate; host-trust dialogs take precedence over credential entry.
 
@@ -38,6 +38,6 @@ Runtime evidence invokes the production client and actual renderer/preload/contr
 
 No schema/dependency version change is planned. Production session composition no longer statically re-exports the Keychain binding: it must remain behind the existing guarded lazy import so binding unavailability cannot crash bootstrap. Runtime tests load native-provider exports explicitly from the main-only `secrets.js` entry.
 
-Terminal byte delivery/resize/exit remains SST-012; terminal input/Thai/IME/clipboard remains SST-013. Host/identity management and release readiness remain later tickets. Generic response labels deliberately do not reproduce arbitrary remote instructions; users must know their authentication challenge order.
+Terminal byte delivery/resize/exit is delivered by [SST-012](terminal.md); terminal input/Thai/IME/clipboard remains SST-013. Host/identity management and release readiness remain later tickets. Generic response labels deliberately do not reproduce arbitrary remote instructions; users must know their authentication challenge order.
 
 Rollback removes credential handlers/dialog composition and restores SST-010's credentials-required behavior after disposing pending sessions. Catalog, known-host records and OS-secret journal remain compatible; no user-data deletion or migration is needed.

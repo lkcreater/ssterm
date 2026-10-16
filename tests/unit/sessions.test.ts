@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import type {
   ResolvedHostConfig,
   StoreResult,
+  TerminalChannel,
 } from "../../packages/domain/src/index.ts";
 import {
   SessionRegistry,
@@ -79,6 +80,9 @@ test("ignored invalid and stale prompt callbacks cannot terminate the main proce
     "ignored prompt rejections must remain handled under strict Node rejection policy",
   );
 });
+function fakeTerminal(dispose: () => void = () => {}): TerminalChannel {
+  return { dispose, drained: Promise.resolve(), open: () => true, ack() {}, write: () => "ok", resize() {} };
+}
 const value = <T>(result: SessionResult<T>): T => {
   if (!result.ok) assert.fail(result.error.message);
   return result.value;
@@ -236,11 +240,11 @@ for (const phase of [
       phase === "AwaitingInput" ? context.requestPrompt(credential) : undefined;
     if (phase === "Ready")
       assert(
-        context.ready({
-          dispose() {
+        context.ready(
+          fakeTerminal(() => {
             disposals++;
-          },
-        }),
+          }),
+        ),
       );
     assert.equal(h.registry.snapshot("owner-1")[0]!.state, phase);
     const closing = h.registry.cancel("owner-1", session.id);
@@ -249,11 +253,9 @@ for (const phase of [
     assert(!context.authenticating());
     assert(!context.verifyingHost());
     let lateDisposed = 0;
-    const late = {
-      dispose() {
-        lateDisposed++;
-      },
-    };
+    const late = fakeTerminal(() => {
+      lateDisposed++;
+    });
     assert(!context.ready(late));
     assert(!context.own(late));
     assert.equal(lateDisposed, 1);
@@ -273,11 +275,11 @@ test("Ready requires host verification, authentication and adoption of an intera
   let rejected = 0;
   assert(!context.authenticating());
   assert(
-    !context.ready({
-      dispose() {
+    !context.ready(
+      fakeTerminal(() => {
         rejected++;
-      },
-    }),
+      }),
+    ),
   );
   assert.equal(rejected, 1);
   assert(context.verifyingHost());
@@ -297,14 +299,14 @@ test("Ready requires host verification, authentication and adoption of an intera
     decision: "accept-once",
   });
   assert(context.authenticating());
-  assert(context.ready({ dispose() {} }));
+  assert(context.ready(fakeTerminal()));
   assert.equal(h.registry.snapshot("owner-1")[0]!.state, "Ready");
   assert(
-    !context.ready({
-      dispose() {
+    !context.ready(
+      fakeTerminal(() => {
         rejected++;
-      },
-    }),
+      }),
+    ),
   );
   assert.equal(rejected, 2);
   await h.registry.dispose();
@@ -702,11 +704,11 @@ test("phase callbacks report cancellation from a reentrant observer before adapt
       void other.registry.close("owner-1", next.id);
   });
   assert.equal(
-    fresh.ready({
-      dispose() {
+    fresh.ready(
+      fakeTerminal(() => {
         disposed++;
-      },
-    }),
+      }),
+    ),
     false,
   );
   assert.equal(disposed, 1);
@@ -782,5 +784,47 @@ test("credential prompt metadata and answer sizes are bounded without advancing 
   }
   value(h.registry.cancelPrompt("owner-1", session.id, 1, prompt.id));
   await assert.rejects(pending, /cancelled/u);
+  await h.registry.dispose();
+});
+
+test("only a remote end projects end detail; stale generations and local close never do, and the target outlives teardown", async () => {
+  const h = harness();
+  const session = h.connect();
+  await tick();
+  const ready = (context: SessionContext) => {
+    assert(context.verifyingHost());
+    assert(context.authenticating());
+    const terminal = fakeTerminal();
+    assert(context.ready(terminal));
+    return terminal;
+  };
+  const first = ready(h.contexts[0]!);
+  assert.equal(h.registry.terminal("owner-1", session.id, 1), first);
+  h.contexts[0]!.ended({ kind: "exit", code: 7 });
+  await h.registry.close("owner-1", session.id);
+  let snapshot = h.registry.snapshot("owner-1")[0]!;
+  assert.equal(snapshot.state, "Closed");
+  assert.deepEqual(snapshot.end, { kind: "exit", code: 7 });
+  assert.equal(snapshot.target?.label, "Owned fixture");
+  assert.equal(h.registry.terminal("owner-1", session.id, 1), undefined);
+
+  value(h.registry.reconnect("owner-1", session.id));
+  await tick();
+  assert.equal(h.registry.snapshot("owner-1")[0]!.end, undefined);
+  const second = ready(h.contexts[1]!);
+  assert.notEqual(second, first);
+  h.contexts[0]!.ended({ kind: "signal", signal: "SIGKILL" });
+  assert.equal(h.registry.snapshot("owner-1")[0]!.state, "Ready");
+  h.contexts[1]!.ended();
+  await h.registry.close("owner-1", session.id);
+  assert.deepEqual(h.registry.snapshot("owner-1")[0]!.end, { kind: "eof" });
+
+  value(h.registry.reconnect("owner-1", session.id));
+  await tick();
+  ready(h.contexts[2]!);
+  await h.registry.close("owner-1", session.id);
+  snapshot = h.registry.snapshot("owner-1")[0]!;
+  assert.equal(snapshot.state, "Closed");
+  assert.equal(snapshot.end, undefined);
   await h.registry.dispose();
 });

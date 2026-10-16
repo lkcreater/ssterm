@@ -4,6 +4,10 @@ import {
   isCancelCredentialPromptRequest, isCredentialActionResponse,
   type CredentialState, type CredentialStateRequest, type AnswerCredentialsRequest,
   type CancelCredentialPromptRequest,
+  isTerminalState, isTerminalStateRequest, isTerminalOutput, isTerminalTarget, isWriteTerminalRequest,
+  isResizeTerminalRequest, isAckTerminalRequest, isTerminalActionResponse,
+  type TerminalState, type TerminalStateRequest, type TerminalOutput, type TerminalTarget,
+  type WriteTerminalRequest, type ResizeTerminalRequest, type AckTerminalRequest,
   isTrustState,
   isTrustStateRequest,
   isAnswerHostTrustRequest,
@@ -51,6 +55,40 @@ export function createDesktopBridge(transport: BridgeTransport): {
   let sequence = -1;
   let trustSequence = -1;
   let credentialSequence = -1;
+  let terminalSequence = -1;
+  const sameOwner = (value: Owner) => !!owner && value.windowId === owner.windowId && value.generation === owner.generation;
+  const terminalCallbacks = new Set<(state: TerminalState) => void>();
+  const terminalListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !isTerminalState(value) || !sameOwner(value.owner) || value.sequence <= terminalSequence) return;
+    terminalSequence = value.sequence;
+    for (const callback of terminalCallbacks) callback(value);
+  };
+  const outputCallbacks = new Set<(output: TerminalOutput) => void>();
+  // No sequence filter: a gap must reach the view, which reports it instead of hiding it.
+  const outputListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !isTerminalOutput(value) || !sameOwner(value.owner)) return;
+    const output: TerminalOutput = { owner: { ...value.owner }, sessionId: value.sessionId, generation: value.generation,
+      sequence: value.sequence, bytes: value.bytes };
+    for (const callback of outputCallbacks) callback(output);
+  };
+  /** One transport listener per channel, shared by every subscriber. */
+  function subscribe<T>(channel: string, set: Set<(value: T) => void>, listener: (event: unknown, value: unknown) => void, callback: (value: T) => void): () => void {
+    if (disposed || typeof callback !== "function") return () => {};
+    let active = true;
+    const subscribed = (value: T) => { if (active) callback(value); };
+    const unsubscribe = () => {
+      if (!active) return;
+      active = false;
+      set.delete(subscribed);
+      if (set.size === 0) transport.removeListener(channel, listener);
+      subscriptions.delete(unsubscribe);
+    };
+    if (set.size === 0) transport.on(channel, listener);
+    set.add(subscribed);
+    subscriptions.add(unsubscribe);
+    return unsubscribe;
+  }
+  const target = (request: TerminalTarget): TerminalTarget => ({ owner: { ...request.owner }, sessionId: request.sessionId, generation: request.generation });
   const credentialCallbacks = new Set<(state: CredentialState) => void>();
   const credentialListener = (_event: unknown, value: unknown): void => {
     if (disposed || !owner || !isCredentialState(value) ||
@@ -114,6 +152,7 @@ export function createDesktopBridge(transport: BridgeTransport): {
           sequence = next.window.sequence;
           trustSequence = -1;
           credentialSequence = -1;
+          terminalSequence = -1;
         } else if (
           next.owner.windowId === owner.windowId &&
           next.owner.generation === owner.generation
@@ -250,6 +289,39 @@ export function createDesktopBridge(transport: BridgeTransport): {
         [{ owner: { ...request.owner }, token: request.token }],
         isTrustActionResponse,
       );
+    },
+    async terminalState(request: TerminalStateRequest) {
+      if (!isTerminalStateRequest(request)) return failure("invalid-request");
+      const result = await invoke(channels.terminalState, [{ owner: { ...request.owner } }], isTerminalState);
+      if (!result.ok) return result;
+      if (!sameOwner(result.value.owner) || !sameOwner(request.owner)) return failure("stale-owner");
+      terminalSequence = Math.max(terminalSequence, result.value.sequence);
+      return result;
+    },
+    onTerminalState(callback: (state: TerminalState) => void): () => void {
+      return subscribe(channels.terminalStateChanged, terminalCallbacks, terminalListener, callback);
+    },
+    onTerminalOutput(callback: (output: TerminalOutput) => void): () => void {
+      return subscribe(channels.terminalOutput, outputCallbacks, outputListener, callback);
+    },
+    openTerminal(request: TerminalTarget) {
+      if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.openTerminal, [target(request)], isTerminalActionResponse);
+    },
+    async writeTerminal(request: WriteTerminalRequest) {
+      if (!isWriteTerminalRequest(request)) return failure("invalid-request");
+      const bytes = new Uint8Array(request.bytes);
+      try {
+        return await invoke(channels.writeTerminal, [{ ...target(request), bytes }], isTerminalActionResponse);
+      } finally { bytes.fill(0); }
+    },
+    resizeTerminal(request: ResizeTerminalRequest) {
+      if (!isResizeTerminalRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.resizeTerminal, [{ ...target(request), columns: request.columns, rows: request.rows }], isTerminalActionResponse);
+    },
+    ackTerminal(request: AckTerminalRequest) {
+      if (!isAckTerminalRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.ackTerminal, [{ ...target(request), bytes: request.bytes }], isTerminalActionResponse);
     },
     onWindowState(callback: (event: WindowStateEvent) => void): () => void {
       if (disposed || typeof callback !== "function") return () => {};

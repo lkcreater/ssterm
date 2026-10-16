@@ -101,3 +101,7 @@ Latest authorization “commit และทำงานถัดไปต่อ�
 ## SST-005 storage decision — 2026-10-15
 
 User subsequently authorized commit SST-004 (`d6e1822`) and SST-005/T008. [ADR 0002](0002-local-metadata-storage.md) selects `node:sqlite` from the pinned runtime, superseding the untested better-sqlite3 candidate above. Domain/adapters now exist; [storage evidence](../local-storage.md) records the actual validation and remaining gates. No better-sqlite3 failure is claimed; secret providers/SSH and commit SST-005 remain separate scope.
+
+## SST-012 terminal renderer outcome — 2026-10-16
+
+After SST-011 commit `4ded3e9` the user authorized SST-012/T018. The renderer pins `@xterm/xterm` 6.0.0 (the candidate above) and adds `@xterm/addon-fit` 0.11.0, both exact in `apps/desktop/package.json`; both are MIT, dependency-free and bundled by Vite into the renderer, so packaging staging is unchanged. The default DOM renderer is used; the WebGL addon and the 5.x-only canvas addon are not adopted. The bundle needs no CSP change (no worker, blob, `eval` or `new Function`). Real Docker/OpenSSH development and packaged E2E exercise ordered output, PTY size and resize, alternate screen, exit/signal/connection loss and the trust boundary ([terminal evidence](../terminal.md)). This accepts xterm for byte ordering and resize only; Unicode/IME (SST-013) and measured backpressure budgets (SST-014) remain open gates. The SST-001 [baseline JSON](dependency-baseline.json) stays an unedited decision snapshot.

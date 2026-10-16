@@ -48,6 +48,8 @@ import { useDesktopState } from "@/hooks/use-desktop-state";
 import { useCredentials } from "@/hooks/use-credentials";
 import { CredentialPrompts } from "@/components/auth/credential-prompts";
 import { useKnownHosts } from "@/hooks/use-known-hosts";
+import { useTerminals } from "@/hooks/use-terminals";
+import { TerminalWorkspace } from "@/components/workspace/live-terminal";
 import {
   KnownHostsWorkspace,
   HostTrustDialogs,
@@ -117,6 +119,8 @@ export function AppShell() {
   const owner = desktop.status === "ready" ? desktop.data.owner : undefined;
   const trust = useKnownHosts(owner);
   const credentials = useCredentials(owner);
+  const sessions = useTerminals(owner).state?.sessions ?? [];
+  const connected = sessions.filter((session) => session.phase === "ready").length;
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
     storage?.status === "blocked" ? storageProblems[storage.code] : undefined;
@@ -248,9 +252,18 @@ export function AppShell() {
               </h1>
             </div>
             <span className="type-caption text-muted-foreground">
-              No active sessions
+              {sessions.length === 0
+                ? "No active sessions"
+                : `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`}
             </span>
           </div>
+          {owner && sessions.length > 0 ? (
+            <TerminalWorkspace
+              owner={owner}
+              sessions={sessions}
+              hidden={page !== "servers"}
+            />
+          ) : null}
           {page === "known-hosts" ? (
             <KnownHostsWorkspace
               key={
@@ -260,7 +273,7 @@ export function AppShell() {
               state={trust.state}
               error={trust.error}
             />
-          ) : (
+          ) : sessions.length > 0 ? null : (
             <div className="workspace-empty">
               <Empty>
                 <EmptyHeader>
@@ -313,7 +326,11 @@ export function AppShell() {
       <CredentialPrompts state={trust.state?.prompts.length ? undefined : credentials.state} />
       <footer className="app-statusbar">
         <CircleIcon className="size-3" aria-hidden="true" />
-        <span>No connections</span>
+        <span>
+          {connected === 0
+            ? "No connections"
+            : `${connected} ${connected === 1 ? "connection" : "connections"}`}
+        </span>
         <span className="ml-auto">
           {desktop.status === "loading" ? (
             <span className="flex items-center gap-2">

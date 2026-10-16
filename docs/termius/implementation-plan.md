@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-011 / T017: `DONE`** — [transient authentication prompts](../auth-prompts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 157/157, E2E 19/19, packaged 16/16; รวมใน commit SST-011 ตามคำสั่ง “commit”. SST-001–010 committed (`76d473f` latest); SST-012–028 และ DS04–DS06 ยังรออนุมัติ
+**SST-012 / T018: `DONE`** — [terminal byte stream / resize / exit](../terminal.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 173/173, E2E 20/20, packaged 17/17; รวมใน commit SST-012 ตามคำสั่ง “commit และทำงานทัดไป”. SST-001–011 committed (`4ded3e9` latest); SST-013–028 และ DS04–DS06 ยังรออนุมัติ
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-012–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 
@@ -123,4 +123,6 @@ Baseline macOS arm64/local-first/account-free และ product MVP ข้าง
 
 **Latest SST-010 confirmation and delivery:** “ทำ ticket ถัดไปได้เลย” authorized SST-010/T016 only on 2026-10-16; completed through independent TEST/REVIEW/DELIVER. No SST-010 commit/push or SST-011+/DS04–DS06 authorization. See [auth evidence](../ssh-auth.md) and [execution record](../agent-runs/implementation-plan.md#sst-010-execution-plan--2026-10-16).
 
-**Latest SST-011 confirmation and delivery:** “ทำงานถัดไปเลย” after SST-010 `76d473f` authorizes SST-011/T017 only and supersedes older SST-010 stop notes for that ticket. Completed through independent TEST/REVIEW/DELIVER; no SST-011 commit/push or SST-012+/DS04–DS06 authorization. See [prompt evidence](../auth-prompts.md).
+**Latest SST-012 confirmation and delivery:** “ทำงานต่อได้” after SST-011 `4ded3e9` authorizes SST-012/T018 only. Completed through independent TEST/REVIEW/DELIVER; committed per “commit และทำงานทัดไป”, which also authorizes SST-013 next. No push or DS04–DS06 authorization. See [terminal evidence](../terminal.md).
+
+**Earlier SST-011 confirmation and delivery:** “ทำงานถัดไปเลย” after SST-010 `76d473f` authorizes SST-011/T017 only and supersedes older SST-010 stop notes for that ticket. Completed through independent TEST/REVIEW/DELIVER; no SST-011 commit/push or SST-012+/DS04–DS06 authorization. See [prompt evidence](../auth-prompts.md).
