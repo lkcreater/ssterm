@@ -35,6 +35,7 @@ export default defineConfig({
             new URL("./src/main/sessions.ts", import.meta.url),
           ),
           trust: fileURLToPath(new URL("./src/main/trust.ts", import.meta.url)),
+          ssh: fileURLToPath(new URL("./src/main/ssh.ts", import.meta.url)),
         },
         preserveEntrySignatures: "strict",
         output: {

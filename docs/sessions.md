@@ -1,6 +1,8 @@
 # SST-008 — Session lifecycle and resource ownership
 
-**2026-10-15 · T013–T014 · DONE through implementation, independent TEST/REVIEW and DELIVERY; uncommitted.** Authorized by “commit และเริ่มงานถัดไป” after SST-007 commit `c124b1b`. Production saved-host trust/auth remain SST-009/010; no renderer workflow or connection command is added here.
+**2026-10-15 · T013–T014 · DONE through implementation, independent TEST/REVIEW and DELIVERY; committed `bcbb693`.** Authorized by “commit และเริ่มงานถัดไป” after SST-007 commit `c124b1b`. Production trust and saved-host authentication are integrated by [SST-009](known-hosts.md) and [SST-010](ssh-auth.md); no renderer connection command is added by SST-008.
+
+The verification counts below record SST-008 delivery. For current production transport/credential behavior and newer regression evidence, see [SSH authentication](ssh-auth.md).
 
 ## Interface and placement
 

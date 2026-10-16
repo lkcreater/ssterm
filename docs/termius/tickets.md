@@ -1,10 +1,10 @@
 # Tickets สำหรับ ssterm
 
-**SST-009 / T015: `DONE`** — [known-host verification/trust](../known-hosts.md) ผ่าน pipeline; unit 129/129, E2E 17/17, packaged 14/14 และ independent TEST/REVIEW (รวม focused re-review) ผ่าน ยังไม่ commit SST-009; SST-008 committed `bcbb693`. SST-010 เป็นต้นไปยังไม่เริ่ม
+**SST-010 / T016: `DONE`** — [production saved-host SSH authentication](../ssh-auth.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 141/141, E2E 18/18, packaged 15/15; รวมใน commit SST-010 ตามคำสั่ง “commit”. SST-001–009 committed (`0e71f80` latest); SST-011–028 และ DS04–DS06 ยังรออนุมัติ
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-009–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-011–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-009–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-011–028 คือ `AWAITING_IMPLEMENT_CONFIRMATION`; later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
 
@@ -158,6 +158,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Validation:** fixture สลับ server keys และ catalog labels; trust survives restart; reject ไม่เขียน trust. **Tasks:** repository/policy; prompt UI; replace/revoke flow.
 
 ### SST-010 — SSH password / imported key auth
+
+**Status:** `DONE` — T016; [production auth/evidence](../ssh-auth.md) และ [delivery](../agent-runs/sst-010-delivery.md), independent TEST/REVIEW passed. Missing-credential prompts remain SST-011.
 
 **Outcome:** connection จริงจาก saved host/identity. **Evidence:** S03/N01/W03/W04.
 

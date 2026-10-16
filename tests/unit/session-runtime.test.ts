@@ -159,7 +159,7 @@ test("shutdown is idempotent and removes power listeners while fencing all owned
   assert.equal(f.runtime.registry.connect(owner, f.hostId).ok, false);
 });
 
-test("default desktop adapter fails closed until production trust/auth are implemented", async () => {
+test("desktop composition without an injected adapter fails closed", async () => {
   const f = fixture();
   await f.runtime.shutdown();
   const transient = new TransientSecrets();

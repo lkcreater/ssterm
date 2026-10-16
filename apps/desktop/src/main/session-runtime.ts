@@ -23,7 +23,7 @@ export function createDesktopSessions(options: {
   const registry = new SessionRegistry({
     resolve: options.resolve,
     transient: options.transient,
-    // Saved-host SSH stays unavailable until the trust/auth adapters are implemented.
+    // Storage/provider failures and callers without an adapter remain fail closed.
     adapter: options.adapter ?? {
       start: (context) => context.failed("subsystem-unavailable"),
     },

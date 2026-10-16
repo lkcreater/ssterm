@@ -1,8 +1,8 @@
 # Task checklist
 
-**SST-009 / T015: `DONE`** — [known-host verification/trust](../known-hosts.md) ผ่าน pipeline; unit 129/129, E2E 17/17, packaged 14/14 และ independent TEST/REVIEW (รวม focused re-review) ผ่าน ยังไม่ commit SST-009; SST-008 committed `bcbb693`. SST-010 เป็นต้นไปยังไม่เริ่ม
+**SST-010 / T016: `DONE`** — [production saved-host SSH authentication](../ssh-auth.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 141/141, E2E 18/18, packaged 15/15; รวมใน commit SST-010 ตามคำสั่ง “commit”. SST-001–009 committed (`0e71f80` latest); SST-011–028 และ DS04–DS06 ยังรออนุมัติ
 
-**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-009–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
+**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-011–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
 ## งานเตรียมการที่ทำแล้ว
 
@@ -41,7 +41,7 @@
 - [x] **T013 / SST-008:** connection/session registry, state/error/prompt contracts, generation IDs — [evidence](../sessions.md)
 - [x] **T014 / SST-008:** resource ownership/idempotent dispose/delayed-event race tests — [evidence](../sessions.md)
 - [x] **T015 / SST-009:** KnownHost repository/policy และ accept-once/remember/reject/changed-key UI — [evidence](../known-hosts.md)
-- [ ] **T016 / SST-010:** password/imported key connection, error translation, supported format list
+- [x] **T016 / SST-010:** password/imported key connection, error translation, supported format list
 - [ ] **T017 / SST-011:** passphrase/keyboard-interactive prompt broker, cancel/retry/timeout/lifetime
 - [ ] **T018 / SST-012:** terminal renderer, ordered stream, input routing, PTY resize, EOF/exit
 - [ ] **T019 / SST-013:** Thai/Unicode/IME, clipboard/paste, focus/shortcuts/search/URL behavior
@@ -98,7 +98,7 @@
 
 ## Task bookkeeping
 
-Current owner: root ปิด SST-008/T013–T014 ผ่าน TEST/REVIEW/DELIVER แล้ว (ยังไม่ commit); SST-001–007 committed (`c124b1b` latest). [Execution ledger](../agent-runs/implementation-plan.md) และ evidence ของแต่ละ ticket เป็น handoff; SST-009 เป็นต้นไปยังไม่เริ่ม Mark done หลัง acceptance/validation ครบทุก gate และคง owner/status/evidence ให้ตรงกับ scope.
+Current owner: root ปิด SST-010/T016 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ; รวมใน commit SST-010 ตามคำสั่ง “commit”. SST-001–009 committed (`0e71f80` latest); SST-011 เป็นต้นไปยังไม่เริ่ม
 
 T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production SSH/session tasks ยังไม่ถูกติ๊ก
 
@@ -115,3 +115,5 @@ T011/T012 completion evidence: [catalog](../catalog.md) และ [SST-007 deliv
 T013/T014 completion evidence: [sessions](../sessions.md) และ [SST-008 delivery](../agent-runs/sst-008-delivery.md).
 
 T015 completion evidence: [known hosts](../known-hosts.md) และ [SST-009 delivery](../agent-runs/sst-009-delivery.md).
+
+T016 completion evidence: [saved-host authentication](../ssh-auth.md) และ [SST-010 delivery](../agent-runs/sst-010-delivery.md).

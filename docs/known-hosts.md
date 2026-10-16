@@ -1,6 +1,6 @@
 # SST-009 — Known-host verification and trust decisions
 
-**2026-10-15 · T015 · DONE through implementation, independent TEST/REVIEW (with focused re-review) and DELIVERY; not yet committed.** Authorized by “ทำงานถัดไปต่อได้เลย” after SST-008 `bcbb693` and Makefile `b6716fd`. Production saved-host authentication remains SST-010; no connection/input/credential command is added here.
+**2026-10-15 · T015 · DONE through implementation, independent TEST/REVIEW (with focused re-review) and DELIVERY; committed `0e71f80`.** Authorized by “ทำงานถัดไปต่อได้เลย” after SST-008 `bcbb693` and Makefile `b6716fd`. Production saved-host authentication is integrated by [SST-010](ssh-auth.md); SST-009 itself adds no connection/input/credential command.
 
 ## Shared policy and public-key identity
 
@@ -27,7 +27,7 @@ After a prompt, the policy re-reads trust and fences only that endpoint: an unkn
 
 ## Desktop Interface and UI
 
-[Controller](../apps/desktop/src/main/known-hosts.ts), [handler composition](../apps/desktop/src/main/known-host-runtime.ts) and [contracts](../packages/contracts/src/known-hosts.ts) expose only trust state/subscription, host-trust answers and prepare/apply revoke. A revoke whose row changed returns the IPC `conflict` code, shown as "This host's trust changed"; other failures stay generic. There is no raw key write, generic repository call or credential prompt bridge. Main composes the policy/controller with the existing registry; the default SSH engine remains unavailable until SST-010.
+[Controller](../apps/desktop/src/main/known-hosts.ts), [handler composition](../apps/desktop/src/main/known-host-runtime.ts) and [contracts](../packages/contracts/src/known-hosts.ts) expose only trust state/subscription, host-trust answers and prepare/apply revoke. A revoke whose row changed returns the IPC `conflict` code, shown as "This host's trust changed"; other failures stay generic. There is no raw key write, generic repository call or credential prompt bridge. Main composes the policy/controller with the existing registry; [SST-010](ssh-auth.md) now injects the production saved-host SSH adapter when storage and the Keychain provider are available.
 
 The sender must be a registered live application main frame at the exact document, with its current window/generation owner. Decisions additionally bind session ID, attempt generation and prompt ID. State events carry owner/sequence and only host-trust prompts; credentials and secret refs remain main-side. Subscribe-before-snapshot and monotonic filtering prevent stale owner/events from restoring old prompts. Policy notifications refresh registered windows after persistence.
 
@@ -81,7 +81,7 @@ After all runs, `security dump-keychain` attribute output (no secret data) showe
 
 - Runtime suites require the [owned fixture prerequisites](sessions.md#verification): the Docker daemon, `ssterm-ssh-fixture:m0` and the isolated spike dependencies.
 - Remember, Replace and revoke still advance the catalog revision, so a catalog preview prepared before such a trust decision must be prepared again; matches no longer affect previews.
-- The policy-to-transport glue (`hostVerifier` feeding the wire key and calling `finish(true)` only for an ok result) exists only in the test fixture. SST-010 must re-prove it with the production SSH adapter.
+- SST-009 evidence below used a test-only transport. [SST-010](ssh-auth.md) separately verifies the production policy-to-transport glue with saved credentials in development and packaged Electron.
 - No real SFTP or tunnel caller exists yet; the shared-policy unit test covers them by construction through the one policy instance.
 - `ssh2/util/pagent.exe` (a Windows Pageant helper used only on Windows) is still staged; release packaging review belongs to SST-028.
-- Physical OS lock, full app-lock/provider reconciliation, saved-host authentication (SST-010), terminal byte streams, actual SFTP/tunnel adapters and release signing remain later gates. No SST-009 commit/push/deployment is included in this authorization.
+- Physical OS lock, full app-lock/provider reconciliation, credential prompt workflows (SST-011), terminal byte streams, actual SFTP/tunnel adapters and release signing remain later gates. No SST-009 commit/push/deployment is included in this authorization.

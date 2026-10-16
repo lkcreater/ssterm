@@ -20,8 +20,8 @@ export default defineConfig({
   webServer: process.env.SSTERM_PACKAGED_EXECUTABLE
     ? undefined
     : {
-        command: "npm run dev:renderer",
-        url: "http://127.0.0.1:5173",
+        command: "npm run dev:renderer -- --port 5174",
+        url: "http://127.0.0.1:5174",
         reuseExistingServer: false,
         timeout: 30_000,
       },
@@ -36,6 +36,7 @@ export default defineConfig({
             "catalog.spec.ts",
             "sessions.spec.ts",
             "known-hosts.spec.ts",
+            "auth.spec.ts",
           ],
         },
       ]
@@ -49,6 +50,7 @@ export default defineConfig({
             "catalog.spec.ts",
             "sessions.spec.ts",
             "known-hosts.spec.ts",
+            "auth.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

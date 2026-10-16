@@ -46,7 +46,7 @@ export const test = base.extend<{ desktop: Desktop; corruptStore: boolean }>({
     env.SSTERM_TEST_USER_DATA = profile;
     const packaged = process.env.SSTERM_PACKAGED_EXECUTABLE;
     const showcase = testInfo.project.name === "showcase";
-    if (showcase) env.ELECTRON_RENDERER_URL = "http://127.0.0.1:5173/";
+    if (showcase) env.ELECTRON_RENDERER_URL = "http://127.0.0.1:5174/";
     // A packaged build must ignore even an explicitly supplied development URL.
     if (packaged) env.ELECTRON_RENDERER_URL = "http://127.0.0.1:9/";
     let app: ElectronApplication | undefined;
@@ -62,7 +62,7 @@ export const test = base.extend<{ desktop: Desktop; corruptStore: boolean }>({
       const externalRequests: string[] = [];
       await app.context().route(/^https?:\/\//, async (route) => {
         const url = new URL(route.request().url());
-        if (showcase && url.origin === "http://127.0.0.1:5173")
+        if (showcase && url.origin === "http://127.0.0.1:5174")
           await route.continue();
         else {
           externalRequests.push(url.href);
@@ -75,7 +75,7 @@ export const test = base.extend<{ desktop: Desktop; corruptStore: boolean }>({
       page.on("console", (message) => {
         if (message.type() === "error") errors.push(message.text());
       });
-      if (showcase) await page.goto("http://127.0.0.1:5173/#showcase");
+      if (showcase) await page.goto("http://127.0.0.1:5174/#showcase");
       await page.waitForLoadState("domcontentloaded");
       await use({ app, page, errors, externalRequests, profile });
     } finally {

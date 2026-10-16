@@ -1,0 +1,45 @@
+# SST-010 — Saved-host SSH authentication
+
+**2026-10-16 · T016 · DONE through independent TEST/REVIEW/DELIVER; included in the authorized SST-010 delivery commit.** Authorized by “ทำ ticket ถัดไปได้เลย” after SST-009 commit `0e71f80`. No commit/push or SST-011+ implementation is included. [Execution plan](agent-runs/implementation-plan.md).
+
+## Production composition
+
+[createSavedHostSessions](../apps/desktop/src/main/ssh.ts) is used by desktop main and the owned runtime test. It composes the repository resolver, shared KnownHostPolicy, the approved Keychain provider and SessionRegistry through [createSavedHostSshAdapter](../packages/services/src/ssh-session.ts). The existing SecretService shares the same provider; its publication/reconciliation journal is unchanged. Missing storage/provider access fails closed. No schema migration or dependency version change is needed.
+
+Each connect/reconnect reads the current catalog, resolves host/group inheritance and captures an immutable configuration. The adapter uses exactly that identity, username and password/private-key/passphrase references. Edits never retarget an active attempt; a later connection resolves the newly published references. There is no credential discovery, agent access, local username inference or alternate authentication fallback.
+
+The [main-only transport](../packages/adapters/src/ssh.ts) uses pinned ssh2 1.17.0 with its algorithm negotiation defaults. Its raw `hostVerifier` key goes through the production shared policy before the selected authentication handler reads any credential. Unknown/rejected/changed/cancelled trust cannot read or send credentials; Remember/Replace must complete before authentication. Matching trust needs no prompt. Rekeys also consult the policy without repeating the initial Authenticating transition; a rekey requiring a new prompt fails closed because the current lifecycle permits trust prompts only during initial verification.
+
+Successful SSH authentication opens an interactive `xterm-256color` shell (80×24). Session Ready requires that channel, not just an authenticated TCP connection. Both output streams stay paused without a data consumer until SST-012 implements ordered terminal delivery. No input, execution command, raw transport, credential or connect capability is added to preload/renderer; host/identity UI remains SST-016/017.
+
+## Supported credentials and errors
+
+The selected supported private-key files are **single-key OpenSSH Ed25519** and **traditional PEM RSA PKCS#1**, each plain or encrypted with a saved passphrase. PPK, PKCS#8, SEC1/ECDSA, DSA, certificates and multiple-key files are outside this allowlist. The mature ssh2 parser performs decoding/decryption; application code verifies the header/type/cardinality/private status and exact public algorithm, canonical public key and SHA256 fingerprint against the saved key metadata. No custom crypto or decoder is introduced. [Pinned upstream API](https://github.com/mscdex/ssh2/blob/v1.17.0/README.md#utilities).
+
+Only published opaque references reach SecretProvider. Provider returns and owned byte copies are overwritten, including values arriving after cancellation. Password/passphrase reads are bounded to 16 KiB each, private-key reads to 64 KiB. Transport/parser references are discarded after authentication, error or disposal; JS garbage collection and upstream crypto objects prevent a guarantee that every internal copy is overwritten.
+
+Fixed public errors distinguish `credentials-required`, `credentials-unavailable`, `invalid-private-key`, `unsupported-private-key` and `key-mismatch`. Missing password/secret/passphrase and keyboard-interactive configurations require SST-011 prompts; they do not silently become an empty password or another method. A deliberately stored empty password remains an explicit credential. Wrong credentials map to `auth-denied`; DNS, timeout, network and shell-open errors retain their existing finite codes. Raw provider/ssh2 messages, stacks and attached fields are never public.
+
+## Ownership and cleanup
+
+Connection ownership is registered before starting transport or awaiting credentials. Abort/generation fencing covers trust, delayed provider reads, authentication readiness and late channels. Lock, suspend, owner revocation, cancel and quit dispose transport/channel and remove abort listeners; no command is replayed. The registry supplies bounded connection/drain deadlines.
+
+A paused ssh2 channel can defer its stream `close` event while unread output remains. Channel disposal therefore starts destruction immediately and treats the client socket's `close` as an authoritative final drain fence as well. This was observed in both the real loopback unit test and Docker/Electron test; fixing the fence preserves the required `cleanup: complete` assertion without consuming/discarding terminal output.
+
+## Verification
+
+Environment: macOS arm64, Node 24.11.1, Electron 44.7.2, Docker 28.5.2. Runtime prerequisites are the [owned fixture prerequisites](sessions.md#verification). The development test server uses port **5174**, separate from the user's existing port-5173 development server. Production development/showcase commands still use 5173.
+
+[Focused tests](../tests/unit/ssh-session.test.ts) use generated keys and ephemeral loopback ssh2 servers: trust before secret reads, no fallback, public-key matching, four key formats, provider outcomes/size bounds, delayed reads after close/lock/owner revocation, shell failure, remote close and idempotent cleanup. Error classification also exercises synthetic DNS/timeout errors with fixed results.
+
+[Electron test](../tests/e2e/auth.spec.ts) calls the shipped main composition with an external [owned fixture](../tests/fixtures/auth/ssh.cjs). It publishes credentials through SecretService to a fresh `dev.ssterm.test.<uuid>` Keychain namespace and creates SQLite catalog identities/groups/hosts. It asserts inherited password auth; reject before any read; Remember then prompt-free match; encrypted/plain Ed25519 and RSA PEM auth; wrong password denial; newly published SecretRef used on the next attempt; real server-key rotation rejected before any read; explicit replacement; lock cleanup; sanitized events; no plaintext credentials in SQLite; wiped provider buffers; zero namespace items and removed fixture resources. This test runs against both development and unsigned packaged Electron. Test helpers and project keys are excluded from the package.
+
+Final checks: typecheck PASS; unit **141/141** PASS; build PASS; development E2E **18/18** PASS; unsigned arm64 package PASS; packaged E2E **15/15** PASS; no skipped/flaky/unexpected tests. Independent TEST decoded both auth receipts and inspected the ASAR: shipped SSH entry and ssh2 1.17.0 present, no project test/spike/fixture paths. Unit tests additionally exercise real server rekey success then trust revocation, and a withheld TCP handshake that times out with complete socket cleanup. Synthetic ENOTFOUND/EAI_AGAIN/ETIMEDOUT/client-timeout events verify finite errors without external DNS/network reliance.
+
+Independent REVIEW and focused re-review passed with no unresolved findings above low. The fixture now attempts every cleanup action even if an earlier cleanup fails; both full runtime suites passed again after this fix. The initial sandbox unit run denied loopback/Keychain access; the host-permitted run passed, so the denied run is not reported as a functional pass. The correct owned Docker label `dev.ssterm.spike.fixture` had no remaining containers; the new fixture asserts zero remaining items in its own Keychain namespace. [Delivery](agent-runs/sst-010-delivery.md) records the outcome. Existing SST-009 UI tests continue to cover trust dialog rendering/keyboard/contrast; SST-010 changes no UI or visual tokens.
+
+## Remaining scope
+
+Missing-credential/passphrase retry/cancel prompts and keyboard-interactive are SST-011. Terminal byte delivery/resize/exit is SST-012; input/Thai/IME/clipboard is SST-013; measured flow-control budgets are SST-014. Connect/identity management UI is SST-016/017. SFTP/tunnel callers and signing/release readiness remain later tickets. This service acceptance does not imply that the application already presents a usable terminal workspace.
+
+Rollback is a source change reverting the production adapter injection to the unavailable adapter; persisted catalog, secrets and known-host records need no migration or deletion. Dispose owned sessions before closing storage, preserve user data and revert only task-owned changes if requested.

@@ -50,3 +50,4 @@ export {
   type KnownHostErrorCode,
   type KnownHostRevokePreview,
 } from "./known-hosts.ts";
+export { createSavedHostSshAdapter } from "./ssh-session.ts";

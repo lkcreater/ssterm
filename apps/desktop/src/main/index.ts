@@ -9,17 +9,17 @@ import {
   type StorageHealth,
   type StorageProblem,
 } from "@ssterm/contracts";
-import type { MetadataRepository } from "@ssterm/domain";
+import type { MetadataRepository, SecretProvider } from "@ssterm/domain";
 import {
-  KnownHostPolicy,
+  type KnownHostPolicy,
   SecretService,
   TransientSecrets,
 } from "@ssterm/services";
 import { WindowBoundary, sameDocument } from "./boundary";
 import { contentSecurityPolicy, rendererLocation } from "./security";
 import { openMetadata } from "./storage";
-import { resolveHostConfig } from "./catalog";
 import { createDesktopSessions } from "./session-runtime";
+import { createSavedHostSessions } from "./ssh";
 import { createKnownHostsController } from "./known-hosts";
 import { registerKnownHostHandlers } from "./known-host-runtime";
 
@@ -48,6 +48,7 @@ let storageHealth: StorageHealth = { status: "blocked", code: "unavailable" };
 const transientSecrets = new TransientSecrets();
 // Main-only; undefined while storage or the Keychain binding is unavailable.
 let secrets: SecretService | undefined;
+let secretProvider: SecretProvider | undefined;
 let desktopSessions: ReturnType<typeof createDesktopSessions> | undefined;
 let knownHostPolicy: KnownHostPolicy | undefined;
 let knownHosts: ReturnType<typeof createKnownHostsController> | undefined;
@@ -72,6 +73,7 @@ function closeStorage(): void {
   const owned = repository;
   repository = undefined;
   secrets = undefined;
+  secretProvider = undefined;
   owned?.close();
 }
 async function initializeStorage(): Promise<void> {
@@ -106,15 +108,17 @@ async function initializeStorage(): Promise<void> {
       // Loaded lazily so a native-binding failure leaves storage health intact and secrets unavailable.
       const { KeychainSecretProvider, PRODUCTION_SECRET_NAMESPACE } =
         await import("@ssterm/adapters/keychain");
+      secretProvider = new KeychainSecretProvider(PRODUCTION_SECRET_NAMESPACE);
       secrets = new SecretService({
         repository,
-        provider: new KeychainSecretProvider(PRODUCTION_SECRET_NAMESPACE),
+        provider: secretProvider,
         transient: transientSecrets,
       });
       // Touches the Keychain only for unfinished journal rows; outcomes stay in the journal, never in logs.
       void secrets.reconcile().catch(() => undefined);
     } catch {
       secrets = undefined;
+      secretProvider = undefined;
     }
   } catch (error) {
     closeStorage();
@@ -240,30 +244,27 @@ if (ownsInstance) {
       closeStorage();
       return;
     }
-    desktopSessions = createDesktopSessions({
-      transient: transientSecrets,
-      power: powerMonitor,
-      resolve: (hostId) => {
-        if (!repository) {
-          return {
-            ok: false,
-            error: {
-              code: "unavailable",
-              message: "Configuration is unavailable.",
-            },
-          };
-        }
-        const snapshot = repository.snapshot();
-        return snapshot.ok
-          ? resolveHostConfig(snapshot.value, hostId)
-          : snapshot;
-      },
-    });
     if (repository) {
-      knownHostPolicy = new KnownHostPolicy({ repository });
+      const savedHostSessions = createSavedHostSessions({
+        repository,
+        provider: secretProvider,
+        transient: transientSecrets,
+        power: powerMonitor,
+      });
+      desktopSessions = savedHostSessions;
+      knownHostPolicy = savedHostSessions.policy;
       knownHosts = createKnownHostsController({
         policy: knownHostPolicy,
         registry: desktopSessions.registry,
+      });
+    } else {
+      desktopSessions = createDesktopSessions({
+        transient: transientSecrets,
+        power: powerMonitor,
+        resolve: () => ({
+          ok: false,
+          error: { code: "unavailable", message: "Configuration is unavailable." },
+        }),
       });
     }
     removeKnownHostHandlers = registerKnownHostHandlers({
