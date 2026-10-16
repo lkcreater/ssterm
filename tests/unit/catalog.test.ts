@@ -766,3 +766,58 @@ test("final SQL ID reservation failure rolls back a preview without changing the
   assert.deepEqual(s.snapshot(), before);
   assert.equal(s.provider.calls.length, 0);
 });
+test("a host edit in a 5,000-host catalog prepares in linear time with the same impacts as a small catalog", async (t) => {
+  const summary = async (count: number) => {
+    const s = await fixture(t);
+    const groupId = s.create({
+      type: "create-group",
+      data: { label: "Fleet", port: { mode: "value", port: 2200 } },
+    });
+    for (let start = 0; start < count; start += 1000)
+      s.commit(
+        Array.from(
+          { length: Math.min(1000, count - start) },
+          (_, i): MetadataChange => ({
+            type: "create-host",
+            id: randomUUID(),
+            data: {
+              label: `Host ${start + i}`,
+              address: `h${start + i}.test`,
+              groupId,
+            },
+          }),
+        ),
+      );
+    const host = s.snapshot().hosts.find((row) => row.label === "Host 0")!;
+    const started = performance.now();
+    const preview = value(
+      s.catalog.prepare({
+        type: "update-host",
+        id: host.id,
+        expectedRevision: host.revision,
+        data: { label: "Renamed" },
+      }),
+    );
+    const elapsed = performance.now() - started;
+    const { hosts, ...rest } = preview.impacts;
+    return {
+      elapsed,
+      impacts: {
+        hosts: hosts.map((row) => ({
+          same: row.hostId === host.id,
+          labels: [row.before?.hostRef.label, row.after?.hostRef.label],
+          port: [row.before?.port.value, row.after?.port.value],
+          flags: [row.effectiveConnectionChanged, row.provenanceChanged, row.pathChanged],
+        })),
+        rest,
+      },
+    };
+  };
+  const reference = await summary(3);
+  const large = await summary(5000);
+  assert.ok(large.elapsed < 1000, `prepare took ${large.elapsed.toFixed(0)} ms`);
+  assert.deepEqual(large.impacts, reference.impacts);
+  assert.deepEqual(reference.impacts.hosts, [
+    { same: true, labels: ["Host 0", "Renamed"], port: [2200, 2200], flags: [false, false, false] },
+  ]);
+});

@@ -69,10 +69,10 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "ackTerminal", "answerCredentials", "answerHostTrust", "bootstrap", "cancelCredentialPrompt", "closeTerminal", "credentialState",
-    "dismissTerminal", "onCredentialState", "onTerminalOutput", "onTerminalState", "onTrustState", "onWindowState", "openLink",
-    "openTerminal", "ping", "prepareKnownHostRevoke", "reconnectTerminal", "resizeTerminal", "revokeKnownHost", "terminalState",
-    "trustState", "writeTerminal",
+    "ackTerminal", "answerCredentials", "answerHostTrust", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "catalogState",
+    "closeTerminal", "connectHost", "credentialState", "dismissTerminal", "onCatalogState", "onCredentialState", "onTerminalOutput",
+    "onTerminalState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping", "prepareCatalogChange",
+    "prepareKnownHostRevoke", "reconnectTerminal", "resizeTerminal", "revokeKnownHost", "terminalState", "trustState", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -389,4 +389,52 @@ test("openLink forwards a rebuilt request and validates the reply", async () => 
   assert.equal(f.calls.length, count);
   f.setReply({ ok: true, value: { opened: "yes" } });
   assert.deepEqual(await f.api.openLink(request), failure("unavailable"));
+});
+
+test("catalog and connect commands are rebuilt, validated both ways and catalog states are owner-sequenced", async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const hostId = "0b7c7f3e-6a54-4c52-9a6e-3c1f1f9b2d10";
+  const token = "5f0f5c1e-2b7a-4d3c-8e9f-0a1b2c3d4e5f";
+  const state = (sequence: number, generation = 2) => ({ owner: { windowId: 1, generation }, sequence, availability: "ready", revision: 3,
+    truncated: false, hosts: [], groups: [], tags: [], identities: [] });
+  f.setReply({ ok: true, value: state(4) });
+  assert.deepEqual(await f.api.catalogState({ owner }), { ok: true, value: state(4) });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.catalogState, args: [{ owner }] });
+  const received: unknown[] = [];
+  const off = f.api.onCatalogState((value) => received.push(value));
+  f.emit(state(3)); f.emit(state(5)); f.emit(state(6, 3)); f.emit({ ...state(7), hosts: [{ passwordRef: "x" }] }); f.emit(state(6));
+  assert.deepEqual(received, [state(5), state(6)], "older, foreign-owner and malformed states are dropped");
+  off();
+  f.emit(state(9));
+  assert.equal(received.length, 2);
+  f.setReply({ ok: true, value: state(1, 3) });
+  assert.deepEqual(await f.api.catalogState({ owner }), failure("stale-owner"));
+
+  const intent = { type: "update-host" as const, id: hostId, expectedRevision: 1, data: { port: { mode: "value" as const, port: 2222 } } };
+  const preview = { kind: "preview", token, expiresAt: 1000, impacts: { hosts: [], removedHostIds: [], removedGroupIds: [], removedTunnelRules: 0, removedHostTags: 0, removedSnippetTags: 0 } };
+  f.setReply({ ok: true, value: preview });
+  assert.deepEqual(await f.api.prepareCatalogChange({ owner, intent }), { ok: true, value: preview });
+  const sent = f.calls.at(-1)!;
+  assert.deepEqual(sent, { channel: channels.prepareCatalogChange, args: [{ owner, intent }] });
+  assert.notEqual((sent.args[0] as { intent: unknown }).intent, intent, "a copy, never the caller's object");
+  f.setReply({ ok: true, value: { kind: "invalid", fields: [{ field: "port", code: "cycle" }] } });
+  assert.deepEqual(await f.api.prepareCatalogChange({ owner, intent }), failure("unavailable"), "a malformed reply is refused");
+  f.setReply({ ok: true, value: { revision: 4, createdIds: [] } });
+  assert.deepEqual(await f.api.applyCatalogChange({ owner, token }), { ok: true, value: { revision: 4, createdIds: [] } });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.applyCatalogChange, args: [{ owner, token }] });
+  f.setReply({ ok: true, value: { sessionId: "s-1", generation: 1 } });
+  assert.deepEqual(await f.api.connectHost({ owner, hostId }), { ok: true, value: { sessionId: "s-1", generation: 1 } });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.connectHost, args: [{ owner, hostId }] });
+
+  const count = f.calls.length;
+  for (const invalid of [
+    f.api.catalogState({ owner, extra: 1 } as never),
+    f.api.prepareCatalogChange({ owner, intent: { type: "create-identity", data: {} } as never }),
+    f.api.prepareCatalogChange({ owner, intent: { ...intent, data: {} } }),
+    f.api.applyCatalogChange({ owner, token: "t" }),
+    f.api.connectHost({ owner, hostId: "host-1" }),
+  ]) assert.deepEqual(await invalid, failure("invalid-request"));
+  assert.equal(f.calls.length, count);
 });

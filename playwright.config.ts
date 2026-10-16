@@ -42,6 +42,8 @@ export default defineConfig({
             "terminal-input.spec.ts",
             "terminal-flow.spec.ts",
             "terminal-lifecycle.spec.ts",
+            "catalog-ui.spec.ts",
+            "catalog-connect.spec.ts",
           ],
         },
       ]
@@ -61,6 +63,8 @@ export default defineConfig({
             "terminal-input.spec.ts",
             "terminal-flow.spec.ts",
             "terminal-lifecycle.spec.ts",
+            "catalog-ui.spec.ts",
+            "catalog-connect.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

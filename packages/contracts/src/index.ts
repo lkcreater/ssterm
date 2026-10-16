@@ -5,6 +5,8 @@ export * from "./known-hosts.ts";
 import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarget, WriteTerminalRequest, ResizeTerminalRequest, AckTerminalRequest, TerminalActionResponse } from "./terminals.ts";
 export * from "./terminals.ts";
 import type { OpenLinkRequest, OpenLinkResponse } from "./links.ts";
+import type { CatalogState, CatalogStateRequest, PrepareCatalogChangeRequest, CatalogPrepareResponse, ApplyCatalogChangeRequest, CatalogApplyResponse, ConnectHostRequest, ConnectHostResponse } from "./catalog.ts";
+export * from "./catalog.ts";
 export * from "./links.ts";
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
@@ -73,6 +75,11 @@ export interface DesktopAPI {
   reconnectTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
   dismissTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
   openLink(request: OpenLinkRequest): Promise<Result<OpenLinkResponse>>;
+  catalogState(request: CatalogStateRequest): Promise<Result<CatalogState>>;
+  onCatalogState(callback: (state: CatalogState) => void): () => void;
+  prepareCatalogChange(request: PrepareCatalogChangeRequest): Promise<Result<CatalogPrepareResponse>>;
+  applyCatalogChange(request: ApplyCatalogChangeRequest): Promise<Result<CatalogApplyResponse>>;
+  connectHost(request: ConnectHostRequest): Promise<Result<ConnectHostResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -104,6 +111,11 @@ export const channels = Object.freeze({
   reconnectTerminal: "ssterm:reconnect-terminal",
   dismissTerminal: "ssterm:dismiss-terminal",
   openLink: "ssterm:open-link",
+  catalogState: "ssterm:catalog-state",
+  catalogStateChanged: "ssterm:catalog-state-changed",
+  prepareCatalogChange: "ssterm:prepare-catalog-change",
+  applyCatalogChange: "ssterm:apply-catalog-change",
+  connectHost: "ssterm:connect-host",
 });
 
 const messages: Record<ErrorCode, string> = {

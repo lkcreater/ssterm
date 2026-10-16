@@ -74,9 +74,11 @@ test("shipped terminal streams a real remote shell with resize, exits and no inp
     await run("echo $((6*7))-ANSWER");
     await expect(screen, "typed input reaches the shell and its output returns").toContainText("42-ANSWER");
 
+    const initial = await size();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 680));
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(1000);
-    await expect(pane).toHaveAttribute("data-rows", /^\d+$/);
+    // The pane refits on a later ResizeObserver tick; read the grid only after it changed.
+    await expect.poll(async () => (await size()).columns, { message: "pane refits to the smaller window" }).not.toBe(initial.columns);
     const small = await size();
     await run('echo "SIZE=$(stty size)"');
     await expect(screen, "remote PTY size equals the rendered grid").toContainText(`SIZE=${small.rows} ${small.columns}`);

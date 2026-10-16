@@ -29,6 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Spinner } from "@/components/ui/spinner";
+import { promptFinalFocus } from "@/components/auth/credential-prompts";
 
 function KeyDetails({
   entry,
@@ -274,6 +275,9 @@ function HostTrustDialog({
   const [failed, setFailed] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const reject = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(
+    document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  );
   async function answer(decision: HostTrustDecision) {
     if (busy || !window.ssterm || (!available && decision !== "reject")) return;
     setBusy(true);
@@ -306,6 +310,7 @@ function HostTrustDialog({
     >
       <AlertDialogContent
         initialFocus={reject}
+        finalFocus={promptFinalFocus(returnFocus.current, prompt.sessionId)}
         className={dialogLayout}
         data-testid="host-trust-dialog"
       >

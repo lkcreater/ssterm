@@ -11,6 +11,7 @@ import {
 } from "@ssterm/contracts";
 import type { MetadataRepository, SecretProvider } from "@ssterm/domain";
 import {
+  CatalogModule,
   type KnownHostPolicy,
   SecretService,
   TransientSecrets,
@@ -27,6 +28,7 @@ import { registerCredentialHandlers } from "./credential-runtime";
 import { createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
 import { applicationMenuTemplate } from "./menu";
 import { registerLinkHandlers } from "./links";
+import { createCatalogController, registerCatalogHandlers, type CatalogController } from "./catalog-controller";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -63,6 +65,8 @@ let removeCredentialHandlers: (() => void) | undefined;
 let terminals: TerminalController | undefined;
 let removeTerminalHandlers: (() => void) | undefined;
 let removeLinkHandlers: (() => void) | undefined;
+let catalog: CatalogController | undefined;
+let removeCatalogHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -160,6 +164,7 @@ const boundary = new WindowBoundary(
   (owner) => {
     credentials?.revokeOwner(owner);
     knownHosts?.revokeOwner(owner);
+    catalog?.revokeOwner(owner);
     // Stop output frames before the owner's sessions start closing.
     terminals?.revokeOwner(owner);
     desktopSessions?.revokeOwner(owner);
@@ -290,6 +295,10 @@ if (ownsInstance) {
         policy: knownHostPolicy,
         registry: desktopSessions.registry,
       });
+      catalog = createCatalogController({
+        repository,
+        catalog: new CatalogModule({ repository }),
+      });
     } else {
       desktopSessions = createDesktopSessions({
         transient: transientSecrets,
@@ -320,6 +329,11 @@ if (ownsInstance) {
       ipc: ipcMain,
       boundary,
       controller: () => knownHosts,
+    });
+    removeCatalogHandlers = registerCatalogHandlers({
+      ipc: ipcMain,
+      boundary,
+      controller: () => catalog,
     });
     removeLinkHandlers = registerLinkHandlers({
       ipc: ipcMain,
@@ -357,6 +371,10 @@ if (ownsInstance) {
           terminals?.register(result.value.owner, (channel, value) => {
             if (!event.sender.isDestroyed()) event.sender.send(channel, value);
           });
+          catalog?.register(result.value.owner, (state) => {
+            if (!event.sender.isDestroyed())
+              event.sender.send(channels.catalogStateChanged, state);
+          });
         }
         return result;
       } catch {
@@ -393,11 +411,13 @@ app.on("before-quit", (event) => {
   credentials?.dispose();
   knownHosts?.dispose();
   terminals?.dispose();
+  catalog?.dispose();
   knownHostPolicy?.dispose();
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
   removeTerminalHandlers?.();
   removeLinkHandlers?.();
+  removeCatalogHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();

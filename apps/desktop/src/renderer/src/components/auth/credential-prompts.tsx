@@ -9,6 +9,17 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 
+/** The session's terminal input, only while the terminals view is showing. */
+export function paneInput(sessionId: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    `.terminal-workspace:not([hidden]) section[data-session-id="${CSS.escape(sessionId)}"] .xterm-helper-textarea`,
+  );
+}
+/** Base UI finalFocus: where focus was when the prompt opened, else the session's terminal, else the default. */
+export function promptFinalFocus(previous: HTMLElement | null, sessionId: string) {
+  return () =>
+    (previous?.isConnected && previous !== document.body ? previous : paneInput(sessionId)) ?? true;
+}
 export function CredentialPrompts({ state }: { state?: CredentialState }) {
   const prompt = state?.prompts[0];
   return prompt && state ? <CredentialPromptDialog key={`${state.owner.windowId}:${state.owner.generation}:${prompt.sessionId}:${prompt.generation}:${prompt.promptId}`}
@@ -81,7 +92,7 @@ function CredentialPromptDialog({ owner, prompt, available }: { owner: Owner; pr
     } finally { for (const field of values) field.value.fill(0); }
   }
   return <Dialog open onOpenChange={(open) => { if (!open) { clear(); void act(true); } }}>
-    <DialogContent initialFocus={first} finalFocus={returnFocus} showCloseButton={false}
+    <DialogContent initialFocus={first} finalFocus={promptFinalFocus(returnFocus.current, prompt.sessionId)} showCloseButton={false}
       className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-lg motion-reduce:animate-none" data-testid="credential-prompt-dialog">
       <DialogHeader>
         <DialogTitle>SSH authentication</DialogTitle>

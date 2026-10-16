@@ -37,9 +37,9 @@ function fakeChannel() {
   };
   return { channel, calls };
 }
-async function fixture(checkAccess?: () => Promise<boolean>) {
+async function fixture(checkAccess?: () => Promise<boolean>, limits?: { sessions: number }) {
   const contexts: SessionContext[] = [];
-  const registry = new SessionRegistry({ resolve: () => ({ ok: true, value: config }), transient: new TransientSecrets(), adapter: { start(context) { contexts.push(context); } } });
+  const registry = new SessionRegistry({ resolve: () => ({ ok: true, value: config }), transient: new TransientSecrets(), limits, adapter: { start(context) { contexts.push(context); } } });
   const controller = createTerminalController({ registry, checkAccess });
   const sent: { channel: string; value: TerminalState | TerminalOutput }[] = [];
   controller.register(owner, (channel, value) => sent.push({ channel, value }));
@@ -88,7 +88,7 @@ test("terminal contracts reject extra keys, oversize payloads, non-integers and 
     { kind: "exit", code: -1 }, { kind: "exit", code: 1.5 }, { kind: "signal", signal: "KILL" }, { kind: "signal", signal: "SIGKILL", message: "server text" },
     { kind: "eof", code: 0 }, { kind: "closed" },
   ]) assert.equal(isTerminalEnd(invalid), false);
-  const session = { sessionId: "s-1", generation: 1, phase: "ready", target: null, end: null, error: null };
+  const session = { sessionId: "s-1", generation: 1, hostId: "h-1", phase: "ready", target: null, end: null, error: null };
   assert.ok(isTerminalState({ owner, sequence: 0, sessions: [session] }));
   for (const error of TERMINAL_ERROR_CODES) assert.ok(isTerminalState({ owner, sequence: 0, sessions: [{ ...session, phase: "failed", error }] }));
   for (const error of ["invalid-state", "not-found", "disposed", "Connection reset by 10.0.0.1", 1, undefined])
@@ -104,7 +104,7 @@ test("controller projects the target, frames output to the owner and maps write 
   try {
     const state = f.controller.terminalState(owner);
     assert.ok(state.ok);
-    assert.deepEqual(state.value.sessions, [{ sessionId: f.identity.sessionId, generation: f.identity.generation, phase: "ready", end: null, error: null,
+    assert.deepEqual(state.value.sessions, [{ sessionId: f.identity.sessionId, generation: f.identity.generation, hostId: "host-1", phase: "ready", end: null, error: null,
       target: { label: "เป้าหมาย lab", environment: "PROD", endpointHost: "example.com", endpointPort: 2222, username: null } }]);
     assert.equal(f.first.calls.sink, undefined, "output stays unbound until a view opens it");
 
@@ -214,7 +214,7 @@ test("terminal IPC authorizes sender and owner, requires one argument and wipes 
   const wiped = (request: { bytes: Uint8Array }) => request.bytes.every((byte) => byte === 0);
   try {
     assert.deepEqual([...handlers.keys()].sort(), [channels.ackTerminal, channels.openTerminal, channels.resizeTerminal, channels.terminalState,
-      channels.writeTerminal, channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal].sort());
+      channels.writeTerminal, channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal, channels.connectHost].sort());
     assert.deepEqual([...terminalChannels].sort(), [...handlers.keys()].sort());
     for (const forged of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { url: mainFrame.url } }, { sender, senderFrame: null }]) {
       const request = write();
@@ -470,5 +470,79 @@ test("lifecycle IPC requires the owning main frame and exactly one valid target"
     assert.deepEqual(await invoke(channels.closeTerminal, event, { ...f.identity, generation: 2 }), ok);
     assert.deepEqual(await invoke(channels.dismissTerminal, event, { ...f.identity, generation: 2 }), ok);
     assert.equal(f.registry.snapshot(ownerId).length, 0);
+  } finally { unregister(); assert.equal(handlers.size, 0); boundary.dispose(); f.controller.dispose(); await f.registry.dispose(); }
+});
+
+test("connectHost opens an owned session for a saved host; a Connect after a lock is the explicit unlock", async () => {
+  const hostId = "0b7c7f3e-6a54-4c52-9a6e-3c1f1f9b2d10";
+  let allowed = false;
+  let checks = 0;
+  const f = await fixture(async () => { checks += 1; return allowed; });
+  try {
+    const connected = await f.controller.connectHost({ owner, hostId });
+    assert.ok(connected.ok);
+    const created = session({ ...f, identity: { ...f.identity, sessionId: connected.value.sessionId } });
+    assert.deepEqual([created.generation, created.hostId, created.phase], [connected.value.generation, hostId, "connecting"]);
+    assert.equal(f.states().at(-1)!.sessions.some((entry) => entry.hostId === hostId), true, "the owner's view learns the new pane");
+    for (const invalid of [{ owner, hostId: "host-1" }, { owner, hostId, extra: 1 }, { owner }])
+      assert.deepEqual(await f.controller.connectHost(invalid as never), failure("invalid-request"));
+    assert.deepEqual(await f.controller.connectHost({ owner: { windowId: 9, generation: 9 }, hostId }), failure("stale-owner"));
+
+    await f.registry.lock();
+    const before = f.registry.snapshot(ownerId).length;
+    assert.deepEqual(await f.controller.connectHost({ owner, hostId }), failure("unavailable"), "a denied unlock starts nothing");
+    assert.equal(checks, 1);
+    assert.equal(f.registry.snapshot(ownerId).length, before);
+    allowed = true;
+    const unlocked = await f.controller.connectHost({ owner, hostId });
+    assert.ok(unlocked.ok);
+    assert.equal(checks, 2);
+    assert.equal(f.registry.snapshot(ownerId).length, before + 1);
+
+    await f.registry.lock();
+    const revoked = f.controller.connectHost({ owner, hostId });
+    f.controller.revokeOwner(owner);
+    assert.deepEqual(await revoked, failure("stale-owner"), "an owner revoked during the unlock starts nothing");
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+
+  const g = await fixture();
+  try {
+    await g.registry.lock();
+    assert.deepEqual(await g.controller.connectHost({ owner, hostId }), failure("unavailable"), "no access check means no unlock");
+  } finally { g.controller.dispose(); await g.registry.dispose(); }
+
+  const h = await fixture(undefined, { sessions: 1 });
+  try {
+    assert.deepEqual(await h.controller.connectHost({ owner, hostId }), failure("busy"), "the session limit is busy, not a failure");
+    await h.registry.dispose();
+    assert.deepEqual(await h.controller.connectHost({ owner, hostId }), failure("unavailable"), "a disposed registry is unavailable");
+  } finally { h.controller.dispose(); await h.registry.dispose(); }
+});
+
+test("connectHost IPC requires the owning main frame and exactly one valid request", async () => {
+  const f = await fixture();
+  const hostId = "0b7c7f3e-6a54-4c52-9a6e-3c1f1f9b2d10";
+  const mainFrame = { url: "http://127.0.0.1:5174/" };
+  const sender = { id: 7, mainFrame, isDestroyed: () => false, send: () => {} };
+  const boundary = new WindowBoundary(mainFrame.url, { name: "ssterm", version: "0", platform: "darwin" }, () => ({ status: "ready", schemaVersion: 1 }));
+  boundary.register(sender, 1, true, () => {});
+  type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
+  const handlers = new Map<string, Handler>();
+  const unregister = registerTerminalHandlers({ ipc: { handle: (channel: string, listener: Handler) => { handlers.set(channel, listener); }, removeHandler: (channel: string) => { handlers.delete(channel); } }, boundary, controller: () => f.controller });
+  const invoke = (event: unknown, ...args: unknown[]) => handlers.get(channels.connectHost)!(event as IpcMainInvokeEvent, ...args);
+  const event = { sender, senderFrame: mainFrame };
+  const request = { owner, hostId };
+  try {
+    const count = f.registry.snapshot(ownerId).length;
+    assert.deepEqual(await invoke({ sender: { ...sender }, senderFrame: mainFrame }, request), failure("unauthorized"));
+    assert.deepEqual(await invoke(event, { ...request, owner: { windowId: 2, generation: 1 } }), failure("unauthorized"));
+    assert.deepEqual(await invoke(event, { ...request, owner: { ...owner, generation: 2 } }), failure("stale-owner"));
+    assert.deepEqual(await invoke(event, request, request), failure("invalid-request"));
+    assert.deepEqual(await invoke(event, { ...request, hostId: "../host" }), failure("invalid-request"));
+    assert.equal(f.registry.snapshot(ownerId).length, count);
+    const connected = await invoke(event, request) as { ok: boolean; value: { sessionId: string; generation: number } };
+    assert.ok(connected.ok);
+    assert.equal(connected.value.generation, 1);
+    assert.equal(f.registry.snapshot(ownerId).length, count + 1);
   } finally { unregister(); assert.equal(handlers.size, 0); boundary.dispose(); f.controller.dispose(); await f.registry.dispose(); }
 });

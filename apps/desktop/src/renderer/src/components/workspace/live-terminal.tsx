@@ -42,6 +42,7 @@ import {
   sanitizePaste,
   terminalShortcut,
 } from "@/lib/terminal-input";
+import { endpointText } from "@/lib/catalog-filter";
 import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
 import {
   terminalSearchDecorations,
@@ -399,7 +400,7 @@ function LiveTerminal({
   }, [opened, ready, windowId, ownerGeneration, sessionId, generation]);
 
   const endpoint = target
-    ? `${target.username ? `${target.username}@` : ""}${target.endpointHost}:${target.endpointPort}`
+    ? endpointText(target.endpointHost, target.endpointPort, target.username)
     : null;
   const label = target?.label ?? "Unknown target";
   const production = target?.environment === "PROD";
@@ -506,6 +507,7 @@ function LiveTerminal({
       onPasteCapture={interceptPaste}
       onCopy={reportCopy}
       aria-label={`Terminal for ${label}`}
+      data-session-id={sessionId}
       data-phase={phase}
       data-generation={generation}
       data-columns={size?.columns}

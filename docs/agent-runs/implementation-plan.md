@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-015
+# Execution record — M0 ถึง SST-016
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-014/T020 `DONE`, committed `0d665e0`; SST-013 committed `157b7ba`. **In progress:** SST-015/T021 per the [current execution plan](#sst-015-execution-plan--2026-10-16). Earlier sections are historical. Standing authorization: loop through SST-028 with a commit per ticket ([SST-013 authorization](#sst-013-execution-plan--2026-10-16)).
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-015/T021 `DONE`, committed `b783329`; SST-014 committed `0d665e0`. **In progress:** SST-016/T022 per the [current execution plan](#sst-016-execution-plan--2026-10-17). Earlier sections are historical. Standing authorization: loop through SST-028 with a commit per ticket ([SST-013 authorization](#sst-013-execution-plan--2026-10-16)).
 
 ## Authorization / acceptance
 
@@ -622,3 +622,29 @@ SST-014/T020 DONE through independent TEST/REVIEW/DELIVER. [Flow evidence](../te
 ### Final SST-015 record — 2026-10-17
 
 SST-015/T021 DONE through independent TEST/REVIEW/DELIVER. [Lifecycle evidence](../terminal-lifecycle.md) and [delivery](sst-015-delivery.md). Final source: typecheck PASS; unit 217/217; build PASS; development E2E 28/28; unsigned macOS arm64 package PASS; packaged 25/25. Silent drop detected in ≈ 2.9–3.4 s with test keepalive; quit with live sessions ≈ 170–190 ms with server shells reaped; 20 open/close rounds leak nothing. Review: no critical/high; three mediums and the lows fixed. Production-registry runtime coverage arrives with SST-016 connect.
+
+## SST-016 execution plan — 2026-10-17
+
+**Authorization / gate:** standing loop instruction; SST-015 committed `b783329`. ANALYZE (one read-only explorer over the catalog module, domain resolver, contracts, renderer shell and design docs) is complete; the evidence and existing patterns (known-host state stream, terminal handler wrapper) settled the forks, so no competing-sketch arena was run.
+
+**Acceptance / baseline:** [SST-016](../termius/tickets.md#sst-016--hosts--groups--search-ui), [T022](../termius/tasks.md), F01/F02 walkthroughs surviving restart. Production main never creates the `CatalogModule`, and the renderer has no catalog or connect capability; catalog impacts carry resolved configs with secret references that must never cross IPC. DS04–DS06 belong to SST-018/027/028. Baseline 217 unit / 28 E2E / 25 packaged.
+
+**Settled contract:** a pushed owner-bound `CatalogState` (hosts with effective port/auth and provenance, groups with inherited values, tags, identity summaries `{id,label,username,method}`; ≤ 10,000 per kind with `truncated`; exact-key guards and a no-reference-leak test). `prepareCatalogChange({owner, intent})` for host/group create/update/delete (group disposition), tag create/delete and set-host-tag returns a safe preview token with counts-only impacts or field errors from main pre-validation; `applyCatalogChange({owner, token})` returns `{revision, createdIds}`; tokens are owner-bound, one per owner, discarded on revoke (`CatalogModule.discard`). `connectHost({owner, hostId})` → `{sessionId, generation}` lives in the terminal handler set and reuses the SST-015 unlock path; `resource-limit` → `busy`. `TerminalSession.hostId` is projected. E2E specs use the exported terminal channel list. Search is a renderer filter mirroring `queryCatalogHosts` with a parity test. No PROD connect confirmation (environment is display metadata); Connect is disabled with a reason when the effective auth is not an identity. Identity creation stays in SST-017 (selection only here).
+
+**UI:** sidebar search, Add (server/group), All servers count, Ungrouped, group disclosure tree, tag filter; hosts page with list, detail (effective values with provenance, Connect/Edit/Delete) and dialog editors; group delete requires a disposition; revision-fenced saves with inline field errors and a conflict alert that keeps the draft; connect switches to the terminal view before Ready. Signal Blue PROD/state rules, keyboard, Thai, 960×640.
+
+| ID / stage | Depends | Owner / exact files and deliverable | Validation / exit gate |
+|---|---|---|---|
+| SST016-P / PLAN | ANALYZE + decisions | root owns this file | `git diff --check` |
+| SST016-I1 / catalog + connect backend | P | backend coder owns `packages/contracts/src/{catalog,terminals,index}.ts`, `packages/domain/src/catalog.ts` (group defaults export), `packages/services/src/catalog.ts` (`discard`), new `apps/desktop/src/main/catalog-controller.ts`, `apps/desktop/src/main/{index,terminals,ssh}.ts`, `apps/desktop/src/preload/bridge.ts`, new `tests/unit/catalog-boundary.test.ts`, `tests/unit/{terminals-boundary,bridge}.test.ts`, `tests/e2e/desktop.spec.ts` (key list) | Guards, DTO mapping + no-ref leak, token ownership, field errors, conflicts, publish ordering, connectHost mapping incl. locked→unlock and busy |
+| SST016-I2 / catalog UI | P (contract settled) | renderer coder owns new `apps/desktop/src/renderer/src/{hooks/use-catalog.ts,lib/catalog-filter.ts,lib/catalog-validation.ts,components/catalog/*}`, `components/app-shell.tsx`, `styles/globals.css`, optional `components/ui/radio-group.tsx`, new `tests/unit/{catalog-filter,catalog-ui}.test.ts` | Filter parity, validators, diff-to-intent; typecheck/build |
+| SST016-I3 / runtime evidence | I1 + I2 | runtime coder owns `tests/e2e/fixtures.ts` (`launchDesktop(profile)`, teardown fix after exit), new `tests/e2e/{catalog-ui,catalog-connect}.spec.ts`, `playwright.config.ts` | F01/F02 through the UI with relaunch persistence; production connect path to Docker OpenSSH with trust + password prompt → Ready; lock → Connect unlocks; disabled Connect reason |
+| SST016-T / R / L | I3 | independent tester and reviewer; root docs, delivery and commit | Critical/high block |
+
+**SST-016 ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+**SST-016 amendments during implementation:** `CatalogGroup.inherited` excludes the group itself (the renderer derives what members inherit); the catalog controller exists only while storage is ready (handlers return `unavailable` otherwise); the renderer accepts an equal state sequence so Reload after a conflict applies; the app auto-switches to terminals when a new session appears; review added `resolveHostConfigs` (one index, one resolution path) after measuring quadratic previews; dialogs return focus into the pane or list; IPv6 targets display bracketed.
+
+### Final SST-016 record — 2026-10-17
+
+SST-016/T022 DONE through independent TEST/REVIEW/DELIVER. [Catalog UI evidence](../catalog-ui.md) and [delivery](sst-016-delivery.md). Final source: typecheck PASS; unit 236/236; build PASS; development E2E 34/34 (a terminal-spec race that read the grid before refit was fixed and repeated 3/3); unsigned macOS arm64 package PASS; packaged 33/33. Review: one high (quadratic prepare, 10.8 s at 4,000 hosts → 65 ms) and mediums/lows fixed; tester found and the fix pass resolved a PROD badge overflow at 960×640. First production-registry connect evidence exists now.

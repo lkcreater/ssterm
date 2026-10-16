@@ -20,6 +20,8 @@ export type TerminalErrorCode = (typeof TERMINAL_ERROR_CODES)[number];
 export interface TerminalSession {
   sessionId: string;
   generation: number;
+  /** The saved host this session connects to. */
+  hostId: string;
   phase: TerminalPhase;
   target: {
     label: string;
@@ -60,7 +62,8 @@ function isTerminalSessionTarget(v: unknown): v is NonNullable<TerminalSession["
     between(v.endpointPort, 65_535) && (v.username === null || text(v.username, 1024));
 }
 export function isTerminalSession(v: unknown): v is TerminalSession {
-  return exactObject(v, ["sessionId", "generation", "phase", "target", "end", "error"]) && identifier(v.sessionId) && positive(v.generation) &&
+  return exactObject(v, ["sessionId", "generation", "hostId", "phase", "target", "end", "error"]) && identifier(v.sessionId) && positive(v.generation) &&
+    identifier(v.hostId) &&
     ["connecting", "ready", "closed", "failed"].includes(v.phase as string) &&
     (v.target === null || isTerminalSessionTarget(v.target)) && (v.end === null || isTerminalEnd(v.end)) &&
     (v.error === null || (TERMINAL_ERROR_CODES as readonly unknown[]).includes(v.error));

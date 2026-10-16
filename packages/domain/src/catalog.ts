@@ -351,19 +351,10 @@ function ancestry(index: Catalog, host: Host): Group[] {
   }
   return parents.reverse();
 }
-function resolve(
-  snapshot: MetadataSnapshot,
-  index: Catalog,
-  host: Host,
-): ResolvedHostConfig {
-  const parents = ancestry(index, host);
-  const candidates = [
-    { value: host, kind: "host" as const },
-    ...parents
-      .slice()
-      .reverse()
-      .map((value) => ({ value, kind: "group" as const })),
-  ];
+type Candidate = { value: Host | Group; kind: "host" | "group" };
+export type GroupDefaults = Pick<ResolvedHostConfig, "port" | "auth">;
+/** Nearest candidate first: the first explicit port and the first non-inherit auth win. */
+function effective(index: Catalog, candidates: Candidate[]): GroupDefaults {
   let port: ResolvedHostConfig["port"] = {
     value: 22,
     source: { kind: "default" },
@@ -411,6 +402,21 @@ function resolve(
     }
     break;
   }
+  return { port, auth };
+}
+function resolve(
+  snapshot: MetadataSnapshot,
+  index: Catalog,
+  host: Host,
+): ResolvedHostConfig {
+  const parents = ancestry(index, host);
+  const { port, auth } = effective(index, [
+    { value: host, kind: "host" },
+    ...parents
+      .slice()
+      .reverse()
+      .map((value) => ({ value, kind: "group" as const })),
+  ]);
   return {
     hostRef: {
       id: host.id,
@@ -442,6 +448,41 @@ export function resolveHostConfig(
     const host = index.hosts.get(hostId);
     requireValue(host, "invalid-request");
     return freeze(resolve(snapshot, index, host));
+  });
+}
+
+/** Every host's configuration from one catalog index, so whole-catalog comparisons stay linear. */
+export function resolveHostConfigs(
+  snapshot: MetadataSnapshot,
+): StoreResult<ReadonlyMap<Id, ResolvedHostConfig>> {
+  return result(() => {
+    const index = catalog(snapshot);
+    const configs = new Map<Id, ResolvedHostConfig>();
+    for (const host of index.hosts.values())
+      configs.set(host.id, freeze(resolve(snapshot, index, host)));
+    return configs;
+  });
+}
+
+/** What a direct member that inherits everything receives from each group (the group itself, then its ancestors). */
+export function resolveGroupDefaults(
+  snapshot: MetadataSnapshot,
+): StoreResult<ReadonlyMap<Id, GroupDefaults>> {
+  return result(() => {
+    const index = catalog(snapshot);
+    const defaults = new Map<Id, GroupDefaults>();
+    for (const group of index.groups.values()) {
+      const chain: Candidate[] = [];
+      for (
+        let current: Group | undefined = group;
+        current;
+        current =
+          current.parentId === null ? undefined : index.groups.get(current.parentId)
+      )
+        chain.push({ value: current, kind: "group" });
+      defaults.set(group.id, freeze(effective(index, chain)));
+    }
+    return defaults;
   });
 }
 

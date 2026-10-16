@@ -316,7 +316,7 @@ export interface MetadataRepository {
 }
 export { normalizeEndpoint, normalizeLabel, normalizeTag } from './normalize.ts';
 
-export { resolveHostConfig, queryCatalogHosts, catalogGroupTree, type ConfigSource, type ResolvedHostConfig, type CatalogHostQuery, type CatalogHostView, type CatalogGroupNode } from './catalog.ts';
+export { resolveHostConfig, resolveHostConfigs, resolveGroupDefaults, queryCatalogHosts, catalogGroupTree, type GroupDefaults, type ConfigSource, type ResolvedHostConfig, type CatalogHostQuery, type CatalogHostView, type CatalogGroupNode } from './catalog.ts';
 
 export { HOST_KEY_ALGORITHMS, type HostKeyAlgorithm, type HostKeyIdentity } from './host-key.ts';
 /** Main-only finite trust transitions; endpoint identity cannot be edited. */

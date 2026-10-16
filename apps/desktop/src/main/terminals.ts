@@ -1,10 +1,10 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import {
   channels, failure, isTerminalOutput, isTerminalState, isTerminalStateRequest, isTerminalTarget,
-  isWriteTerminalRequest, isResizeTerminalRequest, isAckTerminalRequest,
+  isWriteTerminalRequest, isResizeTerminalRequest, isAckTerminalRequest, isConnectHostRequest,
   type Owner, type Result, type TerminalState, type TerminalSession, type TerminalOutput, type TerminalPhase,
   type TerminalTarget, type TerminalActionResponse, type WriteTerminalRequest, type ResizeTerminalRequest,
-  type AckTerminalRequest, type TerminalErrorCode,
+  type AckTerminalRequest, type TerminalErrorCode, type ConnectHostRequest, type ConnectHostResponse,
 } from "@ssterm/contracts";
 import type { SessionErrorCode, SessionRegistry, SessionResult, SessionSnapshot, SessionState } from "@ssterm/services";
 import type { TerminalStream } from "@ssterm/domain";
@@ -43,6 +43,7 @@ function project(snapshot: SessionSnapshot): TerminalSession {
   return {
     sessionId: snapshot.id,
     generation: snapshot.generation,
+    hostId: snapshot.hostId,
     phase: phases[snapshot.state],
     target: target ? { label: target.label, environment: target.environment, endpointHost: target.address,
       endpointPort: target.port, username: target.username } : null,
@@ -53,7 +54,7 @@ function project(snapshot: SessionSnapshot): TerminalSession {
 
 /** Fence and framing only: stream policy lives in the adapter, lifecycle in the registry. */
 export function createTerminalController(options: {
-  registry: Pick<SessionRegistry, "snapshot" | "subscribe" | "terminal" | "close" | "reconnect" | "forget" | "unlock" | "settled" | "lockEpoch">;
+  registry: Pick<SessionRegistry, "snapshot" | "subscribe" | "terminal" | "connect" | "close" | "reconnect" | "forget" | "unlock" | "settled" | "lockEpoch">;
   /** Whether a locked registry may unlock (storage and secret provider available). Absent: never. */
   checkAccess?: () => Promise<boolean>;
 }) {
@@ -165,6 +166,24 @@ export function createTerminalController(options: {
         return disposed || !matching(request.owner) ? first : reconnect();
       }, true);
     },
+    /** Opens a new session for a saved host. Like Reconnect, a Connect after a lock is the explicit unlock. */
+    async connectHost(request: ConnectHostRequest): Promise<Result<ConnectHostResponse>> {
+      if (!isConnectHostRequest(request)) return failure("invalid-request");
+      if (disposed || !matching(request.owner)) return failure("stale-owner");
+      const since = options.registry.lockEpoch;
+      try {
+        const ownerId = sessionOwnerId(request.owner);
+        const connect = () => options.registry.lockEpoch === since ? options.registry.connect(ownerId, request.hostId) : relocked;
+        let result = connect();
+        if (!result.ok && result.error.code === "locked" && options.checkAccess) {
+          await options.registry.unlock(options.checkAccess, since);
+          if (disposed || !matching(request.owner)) return failure("stale-owner");
+          result = connect();
+        }
+        if (result.ok) return { ok: true, value: { sessionId: result.value.id, generation: result.value.generation } };
+        return failure(result.error.code === "resource-limit" ? "busy" : "unavailable");
+      } catch { return failure("unavailable"); }
+    },
     dismissTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
       return lifecycle(request, (ownerId) => {
         const result = options.registry.forget(ownerId, request.sessionId, request.generation);
@@ -187,7 +206,7 @@ export type TerminalController = ReturnType<typeof createTerminalController>;
 /** Every IPC channel `registerTerminalHandlers` owns, for callers that re-register them. */
 export const terminalChannels = Object.freeze([
   channels.terminalState, channels.openTerminal, channels.writeTerminal, channels.resizeTerminal, channels.ackTerminal,
-  channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal,
+  channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal, channels.connectHost,
 ]);
 
 export function registerTerminalHandlers(options: {
@@ -228,5 +247,6 @@ export function registerTerminalHandlers(options: {
   handle(channels.closeTerminal, isTerminalTarget, (controller, request) => controller.closeTerminal(request));
   handle(channels.reconnectTerminal, isTerminalTarget, (controller, request) => controller.reconnectTerminal(request));
   handle(channels.dismissTerminal, isTerminalTarget, (controller, request) => controller.dismissTerminal(request));
+  handle(channels.connectHost, isConnectHostRequest, (controller, request) => controller.connectHost(request));
   return () => { for (const channel of terminalChannels) options.ipc.removeHandler(channel); };
 }

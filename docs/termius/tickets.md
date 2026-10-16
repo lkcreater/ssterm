@@ -1,10 +1,10 @@
 # Tickets สำหรับ ssterm
 
-**SST-015 / T021: `DONE`** — [cancel / disconnect / manual reconnect](../terminal-lifecycle.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 217/217, E2E 28/28, packaged 25/25; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–014 committed (`0d665e0` latest); SST-016–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-016 / T022: `DONE`** — [hosts / groups / search UI](../catalog-ui.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 236/236, E2E 34/34, packaged 33/33; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–015 committed (`b783329` latest); SST-017–028 และ DS04–DS06 ทำต่อตาม loop
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-012–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-016–028 คือ `AUTHORIZED_LOOP` (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-017–028 คือ `AUTHORIZED_LOOP` (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
 
@@ -220,6 +220,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 ## M3 — Catalog และ workspace UX
 
 ### SST-016 — Hosts / groups / search UI
+
+**Status:** `DONE` — T022; [evidence](../catalog-ui.md) และ [delivery](../agent-runs/sst-016-delivery.md), independent TEST/REVIEW passed.
 
 **Outcome:** create/edit/find/connect hosts ได้ครบ. **Evidence:** W02/W04/W12.
 

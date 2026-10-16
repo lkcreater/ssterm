@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-015 / T021: `DONE`** — [cancel / disconnect / manual reconnect](../terminal-lifecycle.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 217/217, E2E 28/28, packaged 25/25; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–014 committed (`0d665e0` latest); SST-016–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-016 / T022: `DONE`** — [hosts / groups / search UI](../catalog-ui.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 236/236, E2E 34/34, packaged 33/33; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–015 committed (`b783329` latest); SST-017–028 และ DS04–DS06 ทำต่อตาม loop
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-012–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
 
@@ -115,7 +115,9 @@ Baseline macOS arm64/local-first/account-free และ product MVP ข้าง
 
 **2026-10-15 — earlier SST-004 confirmation:** “commit และทำงานถัดไปต่อ” อนุมัติ commit SST-003 (`603e600`) และ pipeline SST-004/T006/T007/T048/T049; supersedes earlier next-ticket boundary เฉพาะ SST-004 ไม่มี authorization ให้ commit SST-004, push หรือเริ่ม SST-005+ ดู [desktop evidence](../desktop-shell.md)
 
-**Latest SST-015 confirmation and delivery:** the standing loop instruction “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ” authorizes SST-015/T021; completed through independent TEST/REVIEW/DELIVER and committed. See [evidence](../terminal-lifecycle.md).
+**Latest SST-016 confirmation and delivery:** the standing loop instruction “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ” authorizes SST-016/T022; completed through independent TEST/REVIEW/DELIVER and committed. See [evidence](../catalog-ui.md).
+
+**Earlier SST-015 confirmation and delivery:** the standing loop instruction “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ” authorizes SST-015/T021; completed through independent TEST/REVIEW/DELIVER and committed. See [evidence](../terminal-lifecycle.md).
 
 **Earlier SST-014 confirmation and delivery:** the standing loop instruction “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ” authorizes SST-014/T020; completed through independent TEST/REVIEW/DELIVER and committed. See [evidence](../terminal-flow.md).
 

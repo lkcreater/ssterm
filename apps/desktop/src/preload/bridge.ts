@@ -9,6 +9,10 @@ import {
   type TerminalState, type TerminalStateRequest, type TerminalOutput, type TerminalTarget,
   type WriteTerminalRequest, type ResizeTerminalRequest, type AckTerminalRequest,
   isOpenLinkRequest, isOpenLinkResponse, type OpenLinkRequest,
+  isCatalogState, isCatalogStateRequest, isPrepareCatalogChangeRequest, isCatalogPrepareResponse,
+  isApplyCatalogChangeRequest, isCatalogApplyResponse, isConnectHostRequest, isConnectHostResponse,
+  type CatalogState, type CatalogStateRequest, type PrepareCatalogChangeRequest, type ApplyCatalogChangeRequest,
+  type ConnectHostRequest,
   isTrustState,
   isTrustStateRequest,
   isAnswerHostTrustRequest,
@@ -57,12 +61,19 @@ export function createDesktopBridge(transport: BridgeTransport): {
   let trustSequence = -1;
   let credentialSequence = -1;
   let terminalSequence = -1;
+  let catalogSequence = -1;
   const sameOwner = (value: Owner) => !!owner && value.windowId === owner.windowId && value.generation === owner.generation;
   const terminalCallbacks = new Set<(state: TerminalState) => void>();
   const terminalListener = (_event: unknown, value: unknown): void => {
     if (disposed || !isTerminalState(value) || !sameOwner(value.owner) || value.sequence <= terminalSequence) return;
     terminalSequence = value.sequence;
     for (const callback of terminalCallbacks) callback(value);
+  };
+  const catalogCallbacks = new Set<(state: CatalogState) => void>();
+  const catalogListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !isCatalogState(value) || !sameOwner(value.owner) || value.sequence <= catalogSequence) return;
+    catalogSequence = value.sequence;
+    for (const callback of catalogCallbacks) callback(value);
   };
   const outputCallbacks = new Set<(output: TerminalOutput) => void>();
   // No sequence filter: a gap must reach the view, which reports it instead of hiding it.
@@ -154,6 +165,7 @@ export function createDesktopBridge(transport: BridgeTransport): {
           trustSequence = -1;
           credentialSequence = -1;
           terminalSequence = -1;
+          catalogSequence = -1;
         } else if (
           next.owner.windowId === owner.windowId &&
           next.owner.generation === owner.generation
@@ -335,6 +347,32 @@ export function createDesktopBridge(transport: BridgeTransport): {
     dismissTerminal(request: TerminalTarget) {
       if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.dismissTerminal, [target(request)], isTerminalActionResponse);
+    },
+    async catalogState(request: CatalogStateRequest) {
+      if (!isCatalogStateRequest(request)) return failure("invalid-request");
+      const result = await invoke(channels.catalogState, [{ owner: { ...request.owner } }], isCatalogState);
+      if (!result.ok) return result;
+      if (!sameOwner(result.value.owner) || !sameOwner(request.owner)) return failure("stale-owner");
+      catalogSequence = Math.max(catalogSequence, result.value.sequence);
+      return result;
+    },
+    onCatalogState(callback: (state: CatalogState) => void): () => void {
+      return subscribe(channels.catalogStateChanged, catalogCallbacks, catalogListener, callback);
+    },
+    async prepareCatalogChange(request: PrepareCatalogChangeRequest) {
+      if (!isPrepareCatalogChangeRequest(request)) return failure("invalid-request");
+      let intent: unknown;
+      // A validated plain copy, never the caller's object; main validates it again.
+      try { intent = structuredClone(request.intent); } catch { return failure("invalid-request"); }
+      return invoke(channels.prepareCatalogChange, [{ owner: { ...request.owner }, intent }], isCatalogPrepareResponse);
+    },
+    applyCatalogChange(request: ApplyCatalogChangeRequest) {
+      if (!isApplyCatalogChangeRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.applyCatalogChange, [{ owner: { ...request.owner }, token: request.token }], isCatalogApplyResponse);
+    },
+    connectHost(request: ConnectHostRequest) {
+      if (!isConnectHostRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.connectHost, [{ owner: { ...request.owner }, hostId: request.hostId }], isConnectHostResponse);
     },
     openLink(request: OpenLinkRequest) {
       if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));

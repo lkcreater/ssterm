@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { previewMetadataChanges } from "@ssterm/adapters";
 import {
   resolveHostConfig,
+  resolveHostConfigs,
   queryCatalogHosts,
   type CatalogHostQuery,
   type ResolvedHostConfig,
@@ -276,14 +277,21 @@ function path(config: ResolvedHostConfig | null): unknown {
     config && config.ancestry.map((row) => ({ id: row.id, label: row.label }))
   );
 }
-function resolved(
+function resolvedAll(
   snapshot: MetadataSnapshot,
-  hostId: Id,
-): ResolvedHostConfig | null {
-  if (!snapshot.hosts.some((host) => host.id === hostId)) return null;
-  const result = resolveHostConfig(snapshot, hostId);
+): ReadonlyMap<Id, ResolvedHostConfig> {
+  const result = resolveHostConfigs(snapshot);
   if (!result.ok) return fail("constraint");
   return result.value;
+}
+function groupBy<T>(rows: readonly T[], key: (row: T) => Id): Map<Id, T[]> {
+  const map = new Map<Id, T[]>();
+  for (const row of rows) {
+    const list = map.get(key(row));
+    if (list) list.push(row);
+    else map.set(key(row), [row]);
+  }
+  return map;
 }
 function descendants(snapshot: MetadataSnapshot, groupId: Id): Set<Id> {
   const ids = new Set([groupId]);
@@ -320,11 +328,15 @@ function impacts(
       if (row.tagId === request.id) candidates.add(row.hostId);
   const hosts: CatalogHostImpact[] = [];
   const effectiveIdentityHostIds: Id[] = [];
-  for (const hostId of new Set(
-    [...before.hosts, ...after.hosts].map((host) => host.id),
-  )) {
-    const previous = resolved(before, hostId);
-    const next = resolved(after, hostId);
+  const beforeConfigs = resolvedAll(before);
+  const afterConfigs = resolvedAll(after);
+  const beforeHosts = new Map(before.hosts.map((row) => [row.id, row]));
+  const afterHosts = new Map(after.hosts.map((row) => [row.id, row]));
+  const beforeTags = groupBy(before.hostTags, (row) => row.hostId);
+  const afterTags = groupBy(after.hostTags, (row) => row.hostId);
+  for (const hostId of new Set([...beforeHosts.keys(), ...afterHosts.keys()])) {
+    const previous = beforeConfigs.get(hostId) ?? null;
+    const next = afterConfigs.get(hostId) ?? null;
     if (identityId && previous?.auth.identity?.id === identityId)
       effectiveIdentityHostIds.push(hostId);
     const effectiveConnectionChanged = !same(
@@ -333,17 +345,13 @@ function impacts(
     );
     const provenanceChanged = !same(provenance(previous), provenance(next));
     const pathChanged = !same(path(previous), path(next));
-    const oldHost = before.hosts.find((row) => row.id === hostId);
-    const newHost = after.hosts.find((row) => row.id === hostId);
-    const oldTags = before.hostTags.filter((row) => row.hostId === hostId);
-    const newTags = after.hostTags.filter((row) => row.hostId === hostId);
     if (
       candidates.has(hostId) ||
       effectiveConnectionChanged ||
       provenanceChanged ||
       pathChanged ||
-      !same(oldHost, newHost) ||
-      !same(oldTags, newTags)
+      !same(beforeHosts.get(hostId), afterHosts.get(hostId)) ||
+      !same(beforeTags.get(hostId) ?? [], afterTags.get(hostId) ?? [])
     )
       hosts.push({
         hostId,
@@ -354,10 +362,17 @@ function impacts(
         pathChanged,
       });
   }
-  const removed = <T extends { id: Id }>(old: T[], next: T[]) =>
-    old
-      .filter((row) => !next.some((item) => item.id === row.id))
-      .map((row) => row.id);
+  const removed = <T extends { id: Id }>(old: T[], next: T[]) => {
+    const kept = new Set(next.map((row) => row.id));
+    return old.filter((row) => !kept.has(row.id)).map((row) => row.id);
+  };
+  const pairs = <T>(rows: T[], key: (row: T) => string) => {
+    const kept = new Set(rows.map(key));
+    return (row: T) => !kept.has(key(row));
+  };
+  const hostTagKey = (row: { hostId: Id; tagId: Id }) => `${row.hostId}/${row.tagId}`;
+  const snippetTagKey = (row: { snippetId: Id; tagId: Id }) =>
+    `${row.snippetId}/${row.tagId}`;
   return {
     hosts,
     directIdentityHostIds: before.hosts
@@ -381,21 +396,10 @@ function impacts(
     removedGroupIds: removed(before.groups, after.groups),
     removedTunnelRuleIds: removed(before.tunnelRules, after.tunnelRules),
     removedHostTags: before.hostTags
-      .filter(
-        (row) =>
-          !after.hostTags.some(
-            (next) => next.hostId === row.hostId && next.tagId === row.tagId,
-          ),
-      )
+      .filter(pairs(after.hostTags, hostTagKey))
       .map(({ hostId, tagId }) => ({ hostId, tagId })),
     removedSnippetTags: before.snippetTags
-      .filter(
-        (row) =>
-          !after.snippetTags.some(
-            (next) =>
-              next.snippetId === row.snippetId && next.tagId === row.tagId,
-          ),
-      )
+      .filter(pairs(after.snippetTags, snippetTagKey))
       .map(({ snippetId, tagId }) => ({ snippetId, tagId })),
     cleanupRefIds,
   };
@@ -461,10 +465,10 @@ export class CatalogModule {
           });
         }
       };
+      const tagsByHost = groupBy(before.hostTags, (row) => row.hostId);
+      const rulesByHost = groupBy(before.tunnelRules, (row) => row.hostId);
       const deleteHost = (host: MetadataSnapshot["hosts"][number]) => {
-        for (const membership of before.hostTags.filter(
-          (row) => row.hostId === host.id,
-        ))
+        for (const membership of tagsByHost.get(host.id) ?? [])
           changes.push({
             type: "set-host-tag",
             hostId: host.id,
@@ -472,9 +476,7 @@ export class CatalogModule {
             present: false,
             expectedHostRevision: host.revision,
           });
-        for (const rule of before.tunnelRules.filter(
-          (row) => row.hostId === host.id,
-        ))
+        for (const rule of rulesByHost.get(host.id) ?? [])
           changes.push({
             type: "delete-tunnel-rule",
             id: rule.id,
@@ -556,6 +558,12 @@ export class CatalogModule {
         }
       } else if (request.type === "delete-tag") {
         current(before.tags, request.id, request.expectedRevision);
+        const hostRevisions = new Map(
+          before.hosts.map((host) => [host.id, host.revision]),
+        );
+        const snippetRevisions = new Map(
+          before.snippets.map((snippet) => [snippet.id, snippet.revision]),
+        );
         for (const row of before.hostTags.filter(
           (row) => row.tagId === request.id,
         ))
@@ -564,9 +572,7 @@ export class CatalogModule {
             hostId: row.hostId,
             tagId: row.tagId,
             present: false,
-            expectedHostRevision: before.hosts.find(
-              (host) => host.id === row.hostId,
-            )!.revision,
+            expectedHostRevision: hostRevisions.get(row.hostId)!,
           });
         for (const row of before.snippetTags.filter(
           (row) => row.tagId === request.id,
@@ -576,9 +582,7 @@ export class CatalogModule {
             snippetId: row.snippetId,
             tagId: row.tagId,
             present: false,
-            expectedSnippetRevision: before.snippets.find(
-              (snippet) => snippet.id === row.snippetId,
-            )!.revision,
+            expectedSnippetRevision: snippetRevisions.get(row.snippetId)!,
           });
         changes.push(request);
       } else if (
@@ -689,6 +693,10 @@ export class CatalogModule {
     } catch (error) {
       return errorResult(error);
     }
+  }
+  /** Drops an unapplied preview; unknown tokens are ignored. */
+  discard(token: string): void {
+    this.#plans.delete(token);
   }
   apply(token: string): StoreResult<CatalogApplied> {
     if (typeof token !== "string")
