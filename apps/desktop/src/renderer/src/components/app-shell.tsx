@@ -2,19 +2,26 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircleIcon,
   CircleIcon,
+  KeyboardIcon,
   KeyRoundIcon,
   LayersIcon,
   LockKeyholeIcon,
+  PanelLeftIcon,
   ServerIcon,
+  Settings2Icon,
   ShieldCheckIcon,
   SquareTerminalIcon,
-  TerminalIcon,
   WorkflowIcon,
 } from "lucide-react";
-import type { CatalogHost, ErrorCode, StorageProblem } from "@ssterm/contracts";
+import { usePanelRef } from "react-resizable-panels";
+import type { CatalogHost, ErrorCode, StorageProblem, TerminalPhase } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  ConnectionStatus,
+  type ConnectionState,
+} from "@/components/connection/connection-status";
 import {
   Empty,
   EmptyContent,
@@ -22,6 +29,11 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
@@ -42,7 +54,15 @@ import { useCredentials } from "@/hooks/use-credentials";
 import { CredentialPrompts } from "@/components/auth/credential-prompts";
 import { useKnownHosts } from "@/hooks/use-known-hosts";
 import { useTerminals } from "@/hooks/use-terminals";
-import { TerminalWorkspace } from "@/components/workspace/live-terminal";
+import { useSettings } from "@/hooks/use-settings";
+import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { SessionTabs } from "@/components/workspace/session-tabs";
+import { ShortcutsDialog } from "@/components/workspace/shortcuts-dialog";
+import {
+  TerminalWorkspace,
+  useWorkspace,
+  type WorkspaceCommand,
+} from "@/components/workspace/terminal-workspace";
 import {
   KnownHostsWorkspace,
   HostTrustDialogs,
@@ -67,6 +87,7 @@ import {
   groupTree,
   type CatalogScope,
 } from "@/lib/catalog-filter";
+import { endpointText } from "@/lib/catalog-filter";
 import iconLogo from "@/assets/icon-logo.png";
 
 const unavailable = [
@@ -137,6 +158,12 @@ const titles: Record<Page, string> = {
   "known-hosts": "Known hosts",
   identities: "Identities",
 };
+const phaseStates = {
+  connecting: "connecting",
+  ready: "connected",
+  closed: "disconnected",
+  failed: "error",
+} as const satisfies Record<TerminalPhase, ConnectionState>;
 const connectMessages: Partial<Record<ErrorCode, string>> = {
   busy: "Too many sessions open; close ended panes.",
   unavailable:
@@ -163,13 +190,17 @@ export function AppShell() {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [dialog, setDialog] = useState<CatalogDialog>();
   const [connectFailure, setConnectFailure] = useState<ConnectFailure>();
-  const [focusSession, setFocusSession] = useState<string>();
-  const scrolled = useRef<string>(undefined);
+  const [overlay, setOverlay] = useState<"settings" | "shortcuts">();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const sidebarPanel = usePanelRef();
+  const sidebarToggle = useRef<HTMLButtonElement>(null);
   const owner = desktop.status === "ready" ? desktop.data.owner : undefined;
   const trust = useKnownHosts(owner);
   const credentials = useCredentials(owner);
   const catalog = useCatalog(owner);
   const sessions = useTerminals(owner).state?.sessions ?? [];
+  const controller = useWorkspace(owner, sessions);
+  const settings = useSettings(owner);
   const connected = sessions.filter((session) => session.phase === "ready").length;
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
@@ -220,41 +251,16 @@ export function AppShell() {
     if (fresh) setPage("terminals");
   }, [sessions]);
 
-  // Scroll the new pane into view once, then focus it on Ready unless focus has moved elsewhere.
-  useEffect(() => {
-    if (!focusSession) return;
-    const session = sessions.find((row) => row.sessionId === focusSession);
-    if (!session) return;
-    const pane = document.querySelector<HTMLElement>(
-      `.terminal-workspace section[data-session-id="${CSS.escape(focusSession)}"]`,
-    );
-    if (scrolled.current !== focusSession) {
-      scrolled.current = focusSession;
-      pane?.scrollIntoView({ block: "nearest" });
-    }
-    const { phase } = session;
-    if (phase === "connecting") return;
-    setFocusSession(undefined);
-    const active = document.activeElement;
-    if (
-      phase === "ready" &&
-      page === "terminals" &&
-      (!active || active === document.body || pane?.contains(active))
-    )
-      pane?.querySelector<HTMLElement>(".xterm-helper-textarea")?.focus();
-  }, [sessions, page, focusSession]);
-
   async function connect(host: CatalogHost) {
     const bridge = window.ssterm;
     if (!owner || !bridge) return;
     setConnectFailure(undefined);
-    setFocusSession(undefined);
     // Switch first: the new pane renders in a visible workspace while it connects.
     setPage("terminals");
     let code: ErrorCode = "unavailable";
     try {
       const result = await bridge.connectHost({ owner, hostId: host.id });
-      if (result.ok) return setFocusSession(result.value.sessionId);
+      if (result.ok) return controller.reveal(result.value.sessionId);
       code = result.error.code;
     } catch {
       // Reported as unavailable below.
@@ -266,6 +272,24 @@ export function AppShell() {
       message: connectMessages[code] ?? "The connection could not start. Try again.",
     });
   }
+
+  /** No animation: the panel snaps, so focus can move before it is hidden. */
+  const toggleSidebar = () => {
+    const panel = sidebarPanel.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) return panel.expand();
+    if (document.getElementById("app-sidebar")?.contains(document.activeElement))
+      sidebarToggle.current?.focus();
+    panel.collapse();
+  };
+  const onCommand = (command: WorkspaceCommand) => {
+    if (command === "toggle-sidebar") toggleSidebar();
+    else setOverlay(command);
+  };
+  const showTerminals = () => setPage("terminals");
+  const active = controller.activeSession;
+  const activeTarget = active?.target;
+  const terminalsShown = page === "terminals" && !!owner && sessions.length > 0;
 
   const showHosts = (next?: CatalogScope) => {
     setPage("hosts");
@@ -289,256 +313,301 @@ export function AppShell() {
         desktop.status === "ready" ? desktop.data.window.focused : undefined
       }
     >
-      <header className="app-toolbar">
-        <img src={iconLogo} alt="" className="size-8" />
-        <span className="type-label">ssterm</span>
-        <Separator orientation="vertical" className="mx-1 h-4 self-center" />
-        <span className="type-caption text-muted-foreground">
-          Local workspace
-        </span>
-        <Badge variant="outline" className="ml-auto">
-          <LockKeyholeIcon data-icon="inline-start" /> No account needed
-        </Badge>
+      <header className="app-titlebar">
+        {/* The macOS traffic lights sit here; nothing interactive may overlap them. */}
+        <div className="titlebar-safe-area" aria-hidden="true" />
+        <Button
+          ref={sidebarToggle}
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Sidebar"
+          aria-expanded={sidebarOpen}
+          aria-controls="app-sidebar"
+          title="Show or hide the sidebar (⌃⌘S)"
+          onClick={toggleSidebar}
+        >
+          <PanelLeftIcon aria-hidden="true" />
+        </Button>
+        <div className="titlebar-tabs">
+          {controller.workspace.tabs.length > 0 ? (
+            <SessionTabs controller={controller} onSelect={showTerminals} />
+          ) : (
+            <span className="titlebar-title">ssterm</span>
+          )}
+        </div>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Settings"
+          title="Settings (⌘,)"
+          disabled={!owner}
+          onClick={() => setOverlay("settings")}
+        >
+          <Settings2Icon aria-hidden="true" />
+        </Button>
       </header>
-      <SidebarProvider
-        className="app-layout min-h-0"
-        style={{ "--sidebar-width": "240px" } as React.CSSProperties}
-      >
-        <Sidebar collapsible="none" className="app-sidebar">
-          <SidebarHeader className="gap-3 p-4">
-            <CatalogSearch
-              state={state}
-              disabled={!ready}
-              search={search}
-              tagIds={view.tagIds}
-              resultCount={view.filtering ? view.hosts.length : undefined}
-              onSearch={(value) => {
-                setSearch(value);
-                setPage("hosts");
-              }}
-              onSubmit={() => {
-                // The deferred view may still lag the typed search.
-                const first = state
-                  ? filterCatalogHosts(state, { scope: view.scope, search, tagIds: view.tagIds })[0]
-                  : undefined;
-                setPage("hosts");
-                if (!first) return;
-                setSelectedId(first.id);
-                requestAnimationFrame(() =>
-                  document
-                    .querySelector<HTMLElement>(`[data-host-id="${first.id}"]`)
-                    ?.focus(),
-                );
-              }}
-              onTags={(ids) => {
-                setTagIds(ids);
-                setPage("hosts");
-              }}
-              onAdd={(kind) =>
-                setDialog(
-                  kind === "host"
-                    ? { kind: "host", groupId: groupScope }
-                    : { kind: "group", parentId: groupScope },
-                )
-              }
-            />
-          </SidebarHeader>
-          <SidebarContent>
-            <CatalogLibrary
-              state={state}
-              tree={tree}
-              current={page === "hosts" ? view.scope : undefined}
-              expanded={expanded}
-              onScope={showHosts}
-              onToggle={(id, open) =>
-                setExpanded((current) => {
-                  const next = new Set(current);
-                  if (open) next.add(id);
-                  else next.delete(id);
-                  return next;
-                })
-              }
-            />
-            <SidebarGroup>
-              <SidebarGroupLabel>Workspace tools</SidebarGroupLabel>
-              <SidebarGroupContent>
+      <SidebarProvider className="app-layout min-h-0">
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+          <ResizablePanel
+            panelRef={sidebarPanel}
+            collapsible
+            collapsedSize={0}
+            minSize={200}
+            maxSize={400}
+            defaultSize={240}
+            groupResizeBehavior="preserve-pixel-size"
+            inert={!sidebarOpen}
+            style={{ overflow: "hidden" }}
+            onResize={(size) => setSidebarOpen(size.inPixels > 0)}
+          >
+            <Sidebar id="app-sidebar" collapsible="none" className="app-sidebar w-full">
+              <SidebarHeader className="gap-3 p-4">
+                <CatalogSearch
+                  state={state}
+                  disabled={!ready}
+                  search={search}
+                  tagIds={view.tagIds}
+                  resultCount={view.filtering ? view.hosts.length : undefined}
+                  onSearch={(value) => {
+                    setSearch(value);
+                    setPage("hosts");
+                  }}
+                  onSubmit={() => {
+                    // The deferred view may still lag the typed search.
+                    const first = state
+                      ? filterCatalogHosts(state, { scope: view.scope, search, tagIds: view.tagIds })[0]
+                      : undefined;
+                    setPage("hosts");
+                    if (!first) return;
+                    setSelectedId(first.id);
+                    requestAnimationFrame(() =>
+                      document
+                        .querySelector<HTMLElement>(`[data-host-id="${first.id}"]`)
+                        ?.focus(),
+                    );
+                  }}
+                  onTags={(ids) => {
+                    setTagIds(ids);
+                    setPage("hosts");
+                  }}
+                  onAdd={(kind) =>
+                    setDialog(
+                      kind === "host"
+                        ? { kind: "host", groupId: groupScope }
+                        : { kind: "group", parentId: groupScope },
+                    )
+                  }
+                />
+              </SidebarHeader>
+              <SidebarContent>
+                <CatalogLibrary
+                  state={state}
+                  tree={tree}
+                  current={page === "hosts" ? view.scope : undefined}
+                  expanded={expanded}
+                  onScope={showHosts}
+                  onToggle={(id, open) =>
+                    setExpanded((current) => {
+                      const next = new Set(current);
+                      if (open) next.add(id);
+                      else next.delete(id);
+                      return next;
+                    })
+                  }
+                />
+                <SidebarGroup>
+                  <SidebarGroupLabel>Workspace tools</SidebarGroupLabel>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={page === "terminals"}
+                          aria-current={page === "terminals" ? "page" : undefined}
+                          onClick={() => setPage("terminals")}
+                        >
+                          <SquareTerminalIcon />
+                          <span>Terminals</span>
+                          <span className="ml-auto type-caption">{sessions.length}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={page === "known-hosts"}
+                          aria-current={page === "known-hosts" ? "page" : undefined}
+                          onClick={() => setPage("known-hosts")}
+                          disabled={storage?.status !== "ready"}
+                        >
+                          <ShieldCheckIcon />
+                          <span>Known hosts</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={page === "identities"}
+                          aria-current={page === "identities" ? "page" : undefined}
+                          onClick={() => setPage("identities")}
+                          disabled={!ready}
+                        >
+                          <KeyRoundIcon />
+                          <span>Identities</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      {unavailable.map(({ label, icon: Icon }) => (
+                        <SidebarMenuItem key={label}>
+                          <SidebarMenuButton disabled>
+                            <Icon />
+                            <span>{label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              </SidebarContent>
+              <SidebarFooter className="gap-2 p-2">
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      isActive={page === "terminals"}
-                      aria-current={page === "terminals" ? "page" : undefined}
-                      onClick={() => setPage("terminals")}
-                    >
-                      <SquareTerminalIcon />
-                      <span>Terminals</span>
-                      <span className="ml-auto type-caption">{sessions.length}</span>
+                    <SidebarMenuButton disabled={!owner} onClick={() => setOverlay("settings")}>
+                      <Settings2Icon />
+                      <span>Settings</span>
+                      <span className="ml-auto type-caption text-muted-foreground">⌘,</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      isActive={page === "known-hosts"}
-                      aria-current={page === "known-hosts" ? "page" : undefined}
-                      onClick={() => setPage("known-hosts")}
-                      disabled={storage?.status !== "ready"}
-                    >
-                      <ShieldCheckIcon />
-                      <span>Known hosts</span>
+                    <SidebarMenuButton disabled={!owner} onClick={() => setOverlay("shortcuts")}>
+                      <KeyboardIcon />
+                      <span>Keyboard shortcuts</span>
+                      <span className="ml-auto type-caption text-muted-foreground">⌘/</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      isActive={page === "identities"}
-                      aria-current={page === "identities" ? "page" : undefined}
-                      onClick={() => setPage("identities")}
-                      disabled={!ready}
-                    >
-                      <KeyRoundIcon />
-                      <span>Identities</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  {unavailable.map(({ label, icon: Icon }) => (
-                    <SidebarMenuItem key={label}>
-                      <SidebarMenuButton disabled>
-                        <Icon />
-                        <span>{label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
                 </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
-          <SidebarFooter className="gap-3 p-4">
-            <Separator />
-            <div className="flex items-center gap-2 type-caption text-muted-foreground">
-              <LockKeyholeIcon className="size-4" aria-hidden="true" />
-              <span>On this Mac</span>
-            </div>
-          </SidebarFooter>
-        </Sidebar>
-        <main className="app-workspace">
-          <div className="workspace-toolbar">
-            <div className="flex items-center gap-2">
-              <TerminalIcon
-                className="size-4 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <h1 className="type-label">{titles[page]}</h1>
-            </div>
-            <span className="type-caption text-muted-foreground">
-              {sessions.length === 0
-                ? "No active sessions"
-                : `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}`}
-            </span>
-          </div>
-          {owner && sessions.length > 0 ? (
-            <TerminalWorkspace
-              owner={owner}
-              sessions={sessions}
-              hidden={page !== "terminals"}
-            />
-          ) : null}
-          {page === "known-hosts" ? (
-            <KnownHostsWorkspace
-              key={
-                owner ? `${owner.windowId}:${owner.generation}` : "unavailable"
-              }
-              owner={owner}
-              state={trust.state}
-              error={trust.error}
-            />
-          ) : page === "terminals" ? (
-            sessions.length > 0 ? null : (
-              <div className="workspace-empty">
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyTitle>No open terminals</EmptyTitle>
-                    <EmptyDescription>
-                      Connect to a saved server to open a terminal here.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <Button variant="outline" onClick={() => showHosts()}>
-                      <ServerIcon data-icon="inline-start" /> Show servers
-                    </Button>
-                  </EmptyContent>
-                </Empty>
-              </div>
-            )
-          ) : page === "identities" && owner && state && ready ? (
-            <IdentitiesPage owner={owner} catalog={catalog} state={state} />
-          ) : page !== "identities" && state && ready ? (
-            <HostsPage
-              catalog={catalog}
-              state={state}
-              hosts={view.hosts}
-              scope={view.scope}
-              filtering={view.filtering}
-              selectedId={selectedId}
-              sessions={sessions}
-              connectFailure={connectFailure}
-              onSelect={setSelectedId}
-              onAddHost={() => setDialog({ kind: "host", groupId: groupScope })}
-              onAddGroup={() => setDialog({ kind: "group", parentId: groupScope })}
-              onEditHost={(id) => setDialog({ kind: "host", id })}
-              onEditGroup={(id) => setDialog({ kind: "group", id })}
-              onDeleteHost={(id) => setDialog({ kind: "delete-host", id })}
-              onDeleteGroup={(id) => setDialog({ kind: "delete-group", id })}
-              onConnect={(host) => void connect(host)}
-              onClearFilters={() => {
-                setSearch("");
-                setTagIds([]);
-              }}
-            />
-          ) : (
-            <div className="workspace-empty">
-              <Empty>
-                <EmptyHeader>
-                  <img
-                    src={iconLogo}
-                    alt="ssterm monogram"
-                    className="empty-mark"
-                  />
-                  <EmptyTitle>
-                    {problem ||
-                    desktop.status === "unavailable" ||
-                    catalog.error ||
-                    state?.availability === "unavailable"
-                      ? "Workspace is unavailable"
-                      : "Opening workspace"}
-                  </EmptyTitle>
-                  <EmptyDescription>
-                    {problem || desktop.status === "unavailable"
-                      ? "Your workspace must open successfully before saved servers can be shown."
-                      : catalog.error || state?.availability === "unavailable"
-                        ? "Saved servers cannot be read right now. Close and reopen ssterm to try again."
-                        : "Loading saved servers."}
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            </div>
-          )}
-          {problem ? (
-            <div className="px-5 pb-4">
-              <Alert>
-                <AlertCircleIcon aria-hidden="true" />
-                <AlertTitle>{problem.title}</AlertTitle>
-                <AlertDescription>{problem.description}</AlertDescription>
-              </Alert>
-            </div>
-          ) : null}
-          {desktop.status === "unavailable" ? (
-            <div className="px-5 pb-4">
-              <Alert>
-                <CircleIcon aria-hidden="true" />
-                <AlertTitle>Workspace information is unavailable</AlertTitle>
-                <AlertDescription>
-                  Close this window and reopen ssterm to try again.
-                </AlertDescription>
-              </Alert>
-            </div>
-          ) : null}
-        </main>
+                <Separator />
+                <div className="flex items-center gap-2 px-2 type-caption text-muted-foreground">
+                  <LockKeyholeIcon className="size-4" aria-hidden="true" />
+                  <span>On this Mac</span>
+                </div>
+              </SidebarFooter>
+            </Sidebar>
+          </ResizablePanel>
+          <ResizableHandle aria-label="Resize sidebar" />
+          <ResizablePanel style={{ overflow: "hidden" }}>
+            <main className="app-workspace">
+              <h1 className="sr-only">{titles[page]}</h1>
+              {owner ? (
+                <TerminalWorkspace
+                  owner={owner}
+                  controller={controller}
+                  settings={settings.settings}
+                  hidden={page !== "terminals"}
+                  onShowTerminals={showTerminals}
+                  onCommand={onCommand}
+                />
+              ) : null}
+              {terminalsShown ? null : (
+                <div className="workspace-page">
+                  {page === "known-hosts" ? (
+                    <KnownHostsWorkspace
+                      key={
+                        owner ? `${owner.windowId}:${owner.generation}` : "unavailable"
+                      }
+                      owner={owner}
+                      state={trust.state}
+                      error={trust.error}
+                    />
+                  ) : page === "terminals" ? (
+                    <div className="workspace-empty">
+                      <Empty>
+                        <EmptyHeader>
+                          <EmptyTitle>No open terminals</EmptyTitle>
+                          <EmptyDescription>
+                            Connect to a saved server to open a terminal here.
+                          </EmptyDescription>
+                        </EmptyHeader>
+                        <EmptyContent>
+                          <Button variant="outline" onClick={() => showHosts()}>
+                            <ServerIcon data-icon="inline-start" /> Show servers
+                          </Button>
+                        </EmptyContent>
+                      </Empty>
+                    </div>
+                  ) : page === "identities" && owner && state && ready ? (
+                    <IdentitiesPage owner={owner} catalog={catalog} state={state} />
+                  ) : page !== "identities" && state && ready ? (
+                    <HostsPage
+                      catalog={catalog}
+                      state={state}
+                      hosts={view.hosts}
+                      scope={view.scope}
+                      filtering={view.filtering}
+                      selectedId={selectedId}
+                      sessions={sessions}
+                      connectFailure={connectFailure}
+                      onSelect={setSelectedId}
+                      onAddHost={() => setDialog({ kind: "host", groupId: groupScope })}
+                      onAddGroup={() => setDialog({ kind: "group", parentId: groupScope })}
+                      onEditHost={(id) => setDialog({ kind: "host", id })}
+                      onEditGroup={(id) => setDialog({ kind: "group", id })}
+                      onDeleteHost={(id) => setDialog({ kind: "delete-host", id })}
+                      onDeleteGroup={(id) => setDialog({ kind: "delete-group", id })}
+                      onConnect={(host) => void connect(host)}
+                      onClearFilters={() => {
+                        setSearch("");
+                        setTagIds([]);
+                      }}
+                    />
+                  ) : (
+                    <div className="workspace-empty">
+                      <Empty>
+                        <EmptyHeader>
+                          <img
+                            src={iconLogo}
+                            alt="ssterm monogram"
+                            className="empty-mark"
+                          />
+                          <EmptyTitle>
+                            {problem ||
+                            desktop.status === "unavailable" ||
+                            catalog.error ||
+                            state?.availability === "unavailable"
+                              ? "Workspace is unavailable"
+                              : "Opening workspace"}
+                          </EmptyTitle>
+                          <EmptyDescription>
+                            {problem || desktop.status === "unavailable"
+                              ? "Your workspace must open successfully before saved servers can be shown."
+                              : catalog.error || state?.availability === "unavailable"
+                                ? "Saved servers cannot be read right now. Close and reopen ssterm to try again."
+                                : "Loading saved servers."}
+                          </EmptyDescription>
+                        </EmptyHeader>
+                      </Empty>
+                    </div>
+                  )}
+                  {problem ? (
+                    <div className="px-5 pb-4">
+                      <Alert>
+                        <AlertCircleIcon aria-hidden="true" />
+                        <AlertTitle>{problem.title}</AlertTitle>
+                        <AlertDescription>{problem.description}</AlertDescription>
+                      </Alert>
+                    </div>
+                  ) : null}
+                  {desktop.status === "unavailable" ? (
+                    <div className="px-5 pb-4">
+                      <Alert>
+                        <CircleIcon aria-hidden="true" />
+                        <AlertTitle>Workspace information is unavailable</AlertTitle>
+                        <AlertDescription>
+                          Close this window and reopen ssterm to try again.
+                        </AlertDescription>
+                      </Alert>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </main>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </SidebarProvider>
       {state && dialog?.kind === "host" ? (
         <HostEditor
@@ -603,16 +672,40 @@ export function AppShell() {
           afterDelete={hostsHeading}
         />
       ) : null}
+      <SettingsDialog
+        open={overlay === "settings"}
+        onOpenChange={(open) => setOverlay(open ? "settings" : undefined)}
+        settings={settings}
+        terminals={sessions.length}
+      />
+      <ShortcutsDialog
+        open={overlay === "shortcuts"}
+        onOpenChange={(open) => setOverlay(open ? "shortcuts" : undefined)}
+      />
       <HostTrustDialogs state={trust.state} />
       <CredentialPrompts state={trust.state?.prompts.length ? undefined : credentials.state} />
       <footer className="app-statusbar">
-        <CircleIcon className="size-3" aria-hidden="true" />
-        <span>
+        {terminalsShown && active ? (
+          <div role="group" aria-label="Active pane" className="statusbar-target">
+            <ConnectionStatus state={phaseStates[active.phase]} />
+            <span className="statusbar-label truncate" title={activeTarget?.label}>
+              {activeTarget?.label ?? "Unknown target"}
+            </span>
+            {activeTarget?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
+            {activeTarget ? (
+              <span className="host-target truncate">
+                {endpointText(activeTarget.endpointHost, activeTarget.endpointPort, activeTarget.username)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          <CircleIcon className="size-3" aria-hidden="true" />
           {connected === 0
             ? "No connections"
             : `${connected} ${connected === 1 ? "connection" : "connections"}`}
         </span>
-        <span className="ml-auto">
+        <span className="shrink-0">
           {desktop.status === "loading" ? (
             <span className="flex items-center gap-2">
               <Spinner aria-label="Loading workspace information" /> Opening

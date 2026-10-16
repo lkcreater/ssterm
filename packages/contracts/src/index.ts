@@ -15,6 +15,8 @@ import type {
 } from "./identities.ts";
 export * from "./identities.ts";
 export * from "./links.ts";
+import type { TerminalSettings, SettingsRequest, UpdateSettingsRequest } from "./settings.ts";
+export * from "./settings.ts";
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
   | "invalid-request"
@@ -95,6 +97,8 @@ export interface DesktopAPI {
   forgetKeyPassphrase(request: ForgetKeyPassphraseRequest): Promise<Result<ForgetKeyPassphraseResponse>>;
   deleteKey(request: DeleteKeyRequest): Promise<Result<DeleteKeyResponse>>;
   retrySecrets(request: RetrySecretsRequest): Promise<Result<RetrySecretsResponse>>;
+  settings(request: SettingsRequest): Promise<Result<TerminalSettings>>;
+  updateSettings(request: UpdateSettingsRequest): Promise<Result<TerminalSettings>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -139,6 +143,8 @@ export const channels = Object.freeze({
   forgetKeyPassphrase: "ssterm:forget-key-passphrase",
   deleteKey: "ssterm:delete-key",
   retrySecrets: "ssterm:retry-secrets",
+  settings: "ssterm:settings",
+  updateSettings: "ssterm:update-settings",
 });
 
 const messages: Record<ErrorCode, string> = {

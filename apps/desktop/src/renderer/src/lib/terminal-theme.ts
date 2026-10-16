@@ -43,8 +43,37 @@ export const terminalAnsiKeys = [
   "brightWhite",
 ] as const;
 
-/** Lines kept per session (≈ 12 B × columns × lines); AppSettings bounds it until settings persist (SST-018). */
-export const TERMINAL_SCROLLBACK = 10_000;
+/** Scrollback lines shared by the panes open when a pane is created (≈ 12 B × columns × line). */
+export const SCROLLBACK_BUDGET = 320_000;
+// ponytail: counts lines, not columns × lines; weight by width if wide panes dominate memory.
+/** The saved setting, capped to this pane's share of the budget among `panes` mounted panes. */
+export function effectiveScrollback(setting: number, panes: number): number {
+  return Math.min(setting, Math.max(100, Math.floor(SCROLLBACK_BUDGET / Math.max(1, panes))));
+}
+
+export interface PaneScrollback {
+  /** The setting the values below were computed from. */
+  setting: number;
+  panes: Readonly<Record<string, number>>;
+}
+/**
+ * Lowering xterm's scrollback deletes history, so a pane keeps the share it was created with;
+ * opening or closing other panes never changes it. Only a new setting re-applies to every pane.
+ * Returns `state` itself when nothing changed.
+ */
+// ponytail: panes opened later can push the total past the budget; reclaim on close if memory matters.
+export function paneScrollback(state: PaneScrollback, sessions: readonly string[], setting: number): PaneScrollback {
+  const share = effectiveScrollback(setting, sessions.length);
+  const reapply = setting !== state.setting;
+  let changed = reapply || Object.keys(state.panes).length !== sessions.length;
+  const panes: Record<string, number> = {};
+  for (const id of sessions) {
+    const kept = reapply ? undefined : state.panes[id];
+    if (kept === undefined) changed = true;
+    panes[id] = kept ?? share;
+  }
+  return changed ? { setting, panes } : state;
+}
 
 export const terminalFont =
   '"JetBrains Mono Variable", "Noto Sans Thai Variable", ui-monospace, monospace';
@@ -63,7 +92,6 @@ export const xtermOptions = {
   fontFamily: terminalFont,
   fontSize: 13,
   lineHeight: 1.4,
-  scrollback: TERMINAL_SCROLLBACK,
   allowProposedApi: true,
   linkHandler: { activate() {} },
   windowOptions: {},

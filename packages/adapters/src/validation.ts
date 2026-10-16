@@ -504,7 +504,8 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
     row.updatedAt = now;
   }
   for (const tag of next.tags) tag.normalizedName = normalizeTag(tag.label);
-  if (!changes.every(change => change?.type === 'verify-known-host')) next.catalogRevision++;
+  // Trust re-verification and app settings are not catalog edits, so they must not invalidate catalog previews.
+  if (!changes.every(change => change?.type === 'verify-known-host' || change?.type === 'update-settings')) next.catalogRevision++;
   validateGraph(next);
   return next;
 }

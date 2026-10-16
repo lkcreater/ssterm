@@ -45,6 +45,8 @@ export default defineConfig({
             "catalog-ui.spec.ts",
             "catalog-connect.spec.ts",
             "identities.spec.ts",
+            "workspace.spec.ts",
+            "settings.spec.ts",
           ],
         },
       ]
@@ -67,6 +69,8 @@ export default defineConfig({
             "catalog-ui.spec.ts",
             "catalog-connect.spec.ts",
             "identities.spec.ts",
+            "workspace.spec.ts",
+            "settings.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

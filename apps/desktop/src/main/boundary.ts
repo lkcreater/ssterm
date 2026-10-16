@@ -90,6 +90,12 @@ export class WindowBoundary {
     this.revokeOwner(previous);
   }
 
+  /** The current owner of a registered window, for main-initiated work such as the close guard. */
+  ownerOf(sender: SenderIdentity): Owner | undefined {
+    const registration = this.windows.get(sender.id);
+    return !this.disposed && registration?.sender === sender ? { ...registration.owner } : undefined;
+  }
+
   focus(sender: SenderIdentity, focused: boolean): void {
     const registration = this.windows.get(sender.id);
     if (

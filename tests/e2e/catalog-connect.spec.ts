@@ -82,7 +82,7 @@ test("a server created in the UI connects through production main: trust, passwo
     await connect.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Servers");
-    await expect(page.getByText("No active sessions", { exact: true })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Terminal tabs" }), "no session was opened").toHaveCount(0);
 
     await addServer(server, `${identity} (${lab.username})`);
     await expect(detail).toContainText(`${lab.port} · from group ${group}`);

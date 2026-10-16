@@ -7,6 +7,7 @@ import {
   channels,
   failure,
   type StorageHealth,
+  type TerminalSession,
   type StorageProblem,
 } from "@ssterm/contracts";
 import type { MetadataRepository, SecretProvider } from "@ssterm/domain";
@@ -25,9 +26,10 @@ import { createKnownHostsController } from "./known-hosts";
 import { registerKnownHostHandlers } from "./known-host-runtime";
 import { createCredentialsController } from "./credentials";
 import { registerCredentialHandlers } from "./credential-runtime";
-import { createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
+import { closePrompt, createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
 import { applicationMenuTemplate } from "./menu";
 import { registerLinkHandlers } from "./links";
+import { registerSettingsHandlers } from "./settings";
 import { createCatalogController, observeCommits, registerCatalogHandlers, type CatalogController } from "./catalog-controller";
 import { createIdentitiesController, registerIdentityHandlers, secretNamespace, type IdentitiesController } from "./identities";
 
@@ -66,6 +68,7 @@ let removeCredentialHandlers: (() => void) | undefined;
 let terminals: TerminalController | undefined;
 let removeTerminalHandlers: (() => void) | undefined;
 let removeLinkHandlers: (() => void) | undefined;
+let removeSettingsHandlers: (() => void) | undefined;
 let catalog: CatalogController | undefined;
 let removeCatalogHandlers: (() => void) | undefined;
 let identities: IdentitiesController | undefined;
@@ -194,6 +197,32 @@ async function confirmAndOpen(href: string, window: BrowserWindow | null): Promi
 }
 let quitting = false;
 let shutdownComplete = false;
+let quitConfirmed = false;
+let quitPrompt: Promise<void> | undefined;
+function liveSessions(windows: BrowserWindow[]): TerminalSession[] {
+  return windows.flatMap((window) => {
+    if (window.isDestroyed()) return [];
+    const owner = boundary.ownerOf(window.webContents);
+    const state = owner && terminals?.terminalState(owner);
+    return state && state.ok ? state.value.sessions : [];
+  });
+}
+/** Windows showing a close sheet; a Quit meanwhile brings that sheet forward instead of stacking another. */
+const closeSheets = new Set<BrowserWindow>();
+/** A sheet on a minimized or background window (Dock Quit, a close from another app) would go unseen. */
+function bringToFront(window: BrowserWindow): void {
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  if (process.platform === "darwin") app.focus({ steal: true });
+}
+/** Cancel is the default; `dialog` is read at call time so runtime tests can stub the sheet. */
+async function confirmDisconnect(window: BrowserWindow | undefined, prompt: { message: string; detail: string }, confirm: string): Promise<boolean> {
+  const options = { type: "warning" as const, buttons: ["Cancel", confirm], defaultId: 0, cancelId: 0, ...prompt };
+  if (!window || window.isDestroyed()) return (await dialog.showMessageBox(options)).response === 1;
+  bringToFront(window);
+  return (await dialog.showMessageBox(window, options)).response === 1;
+}
 if (ownsInstance) {
   app.on("second-instance", () => {
     const window = BrowserWindow.getAllWindows()[0];
@@ -228,6 +257,7 @@ function createWindow(): void {
     height: 800,
     minWidth: 960,
     minHeight: 640,
+    ...(process.platform === "darwin" ? { titleBarStyle: "hidden" as const, trafficLightPosition: { x: 14, y: 13 } } : {}),
     backgroundColor: "#0C1220",
     show: false,
     webPreferences: {
@@ -272,6 +302,31 @@ function createWindow(): void {
     window.removeListener("blur", blurred);
     contents.removeListener("did-start-navigation", navigating);
     contents.removeListener("render-process-gone", gone);
+  });
+  let allowClose = false;
+  let closePrompting: Promise<void> | undefined;
+  window.on("close", (event) => {
+    if (quitting) return;
+    // A confirmation covers one close only: if the window stays open anyway, the next close asks again.
+    if (allowClose) {
+      allowClose = false;
+      return;
+    }
+    const prompt = closePrompt(liveSessions([window]), "close");
+    if (!prompt) return;
+    event.preventDefault();
+    if (closePrompting) return;
+    closeSheets.add(window);
+    closePrompting = confirmDisconnect(window, prompt, "Close Window")
+      .then((confirmed) => {
+        if (!confirmed || window.isDestroyed()) return;
+        allowClose = true;
+        window.close();
+      }, () => undefined)
+      .finally(() => {
+        closePrompting = undefined;
+        closeSheets.delete(window);
+      });
   });
   window.once("ready-to-show", () => window.show());
   void window.loadURL(location.url).catch(() => {
@@ -367,6 +422,11 @@ if (ownsInstance) {
       boundary,
       controller: () => identities,
     });
+    removeSettingsHandlers = registerSettingsHandlers({
+      ipc: ipcMain,
+      boundary,
+      repository: () => repository,
+    });
     removeLinkHandlers = registerLinkHandlers({
       ipc: ipcMain,
       boundary,
@@ -437,7 +497,24 @@ app.on("window-all-closed", () => {
 app.on("before-quit", (event) => {
   if (shutdownComplete) return;
   event.preventDefault();
-  if (quitting) return;
+  if (quitting || quitPrompt) return;
+  // The quit would otherwise sit behind the close sheet and end unanswered when that window closes.
+  const sheet = closeSheets.values().next().value;
+  if (sheet) {
+    if (!sheet.isDestroyed()) bringToFront(sheet);
+    return;
+  }
+  const prompt = quitConfirmed ? undefined : closePrompt(liveSessions(BrowserWindow.getAllWindows()), "quit");
+  if (prompt) {
+    quitPrompt = confirmDisconnect(BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0], prompt, "Quit")
+      .then((confirmed) => {
+        quitPrompt = undefined;
+        if (!confirmed) return;
+        quitConfirmed = true;
+        app.quit();
+      }, () => { quitPrompt = undefined; });
+    return;
+  }
   quitting = true;
   boundary.dispose();
   credentials?.dispose();
@@ -450,6 +527,7 @@ app.on("before-quit", (event) => {
   removeCredentialHandlers?.();
   removeTerminalHandlers?.();
   removeLinkHandlers?.();
+  removeSettingsHandlers?.();
   removeCatalogHandlers?.();
   removeIdentityHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);

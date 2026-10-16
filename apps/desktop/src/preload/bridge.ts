@@ -9,6 +9,7 @@ import {
   type TerminalState, type TerminalStateRequest, type TerminalOutput, type TerminalTarget,
   type WriteTerminalRequest, type ResizeTerminalRequest, type AckTerminalRequest,
   isOpenLinkRequest, isOpenLinkResponse, type OpenLinkRequest,
+  isSettingsRequest, isUpdateSettingsRequest, isTerminalSettings, type SettingsRequest, type UpdateSettingsRequest,
   isCatalogState, isCatalogStateRequest, isPrepareCatalogChangeRequest, isCatalogPrepareResponse,
   isApplyCatalogChangeRequest, isCatalogApplyResponse, isConnectHostRequest, isConnectHostResponse,
   type CatalogState, type CatalogStateRequest, type PrepareCatalogChangeRequest, type ApplyCatalogChangeRequest,
@@ -426,6 +427,14 @@ export function createDesktopBridge(transport: BridgeTransport): {
     retrySecrets(request: RetrySecretsRequest) {
       if (!isRetrySecretsRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.retrySecrets, [{ owner: { ...request.owner } }], isRetrySecretsResponse);
+    },
+    settings(request: SettingsRequest) {
+      if (!isSettingsRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.settings, [{ owner: { ...request.owner } }], isTerminalSettings);
+    },
+    updateSettings(request: UpdateSettingsRequest) {
+      if (!isUpdateSettingsRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.updateSettings, [{ owner: { ...request.owner }, changes: { ...request.changes } }], isTerminalSettings);
     },
     openLink(request: OpenLinkRequest) {
       if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));

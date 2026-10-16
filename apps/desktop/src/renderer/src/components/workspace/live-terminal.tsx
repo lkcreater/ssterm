@@ -1,11 +1,27 @@
-import { useEffect, useRef, useState, type ClipboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { CircleIcon, RotateCcwIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  BanIcon,
+  CircleIcon,
+  CopyIcon,
+  RotateCcwIcon,
+  TriangleAlertIcon,
+  UnplugIcon,
+  XIcon,
+} from "lucide-react";
 import {
   MAX_LINK_URL,
   MAX_TERMINAL_SIZE,
@@ -26,6 +42,7 @@ import {
 } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   PasteConfirmDialog,
   TerminalSearchBar,
@@ -43,6 +60,7 @@ import {
   terminalShortcut,
 } from "@/lib/terminal-input";
 import { endpointText } from "@/lib/catalog-filter";
+import { copyText } from "@/lib/clipboard";
 import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
 import {
   terminalSearchDecorations,
@@ -90,38 +108,39 @@ interface Controls {
   resume(): void;
   /** Sends text through xterm's paste path only while this view accepts input. */
   paste(text: string): boolean;
+  apply(settings: PaneSettings): void;
 }
 
-/** Every owner session stays mounted, even while another page is shown, so its stream keeps flowing. */
-export function TerminalWorkspace({
-  owner,
-  sessions,
-  hidden,
-}: {
-  owner: Owner;
-  sessions: TerminalSession[];
-  hidden: boolean;
-}) {
-  return (
-    <div className="terminal-workspace" hidden={hidden}>
-      {sessions.map((session) => (
-        <LiveTerminal
-          key={session.sessionId}
-          owner={owner}
-          session={session}
-        />
-      ))}
-    </div>
-  );
+/** What a pane renders with: the saved settings after the scrollback cap and reduced motion. */
+export interface PaneSettings {
+  fontSize: number;
+  scrollback: number;
+  cursorStyle: "block" | "bar" | "underline";
+  cursorBlink: boolean;
 }
 
-/** One xterm per logical session: a reconnect keeps its history but carries no input or stream state. */
-function LiveTerminal({
+/**
+ * One xterm per logical session: a reconnect keeps its history but carries no input or stream state.
+ * A hidden pane keeps its real size (never `display: none`) so it opens, streams and sees remote exits.
+ */
+export function LiveTerminal({
   owner,
   session,
+  settings,
+  active = false,
+  hidden = false,
+  style,
+  actions,
 }: {
   owner: Owner;
   session: TerminalSession;
+  settings: PaneSettings;
+  active?: boolean;
+  hidden?: boolean;
+  /** Position and size from the workspace layout. */
+  style?: CSSProperties;
+  /** Extra header controls, such as the pane menu. */
+  actions?: ReactNode;
 }) {
   const { sessionId, generation, phase, target } = session;
   const ready = phase === "ready";
@@ -130,6 +149,8 @@ function LiveTerminal({
   const pane = useRef<HTMLElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const controls = useRef<Controls | null>(null);
+  // Read when the xterm is created; later changes go through apply().
+  const initial = useRef(settings);
   const started = useRef(0);
   // After Reconnect, focus goes back to the terminal once a newer generation is Ready.
   const focusAfter = useRef<number>(undefined);
@@ -147,6 +168,12 @@ function LiveTerminal({
   const searchVisible = useRef(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingPaste>();
+
+  // Keys typed after a tab switch must never reach a hidden pane, whatever `inert` does with focus.
+  useLayoutEffect(() => {
+    const focused = document.activeElement;
+    if (hidden && focused instanceof HTMLElement && pane.current?.contains(focused)) focused.blur();
+  }, [hidden]);
 
   // A dialog that can no longer paste is closed rather than left with a disabled button.
   useEffect(() => {
@@ -200,6 +227,10 @@ function LiveTerminal({
     };
     const term = new Terminal({
       ...xtermOptions,
+      fontSize: initial.current.fontSize,
+      scrollback: initial.current.scrollback,
+      cursorStyle: initial.current.cursorStyle,
+      cursorBlink: initial.current.cursorBlink,
       disableStdin: true,
       linkHandler: { activate: openLink },
     });
@@ -316,7 +347,7 @@ function LiveTerminal({
     };
     let observer: ResizeObserver | undefined;
     void document.fonts
-      .load(`${xtermOptions.fontSize}px "JetBrains Mono Variable"`)
+      .load(`${term.options.fontSize}px "JetBrains Mono Variable"`)
       .catch(() => undefined)
       .then(() => {
         if (cancelled) return;
@@ -357,6 +388,14 @@ function LiveTerminal({
         // term.paste sends synchronously, so a refused queue has already paused input here.
         return !paused;
       },
+      apply(next) {
+        term.options.fontSize = next.fontSize;
+        term.options.scrollback = next.scrollback;
+        term.options.cursorStyle = next.cursorStyle;
+        term.options.cursorBlink = next.cursorBlink;
+        // A new font size changes the cell size without resizing the element, so nothing else refits.
+        if (term.element) show();
+      },
     };
     return () => {
       cancelled = true;
@@ -367,6 +406,12 @@ function LiveTerminal({
       term.dispose();
     };
   }, [windowId, ownerGeneration, sessionId]);
+
+  const { fontSize, scrollback, cursorStyle, cursorBlink } = settings;
+  useEffect(() => {
+    initial.current = { fontSize, scrollback, cursorStyle, cursorBlink };
+    controls.current?.apply(initial.current);
+  }, [fontSize, scrollback, cursorStyle, cursorBlink]);
 
   // Must run before the open effect below, so a new generation starts clean before it is opened.
   useEffect(() => {
@@ -405,6 +450,10 @@ function LiveTerminal({
   const label = target?.label ?? "Unknown target";
   const production = target?.environment === "PROD";
   const notify = (text: string) => setNotice({ text });
+  const fullTarget = endpoint ?? label;
+  const copyTarget = () =>
+    notify(copyText(fullTarget) ? `Copied ${fullTarget}` : "The target could not be copied.");
+  const outcome = terminalOutcome(session, connected === generation);
   const inTerminal = (node: EventTarget) =>
     !!controls.current?.term.element?.contains(node as Node);
 
@@ -504,6 +553,8 @@ function LiveTerminal({
     <section
       ref={pane}
       className="terminal-pane live-terminal-pane"
+      inert={hidden}
+      data-active={active || undefined}
       onPasteCapture={interceptPaste}
       onCopy={reportCopy}
       aria-label={`Terminal for ${label}`}
@@ -512,32 +563,35 @@ function LiveTerminal({
       data-generation={generation}
       data-columns={size?.columns}
       data-rows={size?.rows}
-      style={terminalStyle}
+      style={{ ...terminalStyle, ...style, visibility: hidden ? "hidden" : undefined }}
     >
-      <div className="terminal-context">
-        <div className="host-identity">
-          <span className="type-label truncate">{label}</span>
-          {endpoint ? <span className="host-target truncate">{endpoint}</span> : null}
-          {production ? <Badge variant="production">PROD</Badge> : null}
-        </div>
+      <div className="pane-header flex h-8 min-w-0 shrink-0 items-center gap-2 border-b border-border bg-card px-2">
+        <Tooltip>
+          <TooltipTrigger render={<span tabIndex={0} className="host-identity min-w-0 flex-1 basis-0" />}>
+            <span className="type-label truncate">{label}</span>
+            {endpoint ? <span className="host-target truncate">{endpoint}</span> : null}
+          </TooltipTrigger>
+          <TooltipContent>
+            <span className="break-all select-text">{endpoint ? `${label} · ${endpoint}` : label}</span>
+          </TooltipContent>
+        </Tooltip>
+        {production ? <Badge variant="production" className="pane-badge">PROD</Badge> : null}
         <ConnectionStatus state={statuses[phase]} />
-        <span role="status" className="type-caption text-muted-foreground">
-          {terminalOutcome(session, connected === generation)}
+        <span role="status" className="pane-outcome type-caption min-w-0 shrink truncate text-muted-foreground" title={outcome ?? undefined}>
+          {outcome}
         </span>
-        <div className="terminal-actions">
+        <div className="pane-actions flex shrink-0 items-center gap-1">
+          <Button size="icon-sm" variant="ghost" aria-label="Copy target" title={`Copy ${fullTarget}`} onClick={copyTarget}>
+            <CopyIcon aria-hidden="true" />
+          </Button>
+          {actions}
           {/* Distinct keys: a phase change mounts a new button rather than relabelling a focused or pressed one. */}
           {phase === "connecting" ? (
-            <Button key="cancel" size="sm" variant="outline" disabled={busy} onClick={(event) => act("close", event.detail)}>
-              Cancel
-            </Button>
+            <PaneAction key="cancel" label="Cancel" icon={BanIcon} variant="outline" disabled={busy} onClick={(detail) => act("close", detail)} />
           ) : ready ? (
-            <Button key="disconnect" size="sm" variant="outline" disabled={busy} onClick={(event) => act("close", event.detail)}>
-              Disconnect
-            </Button>
+            <PaneAction key="disconnect" label="Disconnect" icon={UnplugIcon} variant="outline" disabled={busy} onClick={(detail) => act("close", detail)} />
           ) : (
-            <Button key="dismiss" size="sm" variant="ghost" disabled={busy} onClick={(event) => act("dismiss", event.detail)}>
-              Close pane
-            </Button>
+            <PaneAction key="dismiss" label="Close pane" icon={XIcon} variant="ghost" disabled={busy} onClick={(detail) => act("dismiss", detail)} />
           )}
         </div>
       </div>
@@ -604,5 +658,27 @@ function LiveTerminal({
         onConfirm={confirmPaste}
       />
     </section>
+  );
+}
+
+/** A narrow pane shows only the icon (CSS); the text stays the accessible name and the title shows it. */
+function PaneAction({
+  label,
+  icon: Icon,
+  variant,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: typeof XIcon;
+  variant: "outline" | "ghost";
+  disabled: boolean;
+  onClick(detail: number): void;
+}) {
+  return (
+    <Button size="sm" variant={variant} className="pane-action" title={label} disabled={disabled} onClick={(event) => onClick(event.detail)}>
+      <Icon data-icon="inline-start" aria-hidden="true" />
+      <span className="pane-action-text">{label}</span>
+    </Button>
   );
 }

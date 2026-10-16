@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-017 / T023: `DONE`** — [identity and key management UI](../identities.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 257/257, E2E 40/40, packaged 37/37; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–016 committed (`06cf5b3` latest); SST-018–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-018 / T024: `DONE`** — [session tabs / split / settings + DS04](../workspace.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 285/285, E2E 48/48, packaged 45/45; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–017 committed (`fd84629` latest); SST-019–028 และ DS04–DS06 ทำต่อตาม loop
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -52,7 +52,7 @@
 
 - [x] **T022 / SST-016:** hosts/groups/tree/drafts/validation/inherited values/connect/empty states
 - [x] **T023 / SST-017:** identity/key CRUD/import/bind/detach/reassign UX
-- [ ] **T024 / SST-018:** tabs/layout tree/basic splits/focus/close และ persistent terminal settings
+- [x] **T024 / SST-018:** tabs/layout tree/basic splits/focus/close และ persistent terminal settings
 
 ## M4 — SFTP / snippets / forwarding
 
@@ -92,13 +92,13 @@
 - [x] **T047 / SST-001:** DS01 — design integration ADR: spec version, Tailwind compatibility, shadcn base/style/icons/registry, density defaults และ open contrast/ANSI/artwork decisions
 - [x] **T048 / SST-004:** DS02 — semantic token mappings, typography/fonts/Thai fallback, geometry/motion, app/terminal theme separation และ missing generated-component slots — [evidence](../desktop-shell.md)
 - [x] **T049 / SST-004:** DS03 — shared shadcn variants/domain primitives และ development-only showcase พร้อม deterministic state matrix/edge cases — [evidence](../desktop-shell.md)
-- [ ] **T050 / SST-018:** DS04 — Signal Blue terminal-first shell, target/environment/status recipes, resize/collapse/titlebar/overflow และ independent terminal preferences
+- [x] **T050 / SST-018:** DS04 — Signal Blue terminal-first shell, target/environment/status recipes, resize/collapse/titlebar/overflow และ independent terminal preferences
 - [ ] **T051 / SST-027:** DS05 — rendered contrast/focus/status/PROD matrix, keyboard/reduced-motion/Thai/IME/window scaling และ visual evidence ตาม spec §11
 - [ ] **T052 / SST-028:** DS06 — offline fonts/licenses/fallback; derived icon sizes/macOS format จาก supplied `docs/logo/icon-logo.png`, brand lockup ตาม [asset handoff](../logo/README.md); ตรวจ alpha/edges/padding/Dock/Finder และระบุ limitations ของ exports/QA ที่ยังไม่ครบ
 
 ## Task bookkeeping
 
-Current owner: root ปิด SST-017/T023 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ และ commit ตาม loop; SST-018 เป็นต้นไปทำต่อตาม loop
+Current owner: root ปิด SST-018/T024 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ และ commit ตาม loop; SST-019 เป็นต้นไปทำต่อตาม loop
 
 T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production SSH/session tasks ยังไม่ถูกติ๊ก
 

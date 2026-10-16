@@ -44,8 +44,10 @@ test("renders the local shell offline with bundled fonts and isolated renderer",
     "retrySecrets",
     "revokeKnownHost",
     "setIdentityPassword",
+    "settings",
     "terminalState",
     "trustState",
+    "updateSettings",
     "writeTerminal",
   ]);
   expect(

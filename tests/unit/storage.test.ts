@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { openMetadata, decodeHostPublicKey } from '../../packages/adapters/src/index.ts';
 import { runMigrations } from '../../packages/adapters/src/migrations.ts';
+import { CatalogModule } from '../../packages/services/src/index.ts';
 import { normalizeEndpoint, normalizeTag, type StoreResult, type MetadataRepository, type MetadataSnapshot, type MetadataChange } from '../../packages/domain/src/index.ts';
 function value<T>(result: StoreResult<T>): T {
   if (!result.ok) assert.fail(JSON.stringify(result.error));
@@ -850,4 +851,20 @@ test('foreign and corrupt permissive originals keep their earlier diagnosis and 
     assert.equal(statSync(path).mode & 0o777, 0o644);
     assert.equal(statSync(dir).mode & 0o777, 0o755);
   }
+});
+
+test('settings writes keep the catalog revision, so an outstanding catalog preview still applies', async t => {
+  const f = await fixture(t);
+  f.commit([host()]);
+  const catalog = new CatalogModule({ repository: f.repo });
+  const preview = value(catalog.prepare({ type: 'create-group', data: { label: 'After settings' } }));
+  const before = f.snapshot();
+  const after = f.commit([{ type: 'update-settings', expectedRevision: before.settings.revision, data: { terminalFontSize: 20 } }]);
+  assert.equal(after.catalogRevision, before.catalogRevision);
+  assert.equal(after.settings.revision, before.settings.revision + 1);
+  assert.equal(after.settings.terminalFontSize, 20);
+  value(catalog.apply(preview.token));
+  assert.equal(f.snapshot().catalogRevision, before.catalogRevision + 1);
+  const mixed = f.commit([host(), { type: 'update-settings', expectedRevision: after.settings.revision, data: { terminalFontSize: 21 } }]);
+  assert.equal(mixed.catalogRevision, before.catalogRevision + 2, 'a batch with catalog edits still bumps');
 });

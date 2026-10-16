@@ -7,7 +7,10 @@ export function applicationMenuTemplate(options: { packaged: boolean; platform: 
     : [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, { type: "separator" }];
   return [
     ...(options.platform === "darwin" ? [{ role: "appMenu" } as const] : []),
-    { role: "fileMenu" },
+    // On macOS Cmd+W belongs to the renderer (close pane); the window closes with Shift+Cmd+W through the close guard.
+    options.platform === "darwin"
+      ? { label: "File", submenu: [{ role: "close", label: "Close Window", accelerator: "CmdOrCtrl+Shift+W" }] }
+      : { role: "fileMenu" },
     // Labelled "Edit" so macOS still appends its dictation and emoji items.
     {
       label: "Edit",

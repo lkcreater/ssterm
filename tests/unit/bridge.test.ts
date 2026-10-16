@@ -74,7 +74,7 @@ test("bridge exposes only narrow methods and forwards a rebuilt, validated ping"
     "forgetKeyPassphrase", "importKey", "onCatalogState", "onCredentialState", "onTerminalOutput",
     "onTerminalState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping", "prepareCatalogChange",
     "prepareKnownHostRevoke", "reconnectTerminal", "renameKey", "resizeTerminal", "retrySecrets", "revokeKnownHost",
-    "setIdentityPassword", "terminalState", "trustState", "writeTerminal",
+    "setIdentityPassword", "settings", "terminalState", "trustState", "updateSettings", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -392,6 +392,27 @@ test("openLink forwards a rebuilt request and validates the reply", async () => 
   assert.equal(f.calls.length, count);
   f.setReply({ ok: true, value: { opened: "yes" } });
   assert.deepEqual(await f.api.openLink(request), failure("unavailable"));
+});
+
+test("settings commands are rebuilt and their replies validated", async () => {
+  const f = fixture();
+  const owner = { windowId: 1, generation: 2 };
+  const settings = { terminalFontSize: 14, terminalScrollback: 2000, terminalCursor: "bar", terminalCursorBlink: false };
+  f.setReply({ ok: true, value: settings });
+  assert.deepEqual(await f.api.settings({ owner }), { ok: true, value: settings });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.settings, args: [{ owner }] });
+  const request = { owner, changes: { terminalFontSize: 14 } };
+  assert.deepEqual(await f.api.updateSettings(request), { ok: true, value: settings });
+  const forwarded = f.calls.at(-1)!;
+  assert.deepEqual(forwarded, { channel: channels.updateSettings, args: [request] });
+  assert.notEqual((forwarded.args[0] as typeof request).changes, request.changes);
+  const count = f.calls.length;
+  for (const invalid of [{ owner, changes: {} }, { owner, changes: { theme: "dark" } }, { owner, changes: { terminalFontSize: 9 } }, { changes: { terminalFontSize: 14 } }])
+    assert.deepEqual(await f.api.updateSettings(invalid as never), failure("invalid-request"));
+  assert.deepEqual(await f.api.settings({ owner, extra: 1 } as never), failure("invalid-request"));
+  assert.equal(f.calls.length, count);
+  f.setReply({ ok: true, value: { ...settings, terminalFontSize: 99 } });
+  assert.deepEqual(await f.api.settings({ owner }), failure("unavailable"));
 });
 
 test("catalog and connect commands are rebuilt, validated both ways and catalog states are owner-sequenced", async () => {

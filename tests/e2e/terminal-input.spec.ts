@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { Locator } from "@playwright/test";
-import { test, expect } from "./fixtures";
+import { test, expect, showPane } from "./fixtures";
 
 // The sessions authenticate with a Keychain-held fixture password; keep terminal content out of traces.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -53,12 +53,14 @@ test("terminal input, Unicode, clipboard, links and search reach only the focuse
     return (globalThis as any).__sstermTerminalFixture.fixture[method]();
   }, method);
   const opened = () => app.evaluate(() => (globalThis as any).__sstermTerminalFixture.opened as { href: string; sameWindow: boolean }[]);
-  const paneA = page.getByRole("region", { name: `Terminal for ${label}`, exact: true });
-  const paneB = page.getByRole("region", { name: `Terminal for ${secondLabel}`, exact: true });
+  // By attribute: a pane in a background tab is hidden (and inert) until its tab is shown.
+  const paneA = page.locator(`section[aria-label="Terminal for ${label}"]`);
+  const paneB = page.locator(`section[aria-label="Terminal for ${secondLabel}"]`);
   const screenA = paneA.locator(".xterm-rows");
   const textarea = (pane: Locator) => pane.locator(".xterm-helper-textarea");
   const feedback = (pane: Locator) => pane.getByTestId("terminal-feedback");
   const run = async (command: string, pane = paneA) => {
+    await showPane(page, pane);
     await textarea(pane).focus();
     await page.keyboard.type(command);
     await page.keyboard.press("Enter");

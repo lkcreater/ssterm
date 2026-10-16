@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import type { ElectronApplication, Locator, Page, TestInfo } from "@playwright/test";
 import type { Owner } from "../../packages/contracts/src/index";
 import { _electron } from "@playwright/test";
-import { test, expect } from "./fixtures";
+import { test, expect, showPane } from "./fixtures";
 
 // Sessions authenticate with a Keychain-held fixture password; keep terminal content out of traces.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -102,11 +102,17 @@ async function start(desktop: Desktop, options: Options = {}) {
     await new Promise<void>((done) => setImmediate(done));
     return (globalThis as any).__sstermLifecycle.fixture[method]();
   }, method);
-  const pane = (name = label) => page.getByRole("region", { name: `Terminal for ${name}`, exact: true });
+  // By attribute: a pane in a background tab is hidden (and inert) until its tab is shown.
+  const pane = (name = label) => page.locator(`section[aria-label="Terminal for ${name}"]`);
   const screen = (target: Locator) => target.locator(".xterm-rows");
   const button = (target: Locator, name: string) => target.getByRole("button", { name, exact: true });
+  const click = async (target: Locator, name: string) => {
+    await showPane(page, target);
+    await button(target, name).click();
+  };
   // Markers are computed remotely, so the echoed command line never satisfies its own assertion.
   const run = async (target: Locator, command: string) => {
+    await showPane(page, target);
     await target.locator(".xterm-helper-textarea").focus();
     await page.keyboard.type(command);
     await page.keyboard.press("Enter");
@@ -116,8 +122,10 @@ async function start(desktop: Desktop, options: Options = {}) {
     await expect(target).toHaveAttribute("data-phase", "ready", { timeout: 20_000 });
     await expect.poll(() => newPrompt(screen(target)), { message: `generation ${generation} rendered a prompt` }).toBe(true);
   };
-  const outcome = (target: Locator, text: string, timeout?: number) =>
-    expect(target.getByText(text, { exact: true }), text).toBeVisible({ timeout });
+  const outcome = async (target: Locator, text: string, timeout?: number) => {
+    await showPane(page, target);
+    await expect(target.getByText(text, { exact: true }), text).toBeVisible({ timeout });
+  };
   const settled = (expected: string, read: () => Promise<Status> = () => operate("status")) => expect.poll(async () => {
     const status = await read();
     return status && `${status.state}/${status.cleanup === "pending" ? "cleaning" : status.error ?? "-"}`;
@@ -155,7 +163,7 @@ async function start(desktop: Desktop, options: Options = {}) {
     }).catch(() => ({ sessions: "unavailable" }));
     await testInfo.attach("lifecycle-failure-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
   };
-  return { owner, operate, pane, screen, button, run, ready, outcome, settled, target, command, finish, diagnose };
+  return { owner, operate, pane, screen, button, click, run, ready, outcome, settled, target, command, finish, diagnose };
 }
 
 /** A prompt after the last Reconnected marker, so an earlier generation's prompt never satisfies it. */
@@ -248,13 +256,13 @@ test("cancel ends an attempt in every connecting phase without trusting or promp
     await h.operate("connect");
     await expect(pane).toHaveAttribute("data-phase", "connecting");
     await expect.poll(async () => (await h.operate("status"))!.state).toBe("Connecting");
-    await h.button(pane, "Cancel").click();
+    await h.click(pane, "Cancel");
     await h.outcome(pane, "Session closed");
     await h.settled("Closed/-");
     await h.operate("unpause");
 
     // VerifyingHost: the trust dialog is modal, so Cancel is the same pane command sent through the bridge.
-    await h.button(pane, "Reconnect").click();
+    await h.click(pane, "Reconnect");
     await expect(trust).toBeVisible();
     await expect.poll(async () => (await h.operate("status"))!.state).toBe("VerifyingHost");
     expect(await h.command("closeTerminal", await h.target())).toBe("ok");
@@ -276,7 +284,7 @@ test("cancel ends an attempt in every connecting phase without trusting or promp
     await h.settled("Closed/-");
 
     // ...whereas the dialog's own Cancel fails the attempt as a cancelled prompt.
-    await h.button(prompted, "Reconnect").click();
+    await h.click(prompted, "Reconnect");
     await expect(credentials).toBeVisible();
     await credentials.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(credentials).toHaveCount(0);
@@ -297,7 +305,7 @@ test("lifecycle commands are generation fenced, sessions are independent and a l
   try {
     await h.operate("connect");
     await h.ready(first, 1);
-    await h.button(first, "Disconnect").click();
+    await h.click(first, "Disconnect");
     await h.outcome(first, "Session closed");
     await h.settled("Closed/-");
 
@@ -320,23 +328,23 @@ test("lifecycle commands are generation fenced, sessions are independent and a l
     await h.outcome(first, "Remote process was terminated by SIGKILL");
     await h.run(second, 'echo "SECOND-$((3+4))"');
     await expect(h.screen(second)).toContainText("SECOND-7");
-    await h.button(first, "Reconnect").click();
+    await h.click(first, "Reconnect");
     await h.ready(first, 3);
-    await h.button(second, "Disconnect").click();
+    await h.click(second, "Disconnect");
     await h.outcome(second, "Session closed");
     await h.run(first, 'echo "FIRST-$((4+5))"');
     await expect(h.screen(first)).toContainText("FIRST-9");
 
     // Lock: every live pane closes; Reconnect is the explicit unlock.
-    await h.button(second, "Reconnect").click();
+    await h.click(second, "Reconnect");
     await h.ready(second, 2);
     await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("lock-screen"); });
     await h.outcome(first, locked);
     await h.outcome(second, locked);
     await h.settled("Closed/locked");
-    await h.button(first, "Reconnect").click();
+    await h.click(first, "Reconnect");
     await h.ready(first, 4);
-    await h.button(second, "Reconnect").click();
+    await h.click(second, "Reconnect");
     await h.ready(second, 3);
     await h.run(second, 'echo "UNLOCKED-$((5+6))"');
     await expect(h.screen(second)).toContainText("UNLOCKED-11");
@@ -359,10 +367,10 @@ test("repeated connect, disconnect and close pane leaves no record, socket or se
       await h.operate("connect");
       await h.ready(pane, 1);
       if (round === 1) expect(await sockets(), "a live session holds a counted socket").toBeGreaterThan(baseline);
-      await h.button(pane, "Disconnect").click();
+      await h.click(pane, "Disconnect");
       await h.outcome(pane, "Session closed");
       // Close pane right away: dismiss waits for the closing generation's teardown.
-      await h.button(pane, "Close pane").click();
+      await h.click(pane, "Close pane");
       await expect(page.locator(".live-terminal-pane"), `round ${round} leaves no pane`).toHaveCount(0);
     }
     expect(await h.operate<unknown[]>("sessions"), "the registry forgot every record").toEqual([]);

@@ -3,6 +3,7 @@ import {
   expect,
   _electron,
   type ElectronApplication,
+  type Locator,
   type Page,
 } from "@playwright/test";
 import type { ChildProcess } from "node:child_process";
@@ -31,6 +32,19 @@ export interface Desktop {
 }
 
 const TEST_NAMESPACE = /^dev\.ssterm\.test\.[0-9a-f-]{36}$/u;
+
+/**
+ * Empties a `dev.ssterm.test.<uuid>` namespace through the shipped secrets entry while main runs; returns the
+ * items left over (0), or "unknown". Needed before a test makes the app exit by itself.
+ */
+export async function emptyTestNamespace(app: ElectronApplication, namespace: string): Promise<number | string> {
+  if (!TEST_NAMESPACE.test(namespace)) return 0;
+  return app.evaluate(async ({ app }, namespace) => {
+    const require = process.getBuiltinModule("node:module").createRequire(app.getAppPath() + "/package.json");
+    const { clearTestNamespace } = require(require("node:path").join(app.getAppPath(), "out/main/secrets.js"));
+    return clearTestNamespace(namespace);
+  }, namespace).catch(() => "unknown");
+}
 
 /**
  * Launches the desktop app on an existing temporary profile; relaunching on the same profile reopens its data.
@@ -74,13 +88,11 @@ export async function launchDesktop(
     (closing ??= (async () => {
       if (!alive()) return;
       // Empty this launch's namespace through the shipped secrets entry while main still runs, then close.
-      let leftovers: number | string = 0;
-      if (TEST_NAMESPACE.test(secretNamespace))
-        leftovers = await app.evaluate(async ({ app }, namespace) => {
-          const require = process.getBuiltinModule("node:module").createRequire(app.getAppPath() + "/package.json");
-          const { clearTestNamespace } = require(require("node:path").join(app.getAppPath(), "out/main/secrets.js"));
-          return clearTestNamespace(namespace);
-        }, secretNamespace).catch(() => "unknown");
+      const leftovers = await emptyTestNamespace(app, secretNamespace);
+      // Quitting with connected sessions asks first; answer "Quit" so the sheet never blocks teardown.
+      await app.evaluate(({ dialog }) => {
+        dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as typeof dialog.showMessageBox;
+      }).catch(() => undefined);
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         app.close().catch(() => undefined),
@@ -149,6 +161,15 @@ export const test = base.extend<{ desktop: Desktop; corruptStore: boolean }>({
 });
 
 export { expect };
+
+/** Shows the terminal tab holding `pane` (a tab is named by its active pane's label) unless the pane is already visible. */
+export async function showPane(page: Page, pane: Locator): Promise<void> {
+  if (await pane.isVisible()) return;
+  const label = (await pane.getAttribute("aria-label"))!.replace(/^Terminal for /u, "");
+  await page.getByRole("tablist", { name: "Terminal tabs" }).getByRole("tab")
+    .filter({ has: page.locator(".session-tab-label").getByText(label, { exact: true }) }).click();
+  await expect(pane).toBeVisible();
+}
 
 /**
  * Applies catalog intents through a second connection to the profile's own catalog database, using the

@@ -250,3 +250,22 @@ export function registerTerminalHandlers(options: {
   handle(channels.connectHost, isConnectHostRequest, (controller, request) => controller.connectHost(request));
   return () => { for (const channel of terminalChannels) options.ipc.removeHandler(channel); };
 }
+
+const MAX_PROMPT_LINES = 8;
+/** Native close/quit sheet text, or undefined when no Ready session would be disconnected. */
+export function closePrompt(sessions: readonly TerminalSession[], action: "close" | "quit"): { message: string; detail: string } | undefined {
+  const ready = sessions.filter((session) => session.phase === "ready");
+  if (ready.length === 0) return undefined;
+  const count = ready.length === 1 ? "1 connected session" : `${ready.length} connected sessions`;
+  const lines = ready.slice(0, MAX_PROMPT_LINES).map(({ target }) => {
+    if (!target) return "Unknown host";
+    const host = target.endpointHost.includes(":") ? `[${target.endpointHost}]` : target.endpointHost;
+    const endpoint = `${target.username ? `${target.username}@` : ""}${host}:${target.endpointPort}`;
+    return `${target.environment === "PROD" ? "PROD · " : ""}${target.label} — ${endpoint}`;
+  });
+  if (ready.length > MAX_PROMPT_LINES) lines.push(`and ${ready.length - MAX_PROMPT_LINES} more`);
+  return {
+    message: action === "close" ? `Close this window and disconnect ${count}?` : `Quit ssterm and disconnect ${count}?`,
+    detail: lines.join("\n"),
+  };
+}

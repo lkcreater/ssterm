@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/toast";
+import { copyText } from "@/lib/clipboard";
 
 export interface HostTarget {
   name: string;
@@ -27,22 +28,16 @@ export function HostIdentity({
   copy?: boolean;
 }) {
   const fullTarget = targetLabel(target);
-  const copyTarget = async () => {
-    try {
-      await navigator.clipboard.writeText(fullTarget);
-      toast.add({
-        title: "Target copied",
-        description: fullTarget,
-        type: "success",
-      });
-    } catch {
-      toast.add({
-        title: "Could not copy target",
-        description: "Select the full target text in the tooltip.",
-        type: "error",
-      });
-    }
-  };
+  const copyTarget = () =>
+    toast.add(
+      copyText(fullTarget)
+        ? { title: "Target copied", description: fullTarget, type: "success" }
+        : {
+            title: "Could not copy target",
+            description: "Select the full target text in the tooltip.",
+            type: "error",
+          },
+    );
   return (
     <div className="host-identity">
       <Tooltip>
@@ -61,7 +56,7 @@ export function HostIdentity({
           size="icon"
           variant="ghost"
           aria-label={`Copy target ${fullTarget}`}
-          onClick={() => void copyTarget()}
+          onClick={copyTarget}
         >
           <CopyIcon />
         </Button>
