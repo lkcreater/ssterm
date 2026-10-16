@@ -246,9 +246,12 @@ function createWindow(): void {
     if (details.isMainFrame && !details.isSameDocument)
       boundary.rotate(contents);
   };
+  // A crashed renderer can never answer prompts or acknowledge output; revoke its owner like a navigation.
+  const gone = (): void => boundary.rotate(contents);
   const focused = (): void => boundary.focus(contents, true);
   const blurred = (): void => boundary.focus(contents, false);
   contents.on("did-start-navigation", navigating);
+  contents.on("render-process-gone", gone);
   window.on("focus", focused);
   window.on("blur", blurred);
   contents.once("destroyed", () => {
@@ -256,6 +259,7 @@ function createWindow(): void {
     window.removeListener("focus", focused);
     window.removeListener("blur", blurred);
     contents.removeListener("did-start-navigation", navigating);
+    contents.removeListener("render-process-gone", gone);
   });
   window.once("ready-to-show", () => window.show());
   void window.loadURL(location.url).catch(() => {
@@ -302,7 +306,11 @@ if (ownsInstance) {
       boundary,
       controller: () => credentials,
     });
-    terminals = createTerminalController({ registry: desktopSessions.registry });
+    terminals = createTerminalController({
+      registry: desktopSessions.registry,
+      // A locked registry reopens only while saved hosts can actually be resolved and authenticated.
+      checkAccess: async () => storageHealth.status === "ready" && !!repository && !!secretProvider,
+    });
     removeTerminalHandlers = registerTerminalHandlers({
       ipc: ipcMain,
       boundary,

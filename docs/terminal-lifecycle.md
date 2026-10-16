@@ -1,0 +1,31 @@
+# SST-015 — Cancel, disconnect, manual reconnect and cleanup
+
+**2026-10-17 · T021 · DONE through independent TEST/REVIEW/DELIVER; committed under the standing loop instruction.** Authorized by the standing loop instruction after SST-014 commit `0d665e0`. Scope is cancel in every phase, unexpected-loss detection, manual reconnect, lock recovery and leak-free close/quit. The connect entry point (SST-016) and close/quit confirmation, tabs and splits (SST-018) are separate. [Execution plan](agent-runs/implementation-plan.md#sst-015-execution-plan--2026-10-16).
+
+## Commands and fencing
+
+The renderer gains `closeTerminal`, `reconnectTerminal` and `dismissTerminal`, each bound to the exact owner, session and generation through the existing terminal handler wrapper. The registry's `close`, `reconnect` and `forget` take the generation, so a stale click returns `conflict` and never touches a newer attempt; two concurrent reconnects with the same generation yield exactly one new generation. Close is idempotent on Closed. Reconnect and dismiss wait (bounded by the 2 s drain limit) for the failed attempt's teardown via `registry.settled`, so a Reconnect clicked right after a loss succeeds; an owner revoked during the wait gets `stale-owner`. Dismiss forgets the record, frees its slot and republishes state.
+
+## Detecting loss
+
+SSH keepalive is on by default (15 s × 3, so a silent drop is detected in 45–60 s) as a validated main-only option (interval 100 ms–300 s, count 1–10) next to SST-014's stream bounds. Without it, a paused container or disconnected network went unnoticed for at least 45 s even while writing; keepalive detection maps to `timeout`, a socket loss to `network`, and both end the session as Failed. Keepalive replies are processed while output is credit-paused, so slow renderers do not trip it.
+
+## Reconnect, lock and outcomes
+
+Each logical session keeps one xterm. A new generation resets the stream state, input queue and pending paste, ignores frames from older generations, sizes the new PTY to the current grid and writes a renderer-authored `── Reconnected ──` line (saving the cursor, leaving any alternate screen, soft reset, mouse reporting off) before remote output, so history and search span reconnects. Input is never replayed. Each terminal session projects an app-owned failure code; the pane says “Connection lost” after a Ready generation fails with `network`/`timeout`, “Couldn't connect: …” or “Session failed: …” for other failures, the remote exit outcome, “Closed because ssterm locked (screen lock or sleep)” or “Session closed”. Screen lock or sleep closes every session and records `locked`; Reconnect is the explicit user action that unlocks the registry (storage and secret provider must be ready) before reconnecting, fixing the earlier dead end where nothing could reconnect until restart. Controls: Cancel while connecting, Disconnect while ready, Reconnect and Close pane once ended. There is no auto-reconnect.
+
+## Cleanup
+
+Quit keeps the bounded order (owners revoked, controllers and handlers disposed, transient secrets purged, sessions drained within 2 s). A crashed renderer (`render-process-gone`) revokes its owner and closes its sessions. Twenty connect/disconnect/close-pane rounds leave no registry records, sockets or server shells.
+
+## Verification
+
+Final source: `npm run typecheck` PASS, `npm test` **217/217**, `npm run build` PASS, `npm run test:e2e` **28/28**, `npm run package:mac` PASS (unsigned arm64), `npm run test:packaged` **25/25**; the independent tester also ran the lifecycle spec 3× (18/18) on the reviewed tree.
+
+[Registry](../tests/unit/sessions.test.ts) and [boundary](../tests/unit/terminals-boundary.test.ts) tests cover generation fences for close/reconnect/forget/settled, double reconnect, waiting for teardown, lock projection, the lock epoch (a Reconnect that arrived before a lock never unlocks or reconnects after it), concurrent unlocks and owner revocation during waits. [Adapter tests](../tests/unit/ssh-session.test.ts) use an in-process freeze proxy: keepalive 100 ms × 2 fails a frozen path with `timeout` and does not trip while output is credit-paused under an 8 MiB flood. [Lifecycle E2E](../tests/e2e/terminal-lifecycle.spec.ts) against Docker OpenSSH (keepalive 1 s × 2): a paused container shows “Connection lost” in 2.85–3.36 s and Reconnect resumes in the same xterm with history, marker, matching `stty size` and no replay; connect timeout and refused copy; cancel while connecting, verifying the host key (no known-host row written) and awaiting input; reconnect/close races; two-session independence; 20 open/close rounds with no sockets, registry records or server shells left; lock then Reconnect unlocks; quit with two Ready sessions exits in ≈ 170–190 ms with server shells reaped; and a renderer crash closes the owner's sessions, asserting that main's own `render-process-gone` handler is installed.
+
+The tester probed production `index.ts` handlers (validation, stale owners, power listeners, crash owner rotation) and DNS-phase cancel at the adapter (aborted in 306 ms, no sockets left). Review found no critical/high; three mediums (Reconnect-before-lock unlocking afterward, double-click on the replaced Close pane button, crash test not exercising production wiring) and the lows were fixed; keyboard focus now stays in the pane after Disconnect.
+
+## Boundaries and rollback
+
+The trust and credential dialogs are modal, so during host verification and credential entry the dialog's own Reject/Cancel is the user path (ending Failed); the pane Cancel applies to the other phases. Quit, lock and crash E2E drive a fixture registry that mirrors main's composition; a live session on main's own registry becomes reachable with SST-016's connect command. Keepalive defaults (15 s × 3) are validated but not exercised end to end; some servers that ignore SSH global requests would drop after ≈ 60 s (a per-host option is a later item). Cancel during DNS and server-side authentication is covered at adapter/unit level. A real OS sleep/wake was not exercised (synthetic `powerMonitor` events). Rollback removes the three commands, error projection, keepalive option, settled wait and the one-xterm-per-session pane; no data change.

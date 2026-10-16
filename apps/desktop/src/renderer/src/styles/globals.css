@@ -345,6 +345,15 @@
 .connection-status[data-state="connecting"] {
   --status-color: var(--connection-connecting);
 }
+/* Spinner + "Connecting"; the global reduced-motion rule stops it. */
+.connection-status[data-state="connecting"] svg {
+  animation: connection-spin 1s linear infinite;
+}
+@keyframes connection-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .connection-status[data-state="error"] {
   --status-color: var(--connection-error);
 }
@@ -438,6 +447,11 @@
   display: flex;
   flex: 1 0 320px;
   flex-direction: column;
+}
+.terminal-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 .live-terminal-pane:focus-within {
   border-color: var(--ring);

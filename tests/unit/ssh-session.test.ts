@@ -4,13 +4,13 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { createServer, type Socket } from "node:net";
+import { connect as connectTcp, createServer, type Socket } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { EventEmitter } from "node:events";
 import ssh2, { type Connection, type KeyboardAuthContext, type ServerChannel, type Session, type WindowChangeInfo } from "ssh2";
 import type { KeyMetadata, ResolvedHostConfig, SecretItem, SecretProvider, SecretRead } from "../../packages/domain/src/index.ts";
 import { openMetadata } from "../../packages/adapters/src/index.ts";
-import { createSshConnection, preparePrivateKey, TERMINAL_OUTPUT_WINDOW, TERMINAL_INPUT_BACKLOG, TERMINAL_BUFFER_LIMIT, TERMINAL_CHUNK_LIMIT, terminalBounds, type TerminalBounds } from "../../packages/adapters/src/ssh.ts";
+import { createSshConnection, preparePrivateKey, TERMINAL_OUTPUT_WINDOW, TERMINAL_INPUT_BACKLOG, TERMINAL_BUFFER_LIMIT, TERMINAL_CHUNK_LIMIT, terminalBounds, type TerminalBounds, sshKeepalive, type SshKeepalive } from "../../packages/adapters/src/ssh.ts";
 import { MAX_TERMINAL_WRITE } from "../../packages/contracts/src/index.ts";
 import { createSavedHostSessions } from "../../apps/desktop/src/main/ssh.ts";
 import { createSavedHostSshAdapter, KnownHostPolicy, SessionRegistry, TransientSecrets, type SessionSnapshot } from "../../packages/services/src/index.ts";
@@ -61,7 +61,7 @@ function answerCredentials(registry: SessionRegistry, snapshot: SessionSnapshot,
     assert(registry.answerPrompt("fixture-owner", snapshot.id, snapshot.generation, prompt.id, { kind: "credentials", values: input }).ok);
   } finally { for (const field of input) field.value.fill(0); }
 }
-async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: boolean; holdShell?: boolean; connectMs?: number; promptMs?: number; terminal?: TerminalBounds; interactive?: (auth: KeyboardAuthContext) => void; shell?: (channel: ServerChannel, session: Session) => void } = {}) {
+async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: boolean; holdShell?: boolean; connectMs?: number; promptMs?: number; terminal?: TerminalBounds; keepalive?: SshKeepalive; interactive?: (auth: KeyboardAuthContext) => void; shell?: (channel: ServerChannel, session: Session) => void } = {}) {
   const dir = mkdtempSync("/private/tmp/ssterm-ssh-session-");
   const opened = await openMetadata({ path: join(dir, "metadata.db") });
   assert(opened.ok);
@@ -120,7 +120,7 @@ async function fixture(t: TestContext, options: { deny?: boolean; denyShell?: bo
   };
   const registry = new SessionRegistry({
     resolve: () => ({ ok: true, value: resolved }),
-    transient: new TransientSecrets(), adapter: createSavedHostSshAdapter({ provider, policy, terminal: options.terminal }),
+    transient: new TransientSecrets(), adapter: createSavedHostSshAdapter({ provider, policy, terminal: options.terminal, keepalive: options.keepalive }),
     limits: { connectMs: options.connectMs ?? 10_000, promptMs: options.promptMs ?? 60_000 },
   });
   const snapshots: SessionSnapshot[] = [];
@@ -889,4 +889,81 @@ test("local close has no remote end and revokes the stream; reconnect yields a f
   assert.equal(sequences[0], 0);
   await f.registry.lock();
   assert.equal(f.registry.terminal(owner, id, 2), undefined, "locked");
+});
+
+test("keepalive detects a silently frozen path as timeout without tripping on a healthy idle session", async (t) => {
+  const f = await fixture(t, { keepalive: { intervalMs: 100, countMax: 2 } });
+  // Owned in-process TCP hop that can stop forwarding in both directions without closing either socket,
+  // like a paused peer behind a proxy that keeps ACKing.
+  let frozen = false;
+  const sockets: Socket[] = [];
+  const target = f.resolved.port.value;
+  const proxy = createServer((inbound) => {
+    const outbound = connectTcp(target, "127.0.0.1");
+    sockets.push(inbound, outbound);
+    for (const [from, to] of [[inbound, outbound], [outbound, inbound]] as const) {
+      from.on("error", () => {});
+      from.on("data", (data) => { if (!frozen) to.write(data); });
+      from.on("close", () => to.destroy());
+    }
+  });
+  await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => proxy.close(() => resolve()));
+  });
+  const address = proxy.address(); assert(address && typeof address !== "string");
+  f.resolved.port.value = address.port;
+  await f.connect(); f.trust();
+  await until(() => f.current().state === "Ready");
+  await delay(600);
+  assert.equal(f.current().state, "Ready", "answered keepalives never fail an idle session");
+  frozen = true;
+  const frozenAt = performance.now();
+  await until(() => f.current().state === "Failed");
+  const elapsed = performance.now() - frozenAt;
+  assert.equal(f.current().error?.code, "timeout");
+  assert(elapsed < 1_000, `detected in ${Math.round(elapsed)} ms`);
+  await until(() => f.current().cleanup === "complete");
+  // sockets[0] is the proxy's side of the client connection: it closes once the client's FIN arrives.
+  await until(() => sockets[0]!.destroyed);
+});
+
+test("keepalive does not trip while output is held for credit from a flooding server", async (t) => {
+  let server!: ServerChannel;
+  const f = await fixture(t, { keepalive: { intervalMs: 100, countMax: 2 }, shell(channel) { server = channel; } });
+  const stream = await readyStream(f);
+  let unacked = 0;
+  stream.open((chunk) => { unacked += chunk.length; });
+  const bulk = Buffer.alloc(8 * 1_048_576, 0x78);
+  server.write(bulk);
+  await until(() => unacked >= TERMINAL_OUTPUT_WINDOW);
+  // Never acknowledged: ten keepalive intervals pass while the flood is held behind exhausted credit.
+  await delay(1_000);
+  assert.equal(f.current().state, "Ready", "keepalive replies are read while output is credit-paused");
+  assert.equal(f.current().error, undefined);
+});
+
+test("keepalive is validated where defaults are applied and when main composes saved hosts", async (t) => {
+  assert.deepEqual(sshKeepalive(), { intervalMs: 15_000, countMax: 3 });
+  for (const keepalive of [{ intervalMs: 100, countMax: 1 }, { intervalMs: 300_000, countMax: 10 }])
+    assert(Object.isFrozen(sshKeepalive(keepalive)));
+  const invalid: SshKeepalive[] = [
+    { intervalMs: 99 }, { intervalMs: 300_001 }, { intervalMs: 150.5 }, { intervalMs: Number.NaN }, { intervalMs: "1000" as unknown as number },
+    { countMax: 0 }, { countMax: 11 }, { countMax: 2.5 }, { countMax: null as unknown as number },
+  ];
+  for (const keepalive of invalid) assert.throws(() => sshKeepalive(keepalive), { name: "RangeError", message: "invalid-keepalive" }, JSON.stringify(keepalive));
+  assert.throws(() => createSshConnection({
+    host: "127.0.0.1", port: 22, username: "u", signal: new AbortController().signal, keepalive: { countMax: 0 },
+    verifyHost: async () => false, authenticate: async () => undefined, ready: () => false, failed() {}, ended() {},
+  }), RangeError);
+  const dir = mkdtempSync("/private/tmp/ssterm-ssh-keepalive-");
+  const opened = await openMetadata({ path: join(dir, "metadata.db") });
+  assert(opened.ok);
+  t.after(() => { opened.value.close(); rmSync(dir, { recursive: true, force: true }); });
+  const build = (keepalive: SshKeepalive) => createSavedHostSessions({
+    repository: opened.value, transient: new TransientSecrets(), power: new EventEmitter(), keepalive,
+  });
+  for (const keepalive of invalid) assert.throws(() => build(keepalive), RangeError, JSON.stringify(keepalive));
+  await build({ intervalMs: 1_000, countMax: 2 }).shutdown();
 });

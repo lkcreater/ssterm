@@ -33,7 +33,7 @@ test("shipped terminal streams a real remote shell with resize, exits and no inp
       owner: parameters.owner, label: parameters.label, tempDirectory: app.getPath("temp"),
       send: (channel: string, value: unknown) => { if (!window.webContents.isDestroyed()) window.webContents.send(channel, value); },
     });
-    for (const name of ["terminalState", "openTerminal", "writeTerminal", "resizeTerminal", "ackTerminal"]) ipcMain.removeHandler(production.channels[name]);
+    for (const channel of production.terminalChannels) ipcMain.removeHandler(channel);
     const disposeHandlers = production.registerTerminalHandlers({ ipc: ipcMain, boundary, controller: () => fixture.controller });
     (globalThis as any).__sstermTerminalFixture = { fixture, disposeHandlers };
   }, { owner, label, fixturePath: resolve("tests/fixtures/terminal/ssh.cjs") });
@@ -55,7 +55,11 @@ test("shipped terminal streams a real remote shell with resize, exits and no inp
   const ready = async (generation: number) => {
     await expect(pane).toHaveAttribute("data-generation", String(generation));
     await expect(pane).toHaveAttribute("data-phase", "ready");
-    await expect(screen, "remote prompt is rendered").toContainText("fixture@");
+    // Only text after the last Reconnected marker counts, so an earlier generation's prompt never satisfies it.
+    await expect.poll(async () => {
+      const text = (await screen.textContent()) ?? "";
+      return text.slice(text.lastIndexOf("── Reconnected ──") + 1).includes("fixture@");
+    }, { message: `generation ${generation} rendered a prompt` }).toBe(true);
   };
   const settled = async (state: string) => expect.poll(async () => {
     const status = await operate("status");
@@ -133,7 +137,7 @@ test("shipped terminal streams a real remote shell with resize, exits and no inp
     await operate("reconnect");
     await ready(3);
     await run("kill -KILL $PPID");
-    await expect(pane.getByText("Connection failed", { exact: true })).toBeVisible();
+    await expect(pane.getByText("Connection lost", { exact: true })).toBeVisible();
     await settled("Failed");
     expect(await operate("status")).toMatchObject({ error: "network", end: null });
 

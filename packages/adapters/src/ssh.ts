@@ -82,10 +82,13 @@ export function createSshConnection(options: {
   failed(code: SshFailure): void;
   /** Defaults and validation: `terminalBounds`. */
   terminal?: TerminalBounds;
+  /** Defaults and validation: `sshKeepalive`. */
+  keepalive?: SshKeepalive;
   /** Remote end only, after every preceding output chunk reached the consumer. */
   ended(end: TerminalEnd): void;
 }): SshResource & { start(): void } {
   const bounds = terminalBounds(options.terminal);
+  const keepalive = sshKeepalive(options.keepalive);
   const client = new ssh2.Client();
   let disposed = false, started = false, verified = false, attempted = false, ready = false;
   let credential: SshCredential | undefined;
@@ -117,6 +120,10 @@ export function createSshConnection(options: {
           port: options.port,
           username: options.username,
           readyTimeout: 120_000,
+          // A silently dropped path (paused peer, lost network behind an ACKing proxy) sends no FIN/RST;
+          // only an unanswered keepalive detects it, surfacing as `client-timeout` → `timeout`.
+          keepaliveInterval: keepalive.intervalMs,
+          keepaliveCountMax: keepalive.countMax,
           tryKeyboard: false,
           hostVerifier: (publicKey: Buffer, verify: (allowed: boolean) => void) => {
             const respond = (allowed: boolean) => {
@@ -236,6 +243,15 @@ export function terminalBounds(bounds: TerminalBounds = {}): Readonly<Required<T
   if (!within(outputWindow, 65_536, 1_048_576) || !within(inputBacklog, 1, 2_097_152))
     throw new RangeError("invalid-terminal-bounds");
   return Object.freeze({ outputWindow, inputBacklog });
+}
+export const SSH_KEEPALIVE_INTERVAL_MS = 15_000;
+export const SSH_KEEPALIVE_COUNT_MAX = 3;
+export interface SshKeepalive { intervalMs?: number; countMax?: number }
+/** Applies the defaults and returns a validated frozen copy. */
+export function sshKeepalive(keepalive: SshKeepalive = {}): Readonly<Required<SshKeepalive>> {
+  const { intervalMs = SSH_KEEPALIVE_INTERVAL_MS, countMax = SSH_KEEPALIVE_COUNT_MAX } = keepalive;
+  if (!within(intervalMs, 100, 300_000) || !within(countMax, 1, 10)) throw new RangeError("invalid-keepalive");
+  return Object.freeze({ intervalMs, countMax });
 }
 // ssh2 does not enforce its own receive window (an overrun leaves it negative and keeps buffering), so a
 // hostile peer could grow a paused readable without bound, and tiny packets cost ~210 B of heap each.

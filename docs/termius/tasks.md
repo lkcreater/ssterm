@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-014 / T020: `DONE`** — [flow control / bounded resources](../terminal-flow.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 197/197, E2E 22/22, packaged 19/19; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–013 committed (`157b7ba` latest); SST-015–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-015 / T021: `DONE`** — [cancel / disconnect / manual reconnect](../terminal-lifecycle.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 217/217, E2E 28/28, packaged 25/25; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–014 committed (`0d665e0` latest); SST-016–028 และ DS04–DS06 ทำต่อตาม loop
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -46,7 +46,7 @@
 - [x] **T018 / SST-012:** terminal renderer, ordered stream, input routing, PTY resize, EOF/exit
 - [x] **T019 / SST-013:** Thai/Unicode/IME, clipboard/paste, focus/shortcuts/search/URL behavior
 - [x] **T020 / SST-014:** bounded queues/scrollback/concurrency, backpressure และ measured performance budget
-- [ ] **T021 / SST-015:** unexpected disconnect/manual reconnect/cancel/app quit cleanup
+- [x] **T021 / SST-015:** unexpected disconnect/manual reconnect/cancel/app quit cleanup
 
 ## M3 — Catalog/workspace UX
 
@@ -98,7 +98,7 @@
 
 ## Task bookkeeping
 
-Current owner: root ปิด SST-014/T020 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ และ commit ตาม loop; SST-015 เป็นต้นไปทำต่อตาม loop
+Current owner: root ปิด SST-015/T021 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ และ commit ตาม loop; SST-016 เป็นต้นไปทำต่อตาม loop
 
 T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production SSH/session tasks ยังไม่ถูกติ๊ก
 

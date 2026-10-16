@@ -69,6 +69,9 @@ export interface DesktopAPI {
   writeTerminal(request: WriteTerminalRequest): Promise<Result<TerminalActionResponse>>;
   resizeTerminal(request: ResizeTerminalRequest): Promise<Result<TerminalActionResponse>>;
   ackTerminal(request: AckTerminalRequest): Promise<Result<TerminalActionResponse>>;
+  closeTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
+  reconnectTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
+  dismissTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
   openLink(request: OpenLinkRequest): Promise<Result<OpenLinkResponse>>;
   ping(
     request: PingRequest,
@@ -97,6 +100,9 @@ export const channels = Object.freeze({
   writeTerminal: "ssterm:write-terminal",
   resizeTerminal: "ssterm:resize-terminal",
   ackTerminal: "ssterm:ack-terminal",
+  closeTerminal: "ssterm:close-terminal",
+  reconnectTerminal: "ssterm:reconnect-terminal",
+  dismissTerminal: "ssterm:dismiss-terminal",
   openLink: "ssterm:open-link",
 });
 

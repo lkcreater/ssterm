@@ -4,14 +4,33 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { EventEmitter } = require("node:events");
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
 const { startFixture } = require("../../../spikes/ssh-compat/src/fixture.cjs");
+const runFile = promisify(execFile);
 
-/** Owned Docker OpenSSH host reached only through the shipped saved-host adapter and terminal controller. */
+/** Docker action on the owned lab container. Its argv/stderr never carry credentials, but are still not surfaced. */
+async function docker(args) {
+  try { return (await runFile("docker", args, { timeout: 30_000 })).stdout; }
+  catch (error) {
+    // `pgrep -c` exits 1 when it counts zero.
+    if (args[2] === "pgrep" && error.code === 1) return error.stdout;
+    throw new Error("TERMINAL_FIXTURE_DOCKER_FAILED");
+  }
+}
+
+/**
+ * Owned Docker OpenSSH host reached only through the shipped saved-host adapter and terminal controller.
+ * Options beyond the original ones: `lab` (an externally owned lab from startFixture, never disposed here),
+ * `keepalive`/`limits` (main-only bounds), `power` (an emitter such as powerMonitor), `autoTrust: false`
+ * (leave host-trust prompts to the caller) and `promptLabel` (a host whose identity has no saved password).
+ */
 async function startTerminalFixture(production, options) {
   const directory = fs.mkdtempSync(path.join(options.tempDirectory, "ssterm-terminal-runtime-"));
   const namespace = `dev.ssterm.test.${randomUUID()}`;
   const transient = new production.TransientSecrets();
-  const power = new EventEmitter();
+  const power = options.power ?? new EventEmitter();
+  const ownedLab = !options.lab;
   const ownerId = production.sessionOwnerId(options.owner);
   // Receipts only, never content: per generation frame/ack/write counts and byte totals, whether
   // sequences were consecutive from 0, and main-clock times. `mark` restarts the timed fields so one
@@ -56,7 +75,7 @@ async function startTerminalFixture(production, options) {
     await clean(() => transient.purgeAll());
     await clean(() => repository?.close());
     await clean(async () => { leftovers = await production.clearTestNamespace(namespace); });
-    if (lab) {
+    if (lab && ownedLab) {
       lab.privateKey.fill(0);
       await clean(() => lab.dispose());
       await clean(() => lab.assertCleaned());
@@ -67,7 +86,7 @@ async function startTerminalFixture(production, options) {
     return { fixtureCleaned: true, leftoverItems: leftovers };
   };
   try {
-    lab = await startFixture();
+    lab = options.lab ?? await startFixture();
     repository = value(await production.openMetadata({ path: path.join(directory, "catalog.sqlite") }));
     const provider = new production.KeychainSecretProvider(namespace);
     const service = new production.SecretService({ repository, provider, transient });
@@ -92,15 +111,24 @@ async function startTerminalFixture(production, options) {
       label: options.secondLabel, address: lab.host, environment: "DEV",
       port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId },
     } }).createdIds[0] : null;
-    runtime = production.createSavedHostSessions({ repository, provider, transient, power });
+    // Optional host whose identity has no saved password, so authentication prompts for one.
+    const promptHostId = options.promptLabel ? perform({ type: "create-host", data: {
+      label: options.promptLabel, address: lab.host, environment: "DEV",
+      port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId: perform({ type: "create-identity", data: {
+        label: "Owned unsaved password", username: lab.username, method: "password",
+      } }).createdIds[0] },
+    } }).createdIds[0] : null;
+    runtime = production.createSavedHostSessions({ repository, provider, transient, power,
+      ...(options.keepalive ? { keepalive: options.keepalive } : {}), ...(options.limits ? { limits: options.limits } : {}) });
     const registry = runtime.registry;
     unsubscribe = registry.subscribe(ownerId, (snapshot) => {
-      if (snapshot.prompt?.kind === "host-trust") {
+      if (options.autoTrust !== false && snapshot.prompt?.kind === "host-trust") {
         queueMicrotask(() => registry.answerPrompt(ownerId, snapshot.id, snapshot.generation, snapshot.prompt.id,
           { kind: "host-trust", decision: "remember" }));
       }
     });
-    const terminals = production.createTerminalController({ registry });
+    // Reconnect after a lock is the explicit unlock; the owned catalog and namespace stay available.
+    const terminals = production.createTerminalController({ registry, checkAccess: async () => !cleaned });
     // IPC handlers re-register the invoking sender on every call, so the recorder wraps that path too.
     controller = {
       ...terminals,
@@ -146,7 +174,30 @@ async function startTerminalFixture(production, options) {
         second = value(registry.connect(ownerId, secondHostId));
         return status(second);
       },
+      connectPrompt() {
+        requireTrue(promptHostId, "NO_PROMPT_HOST");
+        current = value(registry.connect(ownerId, promptHostId));
+        return status();
+      },
       status: () => status(),
+      sessions: () => registry.snapshot(ownerId).map((snapshot) => status(snapshot)),
+      registry,
+      policy: runtime.policy,
+      // The composition main uses when a window's owner is revoked (navigation or renderer crash).
+      revokeOwner: (owner) => runtime.revokeOwner(owner),
+      knownHosts() {
+        const listed = runtime.policy.list();
+        return listed.ok ? listed.value.length : -1;
+      },
+      pause: () => docker(["pause", lab.container]).then(() => true),
+      unpause: () => docker(["unpause", lab.container]).then(() => true),
+      async stop() {
+        if (ownedLab) await lab.stopTransport();
+        else await docker(["stop", "--time", "1", lab.container]);
+        return true;
+      },
+      // Server-side interactive shells (`sshd: fixture@pts/N`); 0 once every session is reaped.
+      shells: async () => Number((await docker(["exec", lab.container, "pgrep", "-c", "-f", "sshd: fixture@"])).trim()),
       frames(generation) {
         return { ...receipt(`${current.id}:${generation}`) };
       },

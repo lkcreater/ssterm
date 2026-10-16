@@ -1,5 +1,5 @@
 import type { SecretItem, SecretProvider } from "@ssterm/domain";
-import { createSshConnection, preparePrivateKey, type SshCredential, type PrivateKeyResult, type TerminalBounds } from "@ssterm/adapters/ssh";
+import { createSshConnection, preparePrivateKey, type SshCredential, type PrivateKeyResult, type TerminalBounds, type SshKeepalive } from "@ssterm/adapters/ssh";
 import type { KnownHostPolicy } from "./known-hosts.ts";
 import type { SessionAdapter, SessionContext, SessionErrorCode, PromptFieldId } from "./sessions.ts";
 
@@ -9,6 +9,7 @@ export function createSavedHostSshAdapter(options: {
   policy: KnownHostPolicy;
   /** Validated by the caller that constructs it (main composition). */
   terminal?: TerminalBounds;
+  keepalive?: SshKeepalive;
 }): SessionAdapter {
   return {
     start(context) {
@@ -55,6 +56,7 @@ export function createSavedHostSshAdapter(options: {
         failed: (code) => context.failed(code),
         ended: (end) => context.ended(end),
         terminal: options.terminal,
+        keepalive: options.keepalive,
       });
       if (context.own(connection) && !signal.aborted) connection.start();
     },

@@ -100,6 +100,8 @@ export interface PendingPaste {
   label: string;
   endpoint: string | null;
   production: boolean;
+  /** The session generation the paste was aimed at; a reconnect makes it stale. */
+  generation: number;
 }
 
 const PREVIEW_LINES = 200;

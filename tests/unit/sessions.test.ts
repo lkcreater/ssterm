@@ -653,8 +653,17 @@ test("lock fences all sessions before reentrant cleanup and a late unlock cannot
   await locked;
   assert(!h.registry.connect("owner-1", "host-1").ok);
   assert.equal(await h.registry.unlock(async () => false), false);
-  assert.equal(await h.registry.unlock(async () => true), true);
+  // An epoch captured before the latest lock never unlocks, and is refused before access is checked.
+  const epoch = h.registry.lockEpoch;
+  let checked = false;
+  assert.equal(await h.registry.unlock(async () => { checked = true; return true; }, epoch - 1), false);
+  assert.equal(checked, false);
+  assert.equal(await h.registry.unlock(async () => true, epoch), true);
   assert(h.registry.connect("owner-1", "host-1").ok);
+  await h.registry.lock();
+  assert.equal(h.registry.lockEpoch, epoch + 1);
+  assert.equal(await h.registry.unlock(async () => true, epoch), false);
+  assert.equal(await h.registry.unlock(async () => true), true);
   await h.registry.dispose();
   assert.equal(await h.registry.unlock(async () => true), false);
   assert(!h.registry.connect("owner-1", "host-1").ok);
@@ -826,5 +835,89 @@ test("only a remote end projects end detail; stale generations and local close n
   snapshot = h.registry.snapshot("owner-1")[0]!;
   assert.equal(snapshot.state, "Closed");
   assert.equal(snapshot.end, undefined);
+  await h.registry.dispose();
+});
+
+test("close, reconnect and forget fence the exact generation and reject a double reconnect", async () => {
+  const h = harness();
+  const session = h.connect();
+  await tick();
+  h.contexts[0]!.failed("network");
+  await tick();
+  const code = (result: SessionResult<unknown>) => (result.ok ? "ok" : result.error.code);
+  assert.equal(code(h.registry.reconnect("owner-1", session.id, 2)), "invalid-state", "a future generation is stale too");
+  assert.equal(code(h.registry.forget("owner-1", session.id, 2)), "invalid-state");
+  // Two clicks carrying the same generation: exactly one new attempt starts.
+  const results = [h.registry.reconnect("owner-1", session.id, 1), h.registry.reconnect("owner-1", session.id, 1)];
+  assert.deepEqual(results.map(code), ["ok", "invalid-state"]);
+  await tick();
+  assert.equal(h.contexts.length, 2);
+  const fresh = h.contexts[1]!;
+  fresh.verifyingHost();
+  fresh.authenticating();
+  assert(fresh.ready(fakeTerminal()));
+
+  // A close for the old generation never reaches the new one.
+  assert.equal(code(await h.registry.close("owner-1", session.id, 1)), "invalid-state");
+  assert.equal(code(h.registry.forget("owner-1", session.id, 1)), "invalid-state");
+  assert.equal(h.registry.snapshot("owner-1")[0]!.state, "Ready");
+  assert(!fresh.signal.aborted);
+
+  value(await h.registry.close("owner-1", session.id, 2));
+  assert.equal(h.registry.snapshot("owner-1")[0]!.state, "Closed");
+  value(await h.registry.close("owner-1", session.id, 2));
+  assert.equal(code(await h.registry.close("owner-1", session.id, 1)), "invalid-state", "Closed is idempotent only for its own generation");
+  assert.equal(code(await h.registry.close("owner-2", session.id, 2)), "not-found");
+  value(h.registry.forget("owner-1", session.id, 2));
+  assert.deepEqual(h.registry.snapshot("owner-1"), []);
+  await h.registry.dispose();
+});
+
+test("reconnect and forget wait for teardown to finish", async () => {
+  const h = harness({ start: (context) => { context.own({ dispose() {}, drained: new Promise(() => {}) }); } });
+  const session = h.connect();
+  await tick();
+  h.contexts[0]!.failed("timeout");
+  await tick();
+  assert.equal(h.registry.snapshot("owner-1")[0]!.cleanup, "pending");
+  assert(!h.registry.reconnect("owner-1", session.id, 1).ok);
+  assert(!h.registry.forget("owner-1", session.id, 1).ok);
+  let settled = false;
+  void h.registry.settled("owner-1", session.id, 1).then(() => { settled = true; });
+  await tick();
+  assert(!settled, "settled waits for the pending teardown");
+  h.clock.advance(2_000);
+  await tick();
+  assert(settled, "the drain limit bounds the wait");
+  assert.equal(h.registry.snapshot("owner-1")[0]!.cleanup, "timeout");
+  // A stale or foreign target never waits; neither does a live generation.
+  await h.registry.settled("owner-1", session.id, 2);
+  await h.registry.settled("owner-2", session.id, 1);
+  value(h.registry.reconnect("owner-1", session.id, 1));
+  const live = h.registry.settled("owner-1", session.id, 2);
+  await h.registry.dispose();
+  await live;
+});
+
+test("lock records `locked` on live generations only and reconnect reports locked only for a valid target", async () => {
+  const h = harness();
+  const live = h.connect();
+  const failed = h.connect();
+  await tick();
+  h.contexts[1]!.failed("auth-denied");
+  await tick();
+  await h.registry.lock();
+  const snapshot = (id: string) => h.registry.snapshot("owner-1", id)[0]!;
+  assert.equal(snapshot(live.id).state, "Closed");
+  assert.equal(snapshot(live.id).error?.code, "locked");
+  assert.equal(snapshot(failed.id).error?.code, "auth-denied", "an earlier failure keeps its reason");
+  const code = (result: SessionResult<unknown>) => (result.ok ? "ok" : result.error.code);
+  assert.equal(code(h.registry.reconnect("owner-1", live.id, 1)), "locked");
+  assert.equal(code(h.registry.reconnect("owner-1", live.id, 2)), "invalid-state");
+  assert.equal(code(h.registry.reconnect("owner-2", live.id, 1)), "not-found");
+  assert(await h.registry.unlock(async () => true));
+  const next = value(h.registry.reconnect("owner-1", live.id, 1));
+  assert.equal(next.generation, 2);
+  assert.equal(next.error, undefined, "a new generation starts without the old reason");
   await h.registry.dispose();
 });

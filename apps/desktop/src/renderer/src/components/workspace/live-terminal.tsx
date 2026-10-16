@@ -5,7 +5,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { TriangleAlertIcon } from "lucide-react";
+import { CircleIcon, RotateCcwIcon, TriangleAlertIcon } from "lucide-react";
 import {
   MAX_LINK_URL,
   MAX_TERMINAL_SIZE,
@@ -42,6 +42,7 @@ import {
   sanitizePaste,
   terminalShortcut,
 } from "@/lib/terminal-input";
+import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
 import {
   terminalSearchDecorations,
   terminalStyle,
@@ -49,6 +50,18 @@ import {
 } from "@/lib/terminal-theme";
 
 const NOTICE_MS = 4000;
+// Written locally, never sent: leaves the alternate screen, soft-resets and turns mouse reporting
+// off (DECSTR alone keeps both in xterm 6), restores the default palette, colors and cursor color
+// (OSC 104/110/111/112) and line-feed mode, so a full-screen app that died cannot strand the view.
+// The leading DECSC matters: xterm's ?1049l restores the saved cursor even when the normal screen
+// is already active, which would jump to the top row and overwrite history.
+const RECONNECTED =
+  "\x1b7\x1b[?1049l\x1b[!p\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b]104\x07\x1b]110\x07\x1b]111\x07\x1b]112\x07\x1b[?20l\r\n\x1b[2m── Reconnected ──\x1b[0m\r\n";
+const methods = {
+  close: "closeTerminal",
+  reconnect: "reconnectTerminal",
+  dismiss: "dismissTerminal",
+} as const satisfies Record<LifecycleAction, string>;
 const statuses = {
   connecting: "connecting",
   ready: "connected",
@@ -70,21 +83,12 @@ type Fault = keyof typeof faults;
 interface Controls {
   term: Terminal;
   search: SearchAddon;
+  /** Starts a session generation: stale frames are ignored and nothing queued carries over. */
+  begin(generation: number): void;
   setReady(ready: boolean): void;
   resume(): void;
   /** Sends text through xterm's paste path only while this view accepts input. */
   paste(text: string): boolean;
-}
-
-/** Remote outcomes stay distinct from a local close or a lost connection. */
-export function outcome(session: TerminalSession): string | null {
-  const end = session.end;
-  if (end?.kind === "exit") return `Remote process exited with status ${end.code}`;
-  if (end?.kind === "signal") return `Remote process was terminated by ${end.signal}`;
-  if (end?.kind === "eof") return "The remote end closed the session";
-  if (session.phase === "closed") return "Session closed";
-  if (session.phase === "failed") return "Connection failed";
-  return null;
 }
 
 /** Every owner session stays mounted, even while another page is shown, so its stream keeps flowing. */
@@ -101,7 +105,7 @@ export function TerminalWorkspace({
     <div className="terminal-workspace" hidden={hidden}>
       {sessions.map((session) => (
         <LiveTerminal
-          key={`${session.sessionId}:${session.generation}`}
+          key={session.sessionId}
           owner={owner}
           session={session}
         />
@@ -110,7 +114,7 @@ export function TerminalWorkspace({
   );
 }
 
-/** One xterm instance per session generation; a reconnect mounts a new one with no carried input. */
+/** One xterm per logical session: a reconnect keeps its history but carries no input or stream state. */
 function LiveTerminal({
   owner,
   session,
@@ -120,10 +124,17 @@ function LiveTerminal({
 }) {
   const { sessionId, generation, phase, target } = session;
   const ready = phase === "ready";
+  const ended = phase === "failed" || phase === "closed";
   const { windowId, generation: ownerGeneration } = owner;
+  const pane = useRef<HTMLElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const controls = useRef<Controls | null>(null);
-  const started = useRef(false);
+  const started = useRef(0);
+  // After Reconnect, focus goes back to the terminal once a newer generation is Ready.
+  const focusAfter = useRef<number>(undefined);
+  const [connected, setConnected] = useState(0);
+  if (ready && connected !== generation) setConnected(generation);
+  const [busy, setBusy] = useState(false);
   const [opened, setOpened] = useState(false);
   const [size, setSize] = useState<{ columns: number; rows: number }>();
   const [fault, setFault] = useState<Fault>();
@@ -155,12 +166,15 @@ function LiveTerminal({
     const element = host.current;
     const bridge = window.ssterm;
     if (!element || !bridge) return;
-    const identity = { owner: { windowId, generation: ownerGeneration }, sessionId, generation };
+    const owner = { windowId, generation: ownerGeneration };
     // StrictMode runs this twice; the first instance's font continuation must never open or bind.
     let cancelled = false;
+    // Everything below is per generation and reset by begin(); 0 means none started yet.
+    let current = 0;
     let live = false;
     let broken = false;
     let next = 0;
+    const identity = () => ({ owner, sessionId, generation: current });
     const notify = (text: string) => {
       if (!cancelled) setNotice({ text });
     };
@@ -171,7 +185,7 @@ function LiveTerminal({
         notify("Link not opened: it is longer than 2,048 characters.");
         return;
       }
-      bridge.openLink({ owner: identity.owner, url }).then(
+      bridge.openLink({ owner, url }).then(
         (result) => {
           if (result.ok) return;
           notify(
@@ -216,7 +230,7 @@ function LiveTerminal({
     });
 
     const stopOutput = bridge.onTerminalOutput((frame) => {
-      if (cancelled || broken || frame.sessionId !== sessionId || frame.generation !== generation) return;
+      if (cancelled || broken || frame.sessionId !== sessionId || frame.generation !== current) return;
       if (frame.sequence !== next) {
         broken = true;
         setFault("stream");
@@ -224,8 +238,9 @@ function LiveTerminal({
       }
       next += 1;
       const bytes = frame.bytes.byteLength;
+      const { generation } = frame;
       term.write(frame.bytes, () => {
-        if (!cancelled) void bridge.ackTerminal({ ...identity, bytes });
+        if (!cancelled) void bridge.ackTerminal({ owner, sessionId, generation, bytes });
       });
     });
 
@@ -254,9 +269,11 @@ function LiveTerminal({
       while (queue.length > 0 && !cancelled && !paused) {
         const bytes = queue.shift()!;
         queued -= bytes.byteLength;
-        const result = await bridge.writeTerminal({ ...identity, bytes }).catch(() => undefined);
+        const request = { ...identity(), bytes };
+        const result = await bridge.writeTerminal(request).catch(() => undefined);
         bytes.fill(0);
-        if (!result?.ok) pause();
+        // A refusal for a generation that has since been replaced must not pause the new one.
+        if (!result?.ok && request.generation === current) pause();
       }
       sending = false;
     };
@@ -285,7 +302,7 @@ function LiveTerminal({
     term.onResize(({ cols: columns, rows }) => {
       report();
       if (live && columns <= MAX_TERMINAL_SIZE && rows <= MAX_TERMINAL_SIZE)
-        void bridge.resizeTerminal({ ...identity, columns, rows });
+        void bridge.resizeTerminal({ ...identity(), columns, rows });
     });
     // A hidden workspace has no size; opening or fitting there would send a zero-sized PTY.
     const show = () => {
@@ -310,6 +327,20 @@ function LiveTerminal({
     controls.current = {
       term,
       search,
+      begin(generation) {
+        if (generation === current) return;
+        const reconnected = current !== 0;
+        current = generation;
+        live = false;
+        broken = false;
+        next = 0;
+        paused = false;
+        term.options.disableStdin = true;
+        discard();
+        if (reconnected) term.write(RECONNECTED);
+        setFault(undefined);
+        setInputPaused(false);
+      },
       setReady(next) {
         live = next;
         term.options.disableStdin = !next;
@@ -334,6 +365,11 @@ function LiveTerminal({
       discard();
       term.dispose();
     };
+  }, [windowId, ownerGeneration, sessionId]);
+
+  // Must run before the open effect below, so a new generation starts clean before it is opened.
+  useEffect(() => {
+    controls.current?.begin(generation);
   }, [windowId, ownerGeneration, sessionId, generation]);
 
   useEffect(() => {
@@ -341,8 +377,14 @@ function LiveTerminal({
     const bridge = window.ssterm;
     if (!opened || !current || !bridge) return;
     current.setReady(ready);
-    if (!ready || started.current) return;
-    started.current = true;
+    if (ready && focusAfter.current !== undefined && generation > focusAfter.current) {
+      focusAfter.current = undefined;
+      const active = document.activeElement;
+      // Only if the user has not moved on to something else while it connected.
+      if (!active || active === document.body || pane.current?.contains(active)) current.term.focus();
+    }
+    if (!ready || started.current === generation) return;
+    started.current = generation;
     const identity = { owner: { windowId, generation: ownerGeneration }, sessionId, generation };
     const { cols: columns, rows } = current.term;
     let stale = false;
@@ -384,7 +426,7 @@ function LiveTerminal({
     } else if (decision.kind === "refuse") {
       notify("Paste refused: the text is larger than 256 KiB. Nothing was sent.");
     } else if (decision.kind === "confirm") {
-      setPending({ text, lines: decision.lines, removed, bracketed, label, endpoint, production });
+      setPending({ text, lines: decision.lines, removed, bracketed, label, endpoint, production, generation });
     } else if (current.paste(text)) {
       notify(`Pasted ${lineCount(decision.lines)} into ${label}`);
     }
@@ -392,6 +434,11 @@ function LiveTerminal({
   // The shell can leave bracketed paste while the dialog is open; ask again with the real risk.
   const confirmPaste = () => {
     if (!pending) return;
+    if (pending.generation !== generation) {
+      setPending(undefined);
+      notify("Not pasted: the session reconnected since you pasted.");
+      return;
+    }
     const term = controls.current?.term;
     if (pending.bracketed && term && !term.modes.bracketedPasteMode && hasNewline(pending.text)) {
       setPending({ ...pending, bracketed: false });
@@ -403,6 +450,28 @@ function LiveTerminal({
         ? `Pasted ${lineCount(pending.lines)} into ${pending.label}`
         : "Not pasted: this session no longer accepts input.",
     );
+  };
+  // `detail` is the click count (0 from the keyboard). Cancel/Disconnect and Close pane occupy the same
+  // spot, so the second click of a double click must not close a pane that appeared under the pointer.
+  const act = (action: LifecycleAction, detail = 0) => {
+    const bridge = window.ssterm;
+    if (!bridge || busy || (action !== "reconnect" && detail > 1)) return;
+    setBusy(true);
+    if (action === "reconnect") focusAfter.current = generation;
+    const fail = (text: string) => {
+      if (action === "reconnect") focusAfter.current = undefined;
+      notify(text);
+    };
+    bridge[methods[action]]({ owner: { windowId, generation: ownerGeneration }, sessionId, generation })
+      .then(
+        (result) => {
+          if (!result.ok) fail(lifecycleFailure(action, result.error.code, session.error === "locked"));
+          // The keyboard-activated button is replaced by the next phase's button; keep focus in this pane.
+          else if (action === "close" && detail === 0) controls.current?.term.focus();
+        },
+        () => fail(lifecycleFailure(action, "unavailable")),
+      )
+      .finally(() => setBusy(false));
   };
   const reportCopy = (event: ClipboardEvent<HTMLElement>) => {
     const term = controls.current?.term;
@@ -432,6 +501,7 @@ function LiveTerminal({
 
   return (
     <section
+      ref={pane}
       className="terminal-pane live-terminal-pane"
       onPasteCapture={interceptPaste}
       onCopy={reportCopy}
@@ -450,9 +520,41 @@ function LiveTerminal({
         </div>
         <ConnectionStatus state={statuses[phase]} />
         <span role="status" className="type-caption text-muted-foreground">
-          {outcome(session)}
+          {terminalOutcome(session, connected === generation)}
         </span>
+        <div className="terminal-actions">
+          {/* Distinct keys: a phase change mounts a new button rather than relabelling a focused or pressed one. */}
+          {phase === "connecting" ? (
+            <Button key="cancel" size="sm" variant="outline" disabled={busy} onClick={(event) => act("close", event.detail)}>
+              Cancel
+            </Button>
+          ) : ready ? (
+            <Button key="disconnect" size="sm" variant="outline" disabled={busy} onClick={(event) => act("close", event.detail)}>
+              Disconnect
+            </Button>
+          ) : (
+            <Button key="dismiss" size="sm" variant="ghost" disabled={busy} onClick={(event) => act("dismiss", event.detail)}>
+              Close pane
+            </Button>
+          )}
+        </div>
       </div>
+      {ended ? (
+        <div className="live-terminal-notice">
+          {/* The header status line announces the outcome; this offers the next step without interrupting. */}
+          <Alert role={undefined} className="has-data-[slot=alert-action]:pr-30" variant={phase === "failed" ? "destructive" : "default"}>
+            {phase === "failed" ? <TriangleAlertIcon aria-hidden="true" /> : <CircleIcon aria-hidden="true" />}
+            <AlertTitle>{connected ? "History is kept in this pane." : "Nothing was received in this pane."}</AlertTitle>
+            <AlertDescription>Reconnect starts a new session. Nothing typed earlier is sent again.</AlertDescription>
+            <AlertAction>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => act("reconnect")}>
+                <RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
+                Reconnect
+              </Button>
+            </AlertAction>
+          </Alert>
+        </div>
+      ) : null}
       {fault ? (
         <div className="live-terminal-notice">
           <Alert variant="destructive">

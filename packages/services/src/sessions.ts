@@ -334,6 +334,7 @@ export class SessionRegistry {
   #locked = false;
   #disposed = false;
   #epoch = 0;
+  #locks = 0;
   constructor(
     private readonly options: {
       resolve(
@@ -380,13 +381,14 @@ export class SessionRegistry {
       return failure("resource-limit");
     return success(this.#begin(ownerId, hostId, randomUUID(), 1));
   }
-  reconnect(ownerId: string, id: string): SessionResult<SessionSnapshot> {
+  /** `generation`, when given, must name the current generation; a stale one is `invalid-state`. */
+  reconnect(ownerId: string, id: string, generation?: number): SessionResult<SessionSnapshot> {
     if (this.#disposed) return failure("disposed");
-    if (this.#locked) return failure("locked");
     const current = this.#owned(ownerId, id);
     if (!current) return failure("not-found");
-    if (!["Failed", "Closed"].includes(current.state) || !current.teardownDone)
-      return failure("invalid-state");
+    if (!this.#ended(current, generation)) return failure("invalid-state");
+    // Checked last so `locked` means the target itself was valid and only an unlock is missing.
+    if (this.#locked) return failure("locked");
     return success(
       this.#begin(ownerId, current.hostId, id, current.generation + 1),
     );
@@ -546,9 +548,11 @@ export class SessionRegistry {
   cancel(ownerId: string, id: string): Promise<SessionResult<void>> {
     return this.close(ownerId, id);
   }
-  close(ownerId: string, id: string): Promise<SessionResult<void>> {
+  close(ownerId: string, id: string, generation?: number): Promise<SessionResult<void>> {
     const current = this.#owned(ownerId, id);
     if (!current) return Promise.resolve(failure("not-found"));
+    if (generation !== undefined && generation !== current.generation)
+      return Promise.resolve(failure("invalid-state"));
     if (current.state === "Closed") return Promise.resolve(success(undefined));
     this.#fence(current, "Closing");
     if (current.teardownDone) this.#emit(current);
@@ -564,30 +568,47 @@ export class SessionRegistry {
       () => {},
     );
   }
-  forget(ownerId: string, id: string): SessionResult<void> {
+  /**
+   * Resolves once this exact generation's teardown has finished (bounded by the drain limit), so a
+   * reconnect or forget right after a failure is not refused. Live, stale or missing targets resolve at once.
+   */
+  settled(ownerId: string, id: string, generation: number): Promise<void> {
+    const current = this.#owned(ownerId, id);
+    return current?.generation === generation && current.teardown ? current.teardown : Promise.resolve();
+  }
+  forget(ownerId: string, id: string, generation?: number): SessionResult<void> {
     const current = this.#owned(ownerId, id);
     if (!current) return failure("not-found");
-    if (!["Closed", "Failed"].includes(current.state) || !current.teardownDone)
-      return failure("invalid-state");
+    if (!this.#ended(current, generation)) return failure("invalid-state");
     this.#records.delete(id);
     return success(undefined);
   }
   lock(): Promise<void> {
     this.#locked = true;
     this.#epoch++;
+    this.#locks++;
     const records = [...this.#records.values()];
     const completedFailures = records.filter(
       (current) => current.teardownDone && current.state === "Failed",
     );
     // Fence every generation before abort listeners, disposal or observers can reenter.
-    for (const current of records) this.#fence(current, "Closing");
+    for (const current of records) {
+      if (current.active) current.error = error("locked");
+      this.#fence(current, "Closing");
+    }
     for (const current of completedFailures) this.#emit(current);
     const drains = records.map((current) => this.#teardown(current));
     this.options.transient.purgeAll();
     return Promise.all(drains).then(() => {});
   }
-  async unlock(checkAccess: () => Promise<boolean>): Promise<boolean> {
+  /** Counts locks; a request that captured it before a later lock must not unlock (see `unlock`). */
+  get lockEpoch(): number {
+    return this.#locks;
+  }
+  /** `lockEpoch`, when given, refuses an unlock requested before the latest lock. */
+  async unlock(checkAccess: () => Promise<boolean>, lockEpoch?: number): Promise<boolean> {
     if (this.#disposed || typeof checkAccess !== "function") return false;
+    if (lockEpoch !== undefined && lockEpoch !== this.#locks) return false;
     const epoch = ++this.#epoch;
     let allowed = false;
     try {
@@ -616,6 +637,13 @@ export class SessionRegistry {
   #owned(ownerId: string, id: string): Generation | undefined {
     const current = this.#records.get(id);
     return current?.ownerId === ownerId ? current : undefined;
+  }
+  #ended(current: Generation, generation?: number): boolean {
+    return (
+      (generation === undefined || generation === current.generation) &&
+      ["Failed", "Closed"].includes(current.state) &&
+      current.teardownDone
+    );
   }
   #live(current: Generation): boolean {
     return (

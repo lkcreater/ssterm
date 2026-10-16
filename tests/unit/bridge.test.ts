@@ -69,9 +69,10 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "ackTerminal", "answerCredentials", "answerHostTrust", "bootstrap", "cancelCredentialPrompt", "credentialState", "onCredentialState",
-    "onTerminalOutput", "onTerminalState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping",
-    "prepareKnownHostRevoke", "resizeTerminal", "revokeKnownHost", "terminalState", "trustState", "writeTerminal",
+    "ackTerminal", "answerCredentials", "answerHostTrust", "bootstrap", "cancelCredentialPrompt", "closeTerminal", "credentialState",
+    "dismissTerminal", "onCredentialState", "onTerminalOutput", "onTerminalState", "onTrustState", "onWindowState", "openLink",
+    "openTerminal", "ping", "prepareKnownHostRevoke", "reconnectTerminal", "resizeTerminal", "revokeKnownHost", "terminalState",
+    "trustState", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -349,6 +350,12 @@ test("terminal commands are rebuilt and written bytes are copied then wiped", as
   assert.deepEqual(f.calls.at(-1), { channel: channels.resizeTerminal, args: [{ ...target, columns: 120, rows: 40 }] });
   assert.ok((await f.api.ackTerminal({ ...target, bytes: 5 })).ok);
   assert.deepEqual(f.calls.at(-1), { channel: channels.ackTerminal, args: [{ ...target, bytes: 5 }] });
+  for (const [method, channel] of [["closeTerminal", channels.closeTerminal], ["reconnectTerminal", channels.reconnectTerminal],
+    ["dismissTerminal", channels.dismissTerminal]] as const) {
+    assert.ok((await f.api[method](target)).ok);
+    assert.deepEqual(f.calls.at(-1), { channel, args: [target] });
+    assert.notEqual(f.calls.at(-1)!.args[0], target, "rebuilt, never the caller's object");
+  }
   const count = f.calls.length;
   for (const invalid of [
     f.api.writeTerminal({ ...target, bytes: new Uint8Array(0) }),
@@ -357,6 +364,9 @@ test("terminal commands are rebuilt and written bytes are copied then wiped", as
     f.api.resizeTerminal({ ...target, columns: 0, rows: 24 }),
     f.api.ackTerminal({ ...target, bytes: 1.5 }),
     f.api.openTerminal({ ...target, generation: 0 }),
+    f.api.closeTerminal({ ...target, extra: true } as never),
+    f.api.reconnectTerminal({ ...target, generation: 1.5 }),
+    f.api.dismissTerminal({ ...target, sessionId: "a b" }),
   ]) assert.deepEqual(await invalid, failure("invalid-request"));
   assert.equal(f.calls.length, count);
   f.setReject();

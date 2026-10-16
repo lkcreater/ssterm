@@ -10,6 +10,13 @@ export type TerminalEnd =
   | { kind: "signal"; signal: string }
   | { kind: "eof" };
 export type TerminalPhase = "connecting" | "ready" | "closed" | "failed";
+/** App-authored failure reasons; the renderer owns their wording. */
+export const TERMINAL_ERROR_CODES = [
+  "invalid-config", "host-key-untrusted", "host-key-changed", "auth-denied", "credentials-required",
+  "credentials-unavailable", "invalid-private-key", "unsupported-private-key", "key-mismatch", "prompt-cancelled",
+  "timeout", "dns", "network", "channel-open-failed", "subsystem-unavailable", "resource-limit", "locked",
+] as const;
+export type TerminalErrorCode = (typeof TERMINAL_ERROR_CODES)[number];
 export interface TerminalSession {
   sessionId: string;
   generation: number;
@@ -23,6 +30,8 @@ export interface TerminalSession {
   } | null;
   /** Present only when the remote side ended this generation. */
   end: TerminalEnd | null;
+  /** Why this generation failed or was closed by ssterm (e.g. `locked`); null for a plain local close. */
+  error: TerminalErrorCode | null;
 }
 export interface TerminalState { owner: Owner; sequence: number; sessions: TerminalSession[] }
 export interface TerminalStateRequest { owner: Owner }
@@ -51,9 +60,10 @@ function isTerminalSessionTarget(v: unknown): v is NonNullable<TerminalSession["
     between(v.endpointPort, 65_535) && (v.username === null || text(v.username, 1024));
 }
 export function isTerminalSession(v: unknown): v is TerminalSession {
-  return exactObject(v, ["sessionId", "generation", "phase", "target", "end"]) && identifier(v.sessionId) && positive(v.generation) &&
+  return exactObject(v, ["sessionId", "generation", "phase", "target", "end", "error"]) && identifier(v.sessionId) && positive(v.generation) &&
     ["connecting", "ready", "closed", "failed"].includes(v.phase as string) &&
-    (v.target === null || isTerminalSessionTarget(v.target)) && (v.end === null || isTerminalEnd(v.end));
+    (v.target === null || isTerminalSessionTarget(v.target)) && (v.end === null || isTerminalEnd(v.end)) &&
+    (v.error === null || (TERMINAL_ERROR_CODES as readonly unknown[]).includes(v.error));
 }
 export function isTerminalState(v: unknown): v is TerminalState {
   return exactObject(v, ["owner", "sequence", "sessions"]) && isOwner(v.owner) && isCounter(v.sequence) &&

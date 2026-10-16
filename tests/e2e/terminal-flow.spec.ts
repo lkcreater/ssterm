@@ -41,7 +41,7 @@ test("terminal output and input stay bounded and responsive under a flood, a blo
       owner: parameters.owner, label: parameters.label, tempDirectory: app.getPath("temp"),
       send: (channel: string, value: unknown) => { if (!window.webContents.isDestroyed()) window.webContents.send(channel, value); },
     });
-    for (const name of ["terminalState", "openTerminal", "writeTerminal", "resizeTerminal", "ackTerminal"]) ipcMain.removeHandler(production.channels[name]);
+    for (const channel of production.terminalChannels) ipcMain.removeHandler(channel);
     const disposeHandlers = production.registerTerminalHandlers({ ipc: ipcMain, boundary, controller: () => fixture.controller });
     (globalThis as any).__sstermTerminalFixture = { fixture, disposeHandlers };
   }, { owner, label, fixturePath: resolve("tests/fixtures/terminal/ssh.cjs") });

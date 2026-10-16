@@ -1,13 +1,13 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
-import { createTerminalController, registerTerminalHandlers } from "../../apps/desktop/src/main/terminals.ts";
+import { createTerminalController, registerTerminalHandlers, terminalChannels } from "../../apps/desktop/src/main/terminals.ts";
 import { WindowBoundary } from "../../apps/desktop/src/main/boundary.ts";
 import { sessionOwnerId } from "../../apps/desktop/src/main/session-runtime.ts";
 import { SessionRegistry, TransientSecrets, type SessionContext } from "../../packages/services/src/index.ts";
 import {
   channels, failure, isAckTerminalRequest, isResizeTerminalRequest, isTerminalEnd, isTerminalOutput, isTerminalState,
-  isTerminalTarget, isWriteTerminalRequest, MAX_TERMINAL_CHUNK, MAX_TERMINAL_WRITE, type TerminalOutput, type TerminalState,
+  isTerminalTarget, isWriteTerminalRequest, MAX_TERMINAL_CHUNK, MAX_TERMINAL_WRITE, TERMINAL_ERROR_CODES, type TerminalOutput, type TerminalState,
 } from "../../packages/contracts/src/index.ts";
 import type { ResolvedHostConfig, TerminalChannel, TerminalWrite } from "../../packages/domain/src/index.ts";
 
@@ -37,10 +37,10 @@ function fakeChannel() {
   };
   return { channel, calls };
 }
-async function fixture() {
+async function fixture(checkAccess?: () => Promise<boolean>) {
   const contexts: SessionContext[] = [];
   const registry = new SessionRegistry({ resolve: () => ({ ok: true, value: config }), transient: new TransientSecrets(), adapter: { start(context) { contexts.push(context); } } });
-  const controller = createTerminalController({ registry });
+  const controller = createTerminalController({ registry, checkAccess });
   const sent: { channel: string; value: TerminalState | TerminalOutput }[] = [];
   controller.register(owner, (channel, value) => sent.push({ channel, value }));
   controller.register(other, () => assert.fail("foreign owner received a frame"));
@@ -58,7 +58,7 @@ async function fixture() {
   const states = () => sent.filter((entry) => entry.channel === channels.terminalStateChanged).map((entry) => entry.value as TerminalState);
   const frames = () => sent.filter((entry) => entry.channel === channels.terminalOutput).map((entry) => entry.value as TerminalOutput);
   const identity = { owner, sessionId: connected.value.id, generation: connected.value.generation };
-  return { registry, controller, sent, states, frames, identity, ready, first };
+  return { registry, controller, sent, states, frames, identity, ready, first, contexts };
 }
 
 test("terminal contracts reject extra keys, oversize payloads, non-integers and zero sizes", () => {
@@ -88,8 +88,13 @@ test("terminal contracts reject extra keys, oversize payloads, non-integers and 
     { kind: "exit", code: -1 }, { kind: "exit", code: 1.5 }, { kind: "signal", signal: "KILL" }, { kind: "signal", signal: "SIGKILL", message: "server text" },
     { kind: "eof", code: 0 }, { kind: "closed" },
   ]) assert.equal(isTerminalEnd(invalid), false);
-  const session = { sessionId: "s-1", generation: 1, phase: "ready", target: null, end: null };
+  const session = { sessionId: "s-1", generation: 1, phase: "ready", target: null, end: null, error: null };
   assert.ok(isTerminalState({ owner, sequence: 0, sessions: [session] }));
+  for (const error of TERMINAL_ERROR_CODES) assert.ok(isTerminalState({ owner, sequence: 0, sessions: [{ ...session, phase: "failed", error }] }));
+  for (const error of ["invalid-state", "not-found", "disposed", "Connection reset by 10.0.0.1", 1, undefined])
+    assert.equal(isTerminalState({ owner, sequence: 0, sessions: [{ ...session, error }] }), false, String(error));
+  const { error: _error, ...withoutError } = session;
+  assert.equal(isTerminalState({ owner, sequence: 0, sessions: [withoutError] }), false);
   assert.equal(isTerminalState({ owner, sequence: 0, sessions: Array(33).fill(session) }), false);
   assert.equal(isTerminalState({ owner, sequence: 0, sessions: [{ ...session, phase: "Ready" }] }), false);
 });
@@ -99,7 +104,7 @@ test("controller projects the target, frames output to the owner and maps write 
   try {
     const state = f.controller.terminalState(owner);
     assert.ok(state.ok);
-    assert.deepEqual(state.value.sessions, [{ sessionId: f.identity.sessionId, generation: f.identity.generation, phase: "ready", end: null,
+    assert.deepEqual(state.value.sessions, [{ sessionId: f.identity.sessionId, generation: f.identity.generation, phase: "ready", end: null, error: null,
       target: { label: "เป้าหมาย lab", environment: "PROD", endpointHost: "example.com", endpointPort: 2222, username: null } }]);
     assert.equal(f.first.calls.sink, undefined, "output stays unbound until a view opens it");
 
@@ -208,7 +213,9 @@ test("terminal IPC authorizes sender and owner, requires one argument and wipes 
   const write = () => ({ ...f.identity, bytes: new TextEncoder().encode("typed-secret") });
   const wiped = (request: { bytes: Uint8Array }) => request.bytes.every((byte) => byte === 0);
   try {
-    assert.deepEqual([...handlers.keys()].sort(), [channels.ackTerminal, channels.openTerminal, channels.resizeTerminal, channels.terminalState, channels.writeTerminal].sort());
+    assert.deepEqual([...handlers.keys()].sort(), [channels.ackTerminal, channels.openTerminal, channels.resizeTerminal, channels.terminalState,
+      channels.writeTerminal, channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal].sort());
+    assert.deepEqual([...terminalChannels].sort(), [...handlers.keys()].sort());
     for (const forged of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { url: mainFrame.url } }, { sender, senderFrame: null }]) {
       const request = write();
       assert.deepEqual(invoke(channels.writeTerminal, forged, request), failure("unauthorized"));
@@ -238,5 +245,230 @@ test("terminal IPC authorizes sender and owner, requires one argument and wipes 
     const state = invoke(channels.terminalState, event, { owner }) as { ok: boolean };
     assert.equal(state.ok, true);
     assert.equal(JSON.stringify(sent).includes("typed-secret"), false);
+  } finally { unregister(); assert.equal(handlers.size, 0); boundary.dispose(); f.controller.dispose(); await f.registry.dispose(); }
+});
+
+const ok = { ok: true, value: { accepted: true } };
+const session = (f: Awaited<ReturnType<typeof fixture>>) => {
+  const state = f.controller.terminalState(owner);
+  assert.ok(state.ok);
+  return state.value.sessions.find((entry) => entry.sessionId === f.identity.sessionId)!;
+};
+
+test("close, reconnect and dismiss act only on the exact owner, session and generation in the required state", async () => {
+  const f = await fixture();
+  try {
+    const stale = { ...f.identity, generation: f.identity.generation + 1 };
+    // Wrong state: a live session cannot be reconnected or dismissed.
+    assert.deepEqual(await f.controller.reconnectTerminal(f.identity), failure("conflict"));
+    assert.deepEqual(await f.controller.dismissTerminal(f.identity), failure("conflict"));
+    // Foreign or unknown targets look identical to stale ones; unregistered owners are stale-owner.
+    assert.deepEqual(await f.controller.closeTerminal({ ...f.identity, owner: other }), failure("conflict"));
+    assert.deepEqual(await f.controller.closeTerminal({ ...f.identity, sessionId: "unknown" }), failure("conflict"));
+    assert.deepEqual(await f.controller.closeTerminal({ ...f.identity, owner: { windowId: 9, generation: 9 } }), failure("stale-owner"));
+    assert.deepEqual(await f.controller.closeTerminal({ ...f.identity, extra: 1 } as never), failure("invalid-request"));
+    assert.deepEqual(await f.controller.closeTerminal(stale), failure("conflict"));
+    assert.equal(session(f).phase, "ready");
+
+    assert.deepEqual(await f.controller.closeTerminal(f.identity), ok);
+    assert.deepEqual(session(f), { ...session(f), phase: "closed", error: null, end: null });
+    assert.deepEqual(await f.controller.closeTerminal(f.identity), ok, "close is idempotent on Closed");
+
+    const [first, second] = await Promise.all([f.controller.reconnectTerminal(f.identity), f.controller.reconnectTerminal(f.identity)]);
+    assert.deepEqual([first, second], [ok, failure("conflict")], "a double click starts one generation");
+    assert.equal(session(f).generation, stale.generation);
+    const next = await f.ready();
+    assert.deepEqual(await f.controller.closeTerminal(f.identity), failure("conflict"), "a stale close leaves the new generation alone");
+    assert.equal(session(f).phase, "ready");
+    assert.equal(next.context.signal.aborted, false);
+
+    next.context.failed("network");
+    await tick();
+    assert.deepEqual(await f.controller.dismissTerminal(f.identity), failure("conflict"));
+    assert.deepEqual(await f.controller.dismissTerminal({ ...stale, owner: other }), failure("conflict"));
+    assert.deepEqual(await f.controller.dismissTerminal(stale), ok);
+    const state = f.controller.terminalState(owner);
+    assert.ok(state.ok);
+    assert.deepEqual(state.value.sessions, [], "dismiss frees the slot");
+    assert.deepEqual(f.states().at(-1)!.sessions, [], "the owner's view is told the pane is gone");
+    assert.deepEqual(await f.controller.dismissTerminal(stale), failure("conflict"));
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+});
+
+test("session errors project only allowlisted codes and fold request-level codes", async () => {
+  const f = await fixture();
+  try {
+    for (const [code, projected] of [
+      ["auth-denied", "auth-denied"], ["timeout", "timeout"], ["network", "network"], ["invalid-state", "subsystem-unavailable"],
+      ["disposed", "subsystem-unavailable"], ["not-found", "subsystem-unavailable"], ["raw upstream text", "subsystem-unavailable"],
+    ] as const) {
+      const live = f.contexts.at(-1)!;
+      live.failed(code as never);
+      await tick();
+      assert.equal(session(f).phase, "failed");
+      assert.equal(session(f).error, projected, code);
+      assert.ok((await f.controller.reconnectTerminal({ ...f.identity, generation: session(f).generation })).ok);
+      assert.equal(session(f).error, null, "a new generation starts without the old reason");
+      await tick();
+    }
+    assert.ok(f.states().every(isTerminalState));
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+});
+
+test("reconnect and dismiss right after a failure wait for its teardown instead of refusing", async () => {
+  const f = await fixture();
+  try {
+    const slow = () => {
+      let finish!: () => void;
+      f.contexts.at(-1)!.own({ dispose() {}, drained: new Promise<void>((done) => { finish = done; }) });
+      f.contexts.at(-1)!.failed("network");
+      return () => finish();
+    };
+    let finish = slow();
+    let reconnected: unknown;
+    void f.controller.reconnectTerminal(f.identity).then((result) => { reconnected = result; });
+    await tick();
+    assert.equal(reconnected, undefined, "the click waits while the failed generation drains");
+    assert.equal(session(f).generation, 1);
+    finish();
+    await tick();
+    assert.deepEqual(reconnected, ok);
+    assert.equal(session(f).generation, 2);
+    await f.ready();
+    const second = { ...f.identity, generation: 2 };
+
+    finish = slow();
+    const dismissed = f.controller.dismissTerminal(second);
+    finish();
+    assert.deepEqual(await dismissed, ok);
+    assert.deepEqual(f.registry.snapshot(ownerId), []);
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+
+  const g = await fixture();
+  try {
+    let finish!: () => void;
+    g.contexts.at(-1)!.own({ dispose() {}, drained: new Promise<void>((done) => { finish = done; }) });
+    g.contexts.at(-1)!.failed("network");
+    const pending = g.controller.reconnectTerminal(g.identity);
+    g.controller.revokeOwner(owner);
+    finish();
+    assert.deepEqual(await pending, failure("stale-owner"), "an owner revoked while waiting starts nothing");
+    assert.equal(g.registry.snapshot(ownerId)[0]!.generation, 1);
+  } finally { g.controller.dispose(); await g.registry.dispose(); }
+});
+
+test("reconnect after a lock is the explicit unlock; a denied unlock stays locked as unavailable", async () => {
+  let allowed = false;
+  let checks = 0;
+  const f = await fixture(async () => { checks += 1; return allowed; });
+  try {
+    await f.registry.lock();
+    assert.equal(session(f).phase, "closed");
+    assert.equal(session(f).error, "locked");
+    assert.deepEqual(await f.controller.reconnectTerminal({ ...f.identity, generation: 2 }), failure("conflict"), "a stale target never unlocks");
+    assert.equal(checks, 0);
+    assert.deepEqual(await f.controller.reconnectTerminal(f.identity), failure("unavailable"));
+    assert.equal(checks, 1);
+    assert.deepEqual(await f.controller.reconnectTerminal(f.identity), failure("unavailable"));
+    allowed = true;
+    assert.deepEqual(await f.controller.reconnectTerminal(f.identity), ok);
+    assert.equal(session(f).generation, 2);
+    assert.equal(session(f).error, null);
+    await f.ready();
+    assert.equal(session(f).phase, "ready");
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+  const g = await fixture();
+  try {
+    await g.registry.lock();
+    assert.deepEqual(await g.controller.reconnectTerminal(g.identity), failure("unavailable"), "no access check means no unlock");
+  } finally { g.controller.dispose(); await g.registry.dispose(); }
+});
+
+test("a Reconnect that arrived before a lock never unlocks or reconnects after it, even while it waits on teardown", async () => {
+  let checks = 0;
+  const f = await fixture(async () => { checks += 1; return true; });
+  try {
+    let finish!: () => void;
+    f.contexts.at(-1)!.own({ dispose() {}, drained: new Promise<void>((done) => { finish = done; }) });
+    f.contexts.at(-1)!.failed("network");
+    // Clicked while the failed generation still drains; the screen locks before the wait ends.
+    const pending = f.controller.reconnectTerminal(f.identity);
+    await tick();
+    const locked = f.registry.lock();
+    finish();
+    assert.deepEqual(await pending, failure("unavailable"));
+    await locked;
+    assert.equal(checks, 0, "a pre-lock request never asks to unlock");
+    assert.equal(session(f).generation, 1);
+    // A Reconnect issued after the lock is the explicit unlock.
+    assert.deepEqual(await f.controller.reconnectTerminal(f.identity), ok);
+    assert.equal(checks, 1);
+    assert.equal(session(f).generation, 2);
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+
+  // Unlocked by someone else between arrival and the attempt: still refused, nothing starts.
+  const g = await fixture(async () => true);
+  try {
+    let finish!: () => void;
+    g.contexts.at(-1)!.own({ dispose() {}, drained: new Promise<void>((done) => { finish = done; }) });
+    g.contexts.at(-1)!.failed("network");
+    const pending = g.controller.reconnectTerminal(g.identity);
+    await tick();
+    const locked = g.registry.lock();
+    assert.ok(await g.registry.unlock(async () => true));
+    finish();
+    await locked;
+    assert.deepEqual(await pending, failure("unavailable"));
+    assert.equal(session(g).generation, 1);
+  } finally { g.controller.dispose(); await g.registry.dispose(); }
+});
+
+test("concurrent Reconnects after a lock: the one whose unlock was superseded still reconnects its own session", async () => {
+  const access: (() => void)[] = [];
+  const f = await fixture(() => new Promise<boolean>((done) => access.push(() => done(true))));
+  try {
+    const second = f.registry.connect(ownerId, "host-1");
+    assert.ok(second.ok);
+    await f.ready();
+    await f.registry.lock();
+    const target = { owner, sessionId: second.value.id, generation: second.value.generation };
+    const first = f.controller.reconnectTerminal(f.identity);
+    await tick();
+    const other = f.controller.reconnectTerminal(target);
+    await tick();
+    assert.equal(access.length, 2);
+    // The later unlock supersedes the earlier one, which is refused and retries once.
+    for (const allow of access) allow();
+    assert.deepEqual(await Promise.all([first, other]), [ok, ok]);
+    const generations = f.registry.snapshot(ownerId).map((snapshot) => snapshot.generation);
+    assert.deepEqual(generations, [2, 2]);
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+});
+
+test("lifecycle IPC requires the owning main frame and exactly one valid target", async () => {
+  const f = await fixture();
+  const mainFrame = { url: "http://127.0.0.1:5174/" };
+  const sender = { id: 7, mainFrame, isDestroyed: () => false, send: () => {} };
+  const boundary = new WindowBoundary(mainFrame.url, { name: "ssterm", version: "0", platform: "darwin" }, () => ({ status: "ready", schemaVersion: 1 }));
+  boundary.register(sender, 1, true, () => {});
+  type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
+  const handlers = new Map<string, Handler>();
+  const unregister = registerTerminalHandlers({ ipc: { handle: (channel: string, listener: Handler) => { handlers.set(channel, listener); }, removeHandler: (channel: string) => { handlers.delete(channel); } }, boundary, controller: () => f.controller });
+  const invoke = (channel: string, event: unknown, ...args: unknown[]) => handlers.get(channel)!(event as IpcMainInvokeEvent, ...args);
+  const event = { sender, senderFrame: mainFrame };
+  try {
+    for (const channel of [channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal]) {
+      assert.deepEqual(await invoke(channel, { sender: { ...sender }, senderFrame: mainFrame }, f.identity), failure("unauthorized"));
+      assert.deepEqual(await invoke(channel, event, { ...f.identity, owner: { windowId: 2, generation: 1 } }), failure("unauthorized"));
+      assert.deepEqual(await invoke(channel, event, f.identity, f.identity), failure("invalid-request"));
+      assert.deepEqual(await invoke(channel, event, { ...f.identity, generation: 0 }), failure("invalid-request"));
+    }
+    assert.equal(session(f).phase, "ready");
+    assert.deepEqual(await invoke(channels.closeTerminal, event, f.identity), ok);
+    assert.deepEqual(await invoke(channels.reconnectTerminal, event, f.identity), ok);
+    await f.ready();
+    assert.deepEqual(await invoke(channels.closeTerminal, event, { ...f.identity, generation: 2 }), ok);
+    assert.deepEqual(await invoke(channels.dismissTerminal, event, { ...f.identity, generation: 2 }), ok);
+    assert.equal(f.registry.snapshot(ownerId).length, 0);
   } finally { unregister(); assert.equal(handlers.size, 0); boundary.dispose(); f.controller.dispose(); await f.registry.dispose(); }
 });

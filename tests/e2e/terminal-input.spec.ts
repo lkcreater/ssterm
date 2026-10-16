@@ -39,7 +39,7 @@ test("terminal input, Unicode, clipboard, links and search reach only the focuse
       owner: parameters.owner, label: parameters.label, secondLabel: parameters.secondLabel, tempDirectory: app.getPath("temp"),
       send: (channel: string, value: unknown) => { if (!window.webContents.isDestroyed()) window.webContents.send(channel, value); },
     });
-    for (const name of ["terminalState", "openTerminal", "writeTerminal", "resizeTerminal", "ackTerminal", "openLink"]) ipcMain.removeHandler(production.channels[name]);
+    for (const channel of [...production.terminalChannels, production.channels.openLink]) ipcMain.removeHandler(channel);
     const disposeTerminal = production.registerTerminalHandlers({ ipc: ipcMain, boundary, controller: () => fixture.controller });
     // Shipped link handler with a recording opener: no confirmation box and no browser ever opens.
     const opened: { href: string; sameWindow: boolean }[] = [];

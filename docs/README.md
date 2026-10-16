@@ -1,6 +1,6 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-014 / T020: `DONE`** — [flow control / bounded resources](terminal-flow.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 197/197, E2E 22/22, packaged 19/19; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–013 committed (`157b7ba` latest); SST-015–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-015 / T021: `DONE`** — [cancel / disconnect / manual reconnect](terminal-lifecycle.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 217/217, E2E 28/28, packaged 25/25; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–014 committed (`0d665e0` latest); SST-016–028 และ DS04–DS06 ทำต่อตาม loop
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 

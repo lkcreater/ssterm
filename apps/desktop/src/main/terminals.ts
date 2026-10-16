@@ -4,9 +4,9 @@ import {
   isWriteTerminalRequest, isResizeTerminalRequest, isAckTerminalRequest,
   type Owner, type Result, type TerminalState, type TerminalSession, type TerminalOutput, type TerminalPhase,
   type TerminalTarget, type TerminalActionResponse, type WriteTerminalRequest, type ResizeTerminalRequest,
-  type AckTerminalRequest,
+  type AckTerminalRequest, type TerminalErrorCode,
 } from "@ssterm/contracts";
-import type { SessionRegistry, SessionSnapshot, SessionState } from "@ssterm/services";
+import type { SessionErrorCode, SessionRegistry, SessionResult, SessionSnapshot, SessionState } from "@ssterm/services";
 import type { TerminalStream } from "@ssterm/domain";
 import type { WindowBoundary } from "./boundary";
 import { sessionOwnerId } from "./session-runtime";
@@ -22,7 +22,21 @@ const phases = {
   Idle: "connecting", Connecting: "connecting", VerifyingHost: "connecting", Authenticating: "connecting",
   AwaitingInput: "connecting", Ready: "ready", Closing: "closed", Closed: "closed", Failed: "failed",
 } as const satisfies Record<SessionState, TerminalPhase>;
+// Exhaustive, so a new registry code fails compilation until it is allowlisted or folded.
+const errors = {
+  "invalid-request": "subsystem-unavailable", "invalid-state": "subsystem-unavailable", "not-found": "subsystem-unavailable",
+  disposed: "subsystem-unavailable", locked: "locked", "invalid-config": "invalid-config",
+  "host-key-untrusted": "host-key-untrusted", "host-key-changed": "host-key-changed", "auth-denied": "auth-denied",
+  "credentials-required": "credentials-required", "credentials-unavailable": "credentials-unavailable",
+  "invalid-private-key": "invalid-private-key", "unsupported-private-key": "unsupported-private-key",
+  "key-mismatch": "key-mismatch", "prompt-cancelled": "prompt-cancelled", timeout: "timeout", dns: "dns", network: "network",
+  "channel-open-failed": "channel-open-failed", "subsystem-unavailable": "subsystem-unavailable", "resource-limit": "resource-limit",
+} as const satisfies Record<SessionErrorCode, TerminalErrorCode>;
 const accepted: Result<TerminalActionResponse> = { ok: true, value: { accepted: true } };
+const relocked: SessionResult<never> = { ok: false, error: { code: "locked", message: "The workspace is locked." } };
+/** Lifecycle outcomes: a missing, stale or wrong-state target is `conflict`; anything else is `unavailable`. */
+const outcome = (result: SessionResult<unknown>): Result<TerminalActionResponse> =>
+  result.ok ? accepted : failure(["not-found", "invalid-state"].includes(result.error.code) ? "conflict" : "unavailable");
 
 function project(snapshot: SessionSnapshot): TerminalSession {
   const target = snapshot.target;
@@ -33,12 +47,15 @@ function project(snapshot: SessionSnapshot): TerminalSession {
     target: target ? { label: target.label, environment: target.environment, endpointHost: target.address,
       endpointPort: target.port, username: target.username } : null,
     end: snapshot.end ? { ...snapshot.end } : null,
+    error: snapshot.error ? errors[snapshot.error.code] ?? "subsystem-unavailable" : null,
   };
 }
 
 /** Fence and framing only: stream policy lives in the adapter, lifecycle in the registry. */
 export function createTerminalController(options: {
-  registry: Pick<SessionRegistry, "snapshot" | "subscribe" | "terminal">;
+  registry: Pick<SessionRegistry, "snapshot" | "subscribe" | "terminal" | "close" | "reconnect" | "forget" | "unlock" | "settled" | "lockEpoch">;
+  /** Whether a locked registry may unlock (storage and secret provider available). Absent: never. */
+  checkAccess?: () => Promise<boolean>;
 }) {
   const registrations = new Map<string, Registration>();
   let disposed = false;
@@ -69,6 +86,20 @@ export function createTerminalController(options: {
     try {
       const stream = options.registry.terminal(sessionOwnerId(request.owner), request.sessionId, request.generation);
       return stream ? use(stream, registration) : failure("conflict");
+    } catch { return failure("unavailable"); }
+  };
+  /** Exact owner/session/generation lifecycle command; foreign sessions are indistinguishable from missing ones. */
+  const lifecycle = async (request: TerminalTarget, run: (ownerId: string) => SessionResult<unknown> | Promise<SessionResult<unknown>>, settle = false): Promise<Result<TerminalActionResponse>> => {
+    if (!isTerminalTarget(request)) return failure("invalid-request");
+    if (disposed || !matching(request.owner)) return failure("stale-owner");
+    try {
+      const ownerId = sessionOwnerId(request.owner);
+      if (settle) {
+        // A pane offers Reconnect/Close as soon as a generation fails; wait out its bounded teardown instead of refusing.
+        await options.registry.settled(ownerId, request.sessionId, request.generation);
+        if (disposed || !matching(request.owner)) return failure("stale-owner");
+      }
+      return outcome(await run(ownerId));
     } catch { return failure("unavailable"); }
   };
   return {
@@ -115,6 +146,34 @@ export function createTerminalController(options: {
       if (!isAckTerminalRequest(request)) return failure("invalid-request");
       return withStream(request, (stream) => { stream.ack(request.bytes); return accepted; });
     },
+    /** Resolves once teardown settles (bounded by the registry drain limit). Idempotent on Closed. */
+    closeTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
+      return lifecycle(request, (ownerId) => options.registry.close(ownerId, request.sessionId, request.generation));
+    },
+    reconnectTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
+      // Captured on arrival, before the teardown wait: a click that predates a lock never unlocks or reconnects after it.
+      const since = options.registry.lockEpoch;
+      return lifecycle(request, async (ownerId) => {
+        const reconnect = () => options.registry.lockEpoch === since
+          ? options.registry.reconnect(ownerId, request.sessionId, request.generation) : relocked;
+        const first = reconnect();
+        if (first.ok || first.error.code !== "locked" || !options.checkAccess) return first;
+        // The user's Reconnect is the explicit unlock action. A refused unlock may only have been superseded by
+        // a concurrent one, so reconnect is retried once either way; it re-checks the lock and the epoch.
+        await options.registry.unlock(options.checkAccess, since);
+        // An owner revoked while access was checked must not start a new generation.
+        return disposed || !matching(request.owner) ? first : reconnect();
+      }, true);
+    },
+    dismissTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
+      return lifecycle(request, (ownerId) => {
+        const result = options.registry.forget(ownerId, request.sessionId, request.generation);
+        // Forgetting a record emits nothing from the registry, so the owner's view learns it here.
+        const registration = matching(request.owner);
+        if (result.ok && registration) publish(registration);
+        return result;
+      }, true);
+    },
     revokeOwner,
     dispose() {
       if (disposed) return;
@@ -125,12 +184,17 @@ export function createTerminalController(options: {
 }
 export type TerminalController = ReturnType<typeof createTerminalController>;
 
+/** Every IPC channel `registerTerminalHandlers` owns, for callers that re-register them. */
+export const terminalChannels = Object.freeze([
+  channels.terminalState, channels.openTerminal, channels.writeTerminal, channels.resizeTerminal, channels.ackTerminal,
+  channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal,
+]);
+
 export function registerTerminalHandlers(options: {
   ipc: Pick<IpcMain, "handle" | "removeHandler">;
   boundary: WindowBoundary;
   controller: () => TerminalController | undefined;
 }): () => void {
-  const ownedChannels = [channels.terminalState, channels.openTerminal, channels.writeTerminal, channels.resizeTerminal, channels.ackTerminal];
   const register = (event: IpcMainInvokeEvent, owner: Owner, controller: TerminalController) => controller.register(owner, (channel, value) => {
     if (!event.sender.isDestroyed()) event.sender.send(channel, value);
   });
@@ -161,5 +225,8 @@ export function registerTerminalHandlers(options: {
   handle(channels.writeTerminal, isWriteTerminalRequest, (controller, request) => controller.writeTerminal(request));
   handle(channels.resizeTerminal, isResizeTerminalRequest, (controller, request) => controller.resizeTerminal(request));
   handle(channels.ackTerminal, isAckTerminalRequest, (controller, request) => controller.ackTerminal(request));
-  return () => { for (const channel of ownedChannels) options.ipc.removeHandler(channel); };
+  handle(channels.closeTerminal, isTerminalTarget, (controller, request) => controller.closeTerminal(request));
+  handle(channels.reconnectTerminal, isTerminalTarget, (controller, request) => controller.reconnectTerminal(request));
+  handle(channels.dismissTerminal, isTerminalTarget, (controller, request) => controller.dismissTerminal(request));
+  return () => { for (const channel of terminalChannels) options.ipc.removeHandler(channel); };
 }

@@ -324,6 +324,18 @@ export function createDesktopBridge(transport: BridgeTransport): {
       if (!isAckTerminalRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.ackTerminal, [{ ...target(request), bytes: request.bytes }], isTerminalActionResponse);
     },
+    closeTerminal(request: TerminalTarget) {
+      if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.closeTerminal, [target(request)], isTerminalActionResponse);
+    },
+    reconnectTerminal(request: TerminalTarget) {
+      if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.reconnectTerminal, [target(request)], isTerminalActionResponse);
+    },
+    dismissTerminal(request: TerminalTarget) {
+      if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.dismissTerminal, [target(request)], isTerminalActionResponse);
+    },
     openLink(request: OpenLinkRequest) {
       if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.openLink, [{ owner: { ...request.owner }, url: request.url }], isOpenLinkResponse);
