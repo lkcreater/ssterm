@@ -64,7 +64,7 @@ export function createTerminalController(options: {
   const state = (registration: Registration): Result<TerminalState> => {
     try {
       const value: TerminalState = { owner: { ...registration.owner }, sequence: registration.sequence,
-        sessions: options.registry.snapshot(sessionOwnerId(registration.owner)).map(project) };
+        sessions: options.registry.snapshot(sessionOwnerId(registration.owner)).filter((session) => session.kind === "terminal").map(project) };
       return isTerminalState(value) ? { ok: true, value } : failure("unavailable");
     } catch { return failure("unavailable"); }
   };
@@ -95,6 +95,8 @@ export function createTerminalController(options: {
     if (disposed || !matching(request.owner)) return failure("stale-owner");
     try {
       const ownerId = sessionOwnerId(request.owner);
+      // Another kind's session is not a terminal target, exactly like a missing one.
+      if (options.registry.snapshot(ownerId, request.sessionId).some((session) => session.kind !== "terminal")) return failure("conflict");
       if (settle) {
         // A pane offers Reconnect/Close as soon as a generation fails; wait out its bounded teardown instead of refusing.
         await options.registry.settled(ownerId, request.sessionId, request.generation);
@@ -110,7 +112,9 @@ export function createTerminalController(options: {
       if (existing) { existing.send = send; return; }
       const registration: Registration = { owner: { ...owner }, sequence: 0, send, unsubscribe: () => {} };
       registrations.set(sessionOwnerId(owner), registration);
-      registration.unsubscribe = options.registry.subscribe(sessionOwnerId(owner), () => publish(registration));
+      registration.unsubscribe = options.registry.subscribe(sessionOwnerId(owner), (snapshot) => {
+        if (snapshot.kind === "terminal") publish(registration);
+      });
     },
     terminalState(owner: Owner): Result<TerminalState> {
       const registration = matching(owner);

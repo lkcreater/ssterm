@@ -1041,3 +1041,16 @@ test("without a secure store, main still composes saved hosts: unsaved passwords
   assert(!savedRecords.some((snapshot) => snapshot.prompt?.kind === "credentials"));
   assert.deepEqual(f.methods, []);
 });
+
+test("an SFTP-kind session opens only the sftp subsystem: no PTY or shell, and a refusal is subsystem-unavailable", async (t) => {
+  const f = await fixture(t);
+  const result = f.registry.connect("fixture-owner", "fixture-host", "sftp");
+  assert(result.ok);
+  await until(() => !!f.current().prompt);
+  f.trust();
+  await until(() => f.current().state === "Failed" && f.current().cleanup === "complete");
+  assert.equal(f.current().kind, "sftp");
+  assert.equal(f.current().error?.code, "subsystem-unavailable");
+  assert.deepEqual(f.methods, ["password"]);
+  assert.equal(f.shells(), 0);
+});

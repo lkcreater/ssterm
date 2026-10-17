@@ -47,6 +47,14 @@ test("shipped session composition captures config and fences power/owner lifecyc
       const contexts: any[] = [],
         events: any[] = [];
       let disposed = 0;
+      // A terminal-shaped channel: ready() refuses anything else, which would make the lock check vacuous.
+      const channel = (dispose: () => void) => ({
+        open: () => false,
+        ack() {},
+        write: () => "closed",
+        resize() {},
+        dispose,
+      });
       runtime = createDesktopSessions({
         resolve: (id: string) => catalog.resolve(id),
         transient,
@@ -61,11 +69,11 @@ test("shipped session composition captures config and fences power/owner lifecyc
             });
             context.verifyingHost();
             context.authenticating();
-            context.ready({
-              dispose: () => {
+            context.ready(
+              channel(() => {
                 disposed += 1;
-              },
-            });
+              }),
+            );
           },
         },
       });
@@ -74,6 +82,9 @@ test("shipped session composition captures config and fences power/owner lifecyc
       const waitTurn = () => new Promise<void>((done) => setImmediate(done));
       const first = value(runtime.registry.connect(owner, hostId));
       await waitTurn();
+      const isReady = () =>
+        runtime.registry.snapshot(owner, first.id)[0]?.state === "Ready";
+      const firstReady = isReady();
       const captured = contexts[0].config;
       const capturedJSON = JSON.stringify(captured);
       perform({
@@ -94,11 +105,12 @@ test("shipped session composition captures config and fences power/owner lifecyc
         contexts[1].generation > contexts[0].generation;
       let staleDisposed = 0;
       const staleRejected =
-        !contexts[0].ready({
-          dispose: () => {
+        !contexts[0].ready(
+          channel(() => {
             staleDisposed += 1;
-          },
-        }) && staleDisposed === 1;
+          }),
+        ) && staleDisposed === 1;
+      const readyBeforeLock = isReady();
       const held = transient.hold(Buffer.from("owned-session-fixture"));
       powerMonitor.emit("lock-screen");
       const lockedImmediately =
@@ -126,7 +138,9 @@ test("shipped session composition captures config and fences power/owner lifecyc
       return {
         electron: process.versions.electron,
         captureStable,
+        firstReady,
         reconnectFresh,
+        readyBeforeLock,
         staleRejected,
         lockedImmediately,
         noOSResume,

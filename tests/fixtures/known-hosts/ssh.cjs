@@ -119,7 +119,15 @@ async function startTrustFixture(production, options) {
                 channel.on("data", () => {});
                 channel.stderr.on("data", () => {});
                 if (
-                  context.ready({ dispose: () => channel.destroy(), drained })
+                  // Lifecycle-only terminal: trust tests never open the byte stream.
+                  context.ready({
+                    dispose: () => channel.destroy(),
+                    drained,
+                    open: () => false,
+                    ack() {},
+                    write: () => "closed",
+                    resize() {},
+                  })
                 )
                   channelsOpened += 1;
               },

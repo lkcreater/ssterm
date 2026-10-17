@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-018
+# Execution record — M0 ถึง SST-019
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-017/T023 `DONE`, committed `fd84629`; SST-016 committed `06cf5b3`. **In progress:** SST-018/T024 with DS04/T050 per the [current execution plan](#sst-018-execution-plan--2026-10-17). Earlier sections are historical. Standing authorization: loop through SST-028 with a commit per ticket ([SST-013 authorization](#sst-013-execution-plan--2026-10-16)).
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-018/T024 + DS04/T050 `DONE`, committed `56c85d6`; SST-017 committed `fd84629`. **In progress:** SST-019/T025 per the [current execution plan](#sst-019-execution-plan--2026-10-17). Earlier sections are historical. Standing authorization: loop through SST-028 with a commit per ticket ([SST-013 authorization](#sst-013-execution-plan--2026-10-16)).
 
 ## Authorization / acceptance
 
@@ -699,3 +699,26 @@ SST-017/T023 DONE through independent TEST/REVIEW/DELIVER. [Identity evidence](.
 ### Final SST-018 record — 2026-10-17
 
 SST-018/T024 and DS04/T050 DONE through independent TEST/REVIEW/DELIVER. [Workspace evidence](../workspace.md) and [delivery](sst-018-delivery.md). Final source: typecheck PASS; unit 285/285; build PASS; development E2E 48/48; unsigned macOS arm64 package PASS; packaged 45/45. Review: no critical/high; two mediums and the lows fixed. Recorded limits: real AppKit key delivery untested (no Accessibility permission), same-host split panes share a region name, scrollback memory can exceed the 320,000-line budget with high settings.
+
+## SST-019 execution plan — 2026-10-17
+
+**Authorization / gate:** standing loop instruction; SST-018 committed `56c85d6`. ANALYZE (one explorer with OpenSSH internal-sftp and in-process ssh2 SFTP probes) is complete. DESIGN: three architecture options were weighed in the analysis (channel on the terminal connection, separate connection per browser as a session kind, shared connection owner); the measured resource, lifetime and failure behavior settled on a session kind, so no further arena was run.
+
+**Acceptance / baseline:** [SST-019](../termius/tickets.md#sst-019--sftp-capability--ownership), [T025](../termius/tasks.md). Measured: Ready requires a shell today and registry resources are released only at teardown; ssh2 SFTP buffers unawaited writes without limit; operations issued after the channel closes never call back; closing the channel releases every server handle; late HANDLE replies must be closed; OpenSSH returns 100 names per READDIR (10,000 entries ≈ 90 ms); non-UTF-8 names decode lossily and cannot be addressed; status codes map to app codes (2 not-found, 3 permission-denied, 4 failure, 5 invalid-path, 8 unsupported, lost channel → connection-lost). Baseline 285 unit / 48 E2E / 45 packaged.
+
+**Settled contract:** SFTP is a session kind in the same registry with its own SSH connection, so trust, credentials, keepalive, lock, quit, owner revocation, the 32-session cap and generation fencing apply unchanged. `connect(owner, hostId, kind = 'terminal')`; reconnect keeps the kind; snapshots and contexts carry it; `ready(channel)` adopts the kind's channel; `terminal()` serves only terminals and a new `sftp(owner, id, generation)` is the identical fence for SFTP. The adapter opens `shell` or the `sftp` subsystem; a refused subsystem is `subsystem-unavailable`, a refused channel `channel-open-failed`. Ready means the subsystem negotiated and home resolved. A main-only `SftpSession` (`home`, `realpath`, `stat`, `lstat`, `list`, `openRead`, `openWrite` exclusive create) with a handle ledger (32 handles), in-flight bounds (64 requests, 2 MiB), a closed flag checked before every ssh2 call, AbortSignal cancellation that closes late handles, listings capped at 10,000 with skipped/lossy name accounting, lexical POSIX paths up to 4,096 bytes and no server text. The terminal controller filters by kind. No renderer IPC until SST-020; no overwrite, temp files or rename until SST-022.
+
+| ID / stage | Depends | Owner / exact files and deliverable | Validation / exit gate |
+|---|---|---|---|
+| SST019-P / PLAN | ANALYZE + decisions | root owns this file | `git diff --check` |
+| SST019-I1 / session kind + SFTP capability | P | backend coder owns `packages/domain/src/index.ts`, `packages/adapters/src/{ssh,sftp}.ts`, `packages/services/src/{sessions,ssh-session}.ts`, `apps/desktop/src/main/{terminals,ssh}.ts`, new `tests/unit/sftp.test.ts`, `tests/unit/{sessions,ssh-session,terminals-boundary}.test.ts` | In-process ssh2 SFTP server: refused subsystem, Ready after VERSION, fences by kind, status mapping without server text, name filtering and lossy names, listing cap with handle closed, handle/in-flight caps, late handle closed, no hang after dispose, close/lock/socket loss resolution, reconnect keeps kind, shared trust/credential path, terminal state excludes SFTP |
+| SST019-I2 / runtime evidence | I1 | runtime coder owns new `tests/fixtures/sftp/*`, new `tests/e2e/sftp.spec.ts`, `playwright.config.ts` | Docker OpenSSH through the shipped main entry (development and packaged): Unicode, non-UTF-8, symlinks, permission denied, exclusive create on an existing file, 10,000-entry listing, aborted read, closing SFTP while a terminal stays Ready, server SFTP processes reaped |
+| SST019-T / R / L | I2 | independent tester and reviewer; root docs, delivery and commit | Critical/high block |
+
+**SST-019 ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+**SST-019 amendments during implementation:** all capability paths must be absolute (SST-020 joins typed paths with `home`); `RemoteListing` and an `unknown` type were added; listing rounds and skipped names count toward the cap; remote loss is signalled before teardown so in-flight operations read `connection-lost`; `ready()` refuses channels of the wrong shape (two older lifecycle-only fixtures and one spec stub gained full terminal stubs); review capped reads at 261,120 bytes, treated a remote EOF as loss, added fallback limits and exposed `maxRead`/`maxWrite`.
+
+### Final SST-019 record — 2026-10-17
+
+SST-019/T025 DONE through independent TEST/REVIEW/DELIVER. [SFTP evidence](../sftp.md) and [delivery](sst-019-delivery.md). Final source: typecheck PASS; unit 305/305; build PASS; development E2E 49/49; unsigned macOS arm64 package PASS; packaged 46/46. Review: no critical/high; three mediums and lows fixed. Carried forward: the FIFO hazard (stat before opening) and negotiated limits for SST-020/021; SFTP sessions are not listed in quit prompts until SST-020.

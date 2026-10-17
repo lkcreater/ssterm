@@ -4,12 +4,17 @@ import {
   type ResolvedHostConfig,
   type StoreResult,
   type HostKeyAlgorithm,
+  type SftpChannel,
+  type SftpSession,
   type TerminalChannel,
   type TerminalEnd,
   type TerminalStream,
 } from "@ssterm/domain";
 import { TransientSecrets, type TransientSecret } from "./transient.ts";
 
+/** A terminal session owns a shell channel; an SFTP session owns the sftp subsystem on its own connection. */
+export type SessionKind = "terminal" | "sftp";
+export type SessionChannel = TerminalChannel | SftpChannel;
 export type SessionState =
   | "Idle"
   | "Connecting"
@@ -109,6 +114,7 @@ export type SessionPromptAnswer =
     };
 export interface SessionSnapshot {
   id: string;
+  kind: SessionKind;
   generation: number;
   hostId: string;
   state: SessionState;
@@ -133,6 +139,7 @@ export interface SessionResource {
 }
 export interface SessionContext {
   readonly id: string;
+  readonly kind: SessionKind;
   readonly generation: number;
   readonly signal: AbortSignal;
   readonly config: ResolvedHostConfig;
@@ -140,7 +147,8 @@ export interface SessionContext {
   verifyingHost(): boolean;
   authenticating(): boolean;
   requestPrompt(spec: SessionPromptSpec): Promise<SessionPromptAnswer>;
-  ready(terminal: TerminalChannel): boolean;
+  /** Adopts the channel of this session's kind. */
+  ready(channel: SessionChannel): boolean;
   failed(code: SessionErrorCode): void;
   /** Remote end; omitted detail means EOF without status. */
   ended(end?: TerminalEnd): void;
@@ -177,13 +185,14 @@ interface Generation {
   id: string;
   ownerId: string;
   hostId: string;
+  kind: SessionKind;
   generation: number;
   state: SessionState;
   active: boolean;
   controller: AbortController;
   config?: ResolvedHostConfig;
   target?: SessionSnapshot["target"];
-  terminal?: TerminalChannel;
+  channel?: SessionChannel;
   end?: TerminalEnd;
   error?: SessionError;
   prompt?: PendingPrompt;
@@ -372,14 +381,15 @@ export class SessionRegistry {
         throw new SessionFault("invalid-request");
     this.#scheduler = options.scheduler ?? nativeScheduler;
   }
-  connect(ownerId: string, hostId: string): SessionResult<SessionSnapshot> {
+  /** Every kind counts toward the same session limit. */
+  connect(ownerId: string, hostId: string, kind: SessionKind = "terminal"): SessionResult<SessionSnapshot> {
     if (this.#disposed) return failure("disposed");
     if (this.#locked) return failure("locked");
-    if (!validName(ownerId) || !validName(hostId))
+    if (!validName(ownerId) || !validName(hostId) || (kind !== "terminal" && kind !== "sftp"))
       return failure("invalid-request");
     if (this.#records.size >= this.#limits.sessions)
       return failure("resource-limit");
-    return success(this.#begin(ownerId, hostId, randomUUID(), 1));
+    return success(this.#begin(ownerId, hostId, kind, randomUUID(), 1));
   }
   /** `generation`, when given, must name the current generation; a stale one is `invalid-state`. */
   reconnect(ownerId: string, id: string, generation?: number): SessionResult<SessionSnapshot> {
@@ -390,7 +400,7 @@ export class SessionRegistry {
     // Checked last so `locked` means the target itself was valid and only an unlock is missing.
     if (this.#locked) return failure("locked");
     return success(
-      this.#begin(ownerId, current.hostId, id, current.generation + 1),
+      this.#begin(ownerId, current.hostId, current.kind, id, current.generation + 1),
     );
   }
   snapshot(ownerId: string, id?: string): SessionSnapshot[] {
@@ -626,9 +636,16 @@ export class SessionRegistry {
   }
   /** The single terminal capability fence: exact owner, session and generation while live and Ready. */
   terminal(ownerId: string, id: string, generation: number): TerminalStream | undefined {
+    return this.#channel(ownerId, id, generation, "terminal") as TerminalChannel | undefined;
+  }
+  /** The identical fence for an SFTP session. */
+  sftp(ownerId: string, id: string, generation: number): SftpSession | undefined {
+    return this.#channel(ownerId, id, generation, "sftp") as SftpChannel | undefined;
+  }
+  #channel(ownerId: string, id: string, generation: number, kind: SessionKind): SessionChannel | undefined {
     const current = this.#owned(ownerId, id);
-    return current?.generation === generation && current.state === "Ready" && this.#live(current)
-      ? current.terminal
+    return current?.kind === kind && current.generation === generation && current.state === "Ready" && this.#live(current)
+      ? current.channel
       : undefined;
   }
   dispose(): Promise<void> {
@@ -659,12 +676,14 @@ export class SessionRegistry {
   #begin(
     ownerId: string,
     hostId: string,
+    kind: SessionKind,
     id: string,
     generation: number,
   ): SessionSnapshot {
     const current: Generation = {
       ownerId,
       hostId,
+      kind,
       id,
       generation,
       state: "Connecting",
@@ -708,6 +727,7 @@ export class SessionRegistry {
         if (!this.#live(current)) return;
         const context: SessionContext = Object.freeze({
           id,
+          kind,
           generation,
           signal: current.controller.signal,
           config: current.config,
@@ -718,17 +738,22 @@ export class SessionRegistry {
             this.#transition(current, ["VerifyingHost"], "Authenticating"),
           requestPrompt: (spec: SessionPromptSpec) =>
             this.#prompt(current, spec),
-          ready: (terminal: TerminalChannel) => {
+          ready: (channel: SessionChannel) => {
             if (
               !this.#live(current) ||
               current.state !== "Authenticating" ||
               current.prompt
             ) {
-              this.#discard(current, terminal);
+              this.#discard(current, channel);
               return false;
             }
-            if (!this.#own(current, terminal)) return false;
-            current.terminal = terminal;
+            if (!this.#own(current, channel)) return false;
+            // The kind's fence later returns this object as that kind's capability.
+            if (typeof (kind === "sftp" ? (channel as SftpChannel).list : (channel as TerminalChannel).open) !== "function") {
+              this.#fail(current, "invalid-request");
+              return false;
+            }
+            current.channel = channel;
             current.state = "Ready";
             this.#scheduler.clear(current.connectTimer);
             delete current.connectTimer;
@@ -918,7 +943,7 @@ export class SessionRegistry {
       current.teardownDone = true;
       current.resources.clear();
       delete current.config;
-      delete current.terminal;
+      delete current.channel;
       if (current.state === "Closing") current.state = "Closed";
       this.#emit(current);
       complete();
@@ -928,6 +953,7 @@ export class SessionRegistry {
   #snapshot(current: Generation): SessionSnapshot {
     return {
       id: current.id,
+      kind: current.kind,
       generation: current.generation,
       hostId: current.hostId,
       state: current.state,

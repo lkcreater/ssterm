@@ -47,6 +47,7 @@ export default defineConfig({
             "identities.spec.ts",
             "workspace.spec.ts",
             "settings.spec.ts",
+            "sftp.spec.ts",
           ],
         },
       ]
@@ -71,6 +72,7 @@ export default defineConfig({
             "identities.spec.ts",
             "workspace.spec.ts",
             "settings.spec.ts",
+            "sftp.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

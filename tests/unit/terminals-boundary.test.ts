@@ -546,3 +546,36 @@ test("connectHost IPC requires the owning main frame and exactly one valid reque
     assert.equal(f.registry.snapshot(ownerId).length, count + 1);
   } finally { unregister(); assert.equal(handlers.size, 0); boundary.dispose(); f.controller.dispose(); await f.registry.dispose(); }
 });
+
+test("terminal state excludes SFTP sessions and every terminal command on an SFTP session is a conflict", async () => {
+  const f = await fixture();
+  try {
+    const connected = f.registry.connect(ownerId, "host-1", "sftp");
+    assert.ok(connected.ok);
+    await tick();
+    const context = f.contexts.at(-1)!;
+    const closed = async () => ({ ok: false, code: "closed" } as const);
+    let disposed = 0;
+    context.verifyingHost(); context.authenticating();
+    assert.ok(context.ready({ home: "/", maxRead: 32_768, maxWrite: 32_768, drained: Promise.resolve(), dispose() { disposed++; },
+      realpath: closed, stat: closed, lstat: closed, list: closed, openRead: closed, openWrite: closed }));
+    const sequence = f.controller.terminalState(owner);
+    assert.ok(sequence.ok);
+    assert.deepEqual(sequence.value.sessions.map((entry) => entry.sessionId), [f.identity.sessionId]);
+    assert.ok(f.states().every((state) => state.sessions.every((entry) => entry.sessionId !== connected.value.id)));
+    const published = f.states().length;
+
+    const target = { owner, sessionId: connected.value.id, generation: 1 };
+    assert.deepEqual(f.controller.openTerminal(target), failure("conflict"));
+    assert.deepEqual(f.controller.writeTerminal({ ...target, bytes: new Uint8Array([1]) }), failure("conflict"));
+    assert.deepEqual(f.controller.resizeTerminal({ ...target, columns: 80, rows: 24 }), failure("conflict"));
+    assert.deepEqual(f.controller.ackTerminal({ ...target, bytes: 1 }), failure("conflict"));
+    assert.deepEqual(await f.controller.closeTerminal(target), failure("conflict"));
+    assert.equal(disposed, 0, "a terminal close never reaches an SFTP session");
+    await f.registry.close(ownerId, connected.value.id);
+    assert.deepEqual(await f.controller.reconnectTerminal(target), failure("conflict"));
+    assert.deepEqual(await f.controller.dismissTerminal(target), failure("conflict"));
+    assert.equal(f.registry.snapshot(ownerId, connected.value.id)[0]!.generation, 1, "no terminal reconnect started");
+    assert.equal(f.states().length, published, "SFTP lifecycle publishes no terminal state");
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+});

@@ -1,6 +1,6 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-018 / T024: `DONE`** — [session tabs / split / settings + DS04](workspace.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 285/285, E2E 48/48, packaged 45/45; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–017 committed (`fd84629` latest); SST-019–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-019 / T025: `DONE`** — [SFTP capability / ownership](sftp.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 305/305, E2E 49/49, packaged 46/46; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–018 committed (`56c85d6` latest); SST-020–028 และ DS04–DS06 ทำต่อตาม loop
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 

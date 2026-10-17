@@ -1,6 +1,6 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**SST-018 / T024: `DONE`** — [session tabs / split / settings + DS04](../workspace.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 285/285, E2E 48/48, packaged 45/45; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–017 committed (`fd84629` latest); SST-019–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-019 / T025: `DONE`** — [SFTP capability / ownership](../sftp.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 305/305, E2E 49/49, packaged 46/46; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–018 committed (`56c85d6` latest); SST-020–028 และ DS04–DS06 ทำต่อตาม loop
 
 **ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-012–028 ยังรออนุมัติ รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
@@ -171,3 +171,5 @@ SST-016 exposes the [catalog UI](../catalog-ui.md): a pushed owner-bound catalog
 SST-017 adds [identities and SSH keys](../identities.md): main-only key import with derived metadata, Keychain writes through SecretService with lock gating, a commit observer that republishes catalog state, and a fail-closed test Keychain namespace.
 
 SST-018 adds the [workspace](../workspace.md): flat stable pane mounting with tab split trees, key-code shortcuts, in-app and native close prompts, a validated terminal settings IPC that no longer advances the catalog revision, and the DS04 terminal-first shell.
+
+SST-019 adds the [SFTP capability](../sftp.md) as a registry session kind with its own connection and a main-only `SftpSession` with bounded handles and requests, typed failures and hang-free disposal.

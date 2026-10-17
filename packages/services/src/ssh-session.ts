@@ -52,6 +52,7 @@ export function createSavedHostSshAdapter(options: {
           return !initial || context.authenticating();
         },
         authenticate: () => loadCredential(context, options.provider),
+        open: context.kind === "sftp" ? "sftp" : "shell",
         ready: (channel) => context.ready(channel),
         failed: (code) => context.failed(code),
         ended: (end) => context.ended(end),

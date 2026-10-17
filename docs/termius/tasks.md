@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-018 / T024: `DONE`** — [session tabs / split / settings + DS04](../workspace.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 285/285, E2E 48/48, packaged 45/45; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–017 committed (`fd84629` latest); SST-019–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-019 / T025: `DONE`** — [SFTP capability / ownership](../sftp.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 305/305, E2E 49/49, packaged 46/46; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–018 committed (`56c85d6` latest); SST-020–028 และ DS04–DS06 ทำต่อตาม loop
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -56,7 +56,7 @@
 
 ## M4 — SFTP / snippets / forwarding
 
-- [ ] **T025 / SST-019:** SFTP capability/read/stat/list/write/handle ownership and errors
+- [x] **T025 / SST-019:** SFTP capability/read/stat/list/write/handle ownership and errors
 - [ ] **T026 / SST-020:** local/remote browser/path/hidden files/symlink navigation/selection
 - [ ] **T027 / SST-021:** bounded transfer queue/progress/cancel/disconnect and checksum fixture checks
 - [ ] **T028 / SST-022:** overwrite/skip/rename, temp/partial files, permissions/quota/path failure
@@ -98,7 +98,7 @@
 
 ## Task bookkeeping
 
-Current owner: root ปิด SST-018/T024 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ และ commit ตาม loop; SST-019 เป็นต้นไปทำต่อตาม loop
+Current owner: root ปิด SST-019/T025 หลัง independent TEST/REVIEW/DELIVER ผ่านครบ และ commit ตาม loop; SST-020 เป็นต้นไปทำต่อตาม loop
 
 T002/T003 completion evidence: [SST-002 compatibility report](../spikes/ssh-compatibility.md) และ [delivery](../agent-runs/sst-002-delivery.md); production SSH/session tasks ยังไม่ถูกติ๊ก
 

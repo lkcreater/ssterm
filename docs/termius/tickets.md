@@ -1,10 +1,10 @@
 # Tickets สำหรับ ssterm
 
-**SST-018 / T024: `DONE`** — [session tabs / split / settings + DS04](../workspace.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 285/285, E2E 48/48, packaged 45/45; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–017 committed (`fd84629` latest); SST-019–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-019 / T025: `DONE`** — [SFTP capability / ownership](../sftp.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 305/305, E2E 49/49, packaged 46/46; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–018 committed (`56c85d6` latest); SST-020–028 และ DS04–DS06 ทำต่อตาม loop
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-012–028 ยังรออนุมัติ และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-019–028 คือ `AUTHORIZED_LOOP` (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-020–028 คือ `AUTHORIZED_LOOP` (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ
 
@@ -254,6 +254,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 ## M4 — File transfer / commands / tunnels
 
 ### SST-019 — SFTP capability / ownership
+
+**Status:** `DONE` — T025; [evidence](../sftp.md) และ [delivery](../agent-runs/sst-019-delivery.md), independent TEST/REVIEW passed.
 
 **Outcome:** authenticated file API ที่แยกจาก terminal rendering. **Evidence:** S03/S05, W05/N-T05.
 

@@ -1,6 +1,7 @@
 import ssh2, { type AnyAuthMethod, type ClientChannel, type ParsedKey, type TerminalModes } from "ssh2";
-import type { HostKeyIdentity, TerminalChannel, TerminalEnd } from "@ssterm/domain";
+import type { HostKeyIdentity, SftpChannel, TerminalChannel, TerminalEnd } from "@ssterm/domain";
 import { decodeHostPublicKey } from "./host-key.ts";
+import { channelGone, createSftpChannel, remotePath } from "./sftp.ts";
 
 export interface PreparedPrivateKey {
   readonly identity: HostKeyIdentity;
@@ -94,7 +95,7 @@ export type SshCredential =
       respond(fields: readonly { echo: boolean }[], finish: (answers: readonly Uint8Array[]) => void): Promise<void>;
       dispose(): void;
     };
-export type SshFailure = "auth-denied" | "timeout" | "dns" | "network" | "channel-open-failed" | "resource-limit";
+export type SshFailure = "auth-denied" | "timeout" | "dns" | "network" | "channel-open-failed" | "subsystem-unavailable" | "resource-limit";
 type AuthResponse = AnyAuthMethod | false | { type: "password"; username: string; password: Buffer };
 export interface SshResource {
   dispose(): void;
@@ -116,7 +117,9 @@ export function createSshConnection(options: {
   signal: AbortSignal;
   verifyHost(publicKey: Uint8Array, initial: boolean): Promise<boolean>;
   authenticate(): Promise<SshCredential | undefined>;
-  ready(terminal: TerminalChannel): boolean;
+  /** `shell` (default) yields a TerminalChannel, `sftp` an SftpChannel. */
+  open?: "shell" | "sftp";
+  ready(channel: TerminalChannel | SftpChannel): boolean;
   failed(code: SshFailure): void;
   /** Defaults and validation: `terminalBounds`. */
   terminal?: TerminalBounds;
@@ -131,6 +134,7 @@ export function createSshConnection(options: {
   let disposed = false, started = false, verified = false, attempted = false, ready = false;
   let credential: SshCredential | undefined;
   let terminal: ReturnType<typeof createTerminal> | undefined;
+  let sftp: ReturnType<typeof createSftpChannel> | undefined;
   let terminalClosed: (() => void) | undefined;
   let resolveDrain!: () => void;
   const drained = new Promise<void>((resolve) => { resolveDrain = resolve; });
@@ -145,6 +149,7 @@ export function createSshConnection(options: {
       options.signal.removeEventListener("abort", resource.dispose);
       clearCredential();
       terminal?.dispose();
+      sftp?.dispose();
       client.destroy();
       // ssh2 emits no close if connect has never allocated a socket.
       if (!started) resolveDrain();
@@ -222,12 +227,15 @@ export function createSshConnection(options: {
   };
   client.on("error", (error: unknown) => {
     clearCredential();
+    sftp?.lost();
     // A reset after the remote exit still ends with that exit, as on close (G1).
     const exit = ready ? terminal?.exited() : undefined;
     if (!exit) fail(failure(error)); else if (live()) options.ended(exit);
   });
   client.on("close", () => {
     clearCredential();
+    // ssh2 emits the client close before it fails the channels' outstanding requests.
+    sftp?.lost();
     // A paused readable may defer its channel close event until data is consumed.
     // The socket close is the authoritative fence for all its SSH channels.
     terminalClosed?.();
@@ -241,6 +249,7 @@ export function createSshConnection(options: {
   client.on("ready", () => {
     clearCredential();
     if (!live()) return;
+    if (options.open === "sftp") { openSftp(); return; }
     try {
       client.shell({ term: "xterm-256color", cols: 80, rows: 24, modes: IUTF8_MODES }, (error, channel) => {
         if (error) { fail("channel-open-failed"); return; }
@@ -265,6 +274,31 @@ export function createSshConnection(options: {
       });
     } catch { fail("channel-open-failed"); }
   });
+  const openSftp = () => {
+    try {
+      client.sftp((error, channel) => {
+        // A refused CHANNEL_OPEN carries a reason; a refused subsystem, an exit or a malformed VERSION does not.
+        if (error) { fail((error as { reason?: unknown }).reason !== undefined ? "channel-open-failed" : "subsystem-unavailable"); return; }
+        // A remote EOF without CLOSE would otherwise leave the session Ready with requests nobody answers.
+        const gone = () => { sftp?.lost(); fail(ready ? "network" : "subsystem-unavailable"); };
+        channel.on("end", gone);
+        channel.on("close", gone);
+        channel.on("error", (cause: { level?: unknown }) => {
+          sftp?.lost();
+          fail(cause?.level === "sftp-protocol" ? "subsystem-unavailable" : "network");
+        });
+        if (!live()) { channel.end(); return; }
+        channel.realpath(".", (failure, path) => {
+          // Only a channel that went away stops here (its close reports it); any refusal falls back to "/".
+          if (!live() || (failure && channelGone(channel))) return;
+          const opened = createSftpChannel(channel, (!failure && remotePath(path)) || "/");
+          sftp = opened;
+          ready = true;
+          if (!options.ready(opened)) opened.dispose();
+        });
+      });
+    } catch { fail("channel-open-failed"); }
+  };
   options.signal.addEventListener("abort", resource.dispose, { once: true });
   if (options.signal.aborted) resource.dispose();
   return resource;

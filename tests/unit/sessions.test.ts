@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 import type {
   ResolvedHostConfig,
+  SftpChannel,
   StoreResult,
   TerminalChannel,
 } from "../../packages/domain/src/index.ts";
@@ -920,4 +921,68 @@ test("lock records `locked` on live generations only and reconnect reports locke
   assert.equal(next.generation, 2);
   assert.equal(next.error, undefined, "a new generation starts without the old reason");
   await h.registry.dispose();
+});
+
+function fakeSftp(dispose: () => void = () => {}): SftpChannel {
+  const closed = async () => ({ ok: false, code: "closed" } as const);
+  return {
+    home: "/home/fixture", maxRead: 32_768, maxWrite: 32_768, dispose, drained: Promise.resolve(),
+    realpath: closed, stat: closed, lstat: closed, list: closed, openRead: closed, openWrite: closed,
+  };
+}
+
+test("SFTP is a session kind: fenced by kind, owner, generation and state, kept on reconnect and counted in the cap", async () => {
+  const h = harness({ limits: { sessions: 2 } });
+  const code = (result: SessionResult<unknown>) => (result.ok ? "ok" : result.error.code);
+  assert.equal(code(h.registry.connect("owner-1", "host-1", "shell" as never)), "invalid-request");
+  const terminal = h.connect();
+  const sftp = value(h.registry.connect("owner-1", "host-1", "sftp"));
+  assert.deepEqual([terminal.kind, sftp.kind], ["terminal", "sftp"]);
+  assert.equal(code(h.registry.connect("owner-1", "host-1", "sftp")), "resource-limit", "both kinds share one cap");
+  await tick();
+  assert.deepEqual(h.contexts.map((context) => context.kind), ["terminal", "sftp"]);
+  const ready = (context: SessionContext, channel: SftpChannel | TerminalChannel) => {
+    assert(context.verifyingHost());
+    assert(context.authenticating());
+    assert.equal(h.registry.sftp("owner-1", sftp.id, 1), undefined, "not before Ready");
+    assert(context.ready(channel));
+  };
+  const terminalChannel = fakeTerminal();
+  let disposed = 0;
+  const channel = fakeSftp(() => { disposed++; });
+  ready(h.contexts[0]!, terminalChannel);
+  ready(h.contexts[1]!, channel);
+  assert.equal(h.registry.sftp("owner-1", sftp.id, 1), channel);
+  assert.equal(h.registry.terminal("owner-1", terminal.id, 1), terminalChannel);
+  assert.equal(h.registry.terminal("owner-1", sftp.id, 1), undefined);
+  assert.equal(h.registry.sftp("owner-1", terminal.id, 1), undefined);
+  assert.equal(h.registry.sftp("owner-2", sftp.id, 1), undefined);
+  assert.equal(h.registry.sftp("owner-1", sftp.id, 2), undefined);
+
+  await h.registry.close("owner-1", sftp.id);
+  assert.equal(disposed, 1);
+  assert.equal(h.registry.sftp("owner-1", sftp.id, 1), undefined);
+  assert.equal(h.registry.snapshot("owner-1", terminal.id)[0]!.state, "Ready", "closing SFTP leaves the terminal");
+  const next = value(h.registry.reconnect("owner-1", sftp.id, 1));
+  assert.equal(next.kind, "sftp");
+  await tick();
+  assert.equal(h.contexts[2]!.kind, "sftp");
+  const fresh = fakeSftp();
+  ready(h.contexts[2]!, fresh);
+  assert.equal(h.registry.sftp("owner-1", sftp.id, 2), fresh);
+  await h.registry.lock();
+  assert.equal(h.registry.sftp("owner-1", sftp.id, 2), undefined);
+  await h.registry.dispose();
+
+  const crossed = harness();
+  const mismatched = value(crossed.registry.connect("owner-1", "host-1", "sftp"));
+  await tick();
+  const context = crossed.contexts[0]!;
+  context.verifyingHost(); context.authenticating();
+  let dropped = 0;
+  assert.equal(context.ready(fakeTerminal(() => { dropped++; })), false, "a channel of the wrong kind is refused");
+  await tick();
+  assert.equal(dropped, 1);
+  assert.equal(crossed.registry.snapshot("owner-1", mismatched.id)[0]!.error?.code, "invalid-request");
+  await crossed.registry.dispose();
 });

@@ -135,9 +135,14 @@ async function runSessionSmoke({ SessionRegistry, TransientSecrets }) {
             shell.on("data", () => {});
             shell.stderr.on("data", () => {});
             shell.once("close", () => context.ended());
+            // Lifecycle-only terminal: these smokes never open the byte stream.
             context.ready({
               dispose: () => shell.destroy(),
               drained: channelDrained,
+              open: () => false,
+              ack() {},
+              write: () => "closed",
+              resize() {},
             });
           } catch {
             if (!context.signal.aborted) context.failed("network");
