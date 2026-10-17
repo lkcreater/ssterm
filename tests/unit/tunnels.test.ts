@@ -194,7 +194,7 @@ test("service: bind first, running only after Ready, bytes round-trip, stop clos
   await until(() => echo.sockets.size === 0, "forwarded streams closed");
   assert.deepEqual(h.service.snapshot(h.ownerId), []);
   assert.equal(h.service.active(rule.id), false);
-  assert.deepEqual([...new Set(h.events.map((event) => event.state))], ["starting", "running", "stopping"]);
+  assert.deepEqual([...new Set(h.events.map((event) => event.state))], ["starting", "running", "stopping", "stopped"]);
 });
 
 test("service: collision fails before any session; refused destinations close the local socket; session failure and lock tear down", async (t) => {

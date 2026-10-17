@@ -21,3 +21,25 @@ Unit (`tests/unit/tunnels.test.ts`): exclusive loopback bind, collision and wild
 - More than 16 simultaneous new connections are refused, not queued.
 - If the registry observer budget were exhausted, a tunnel would stay `starting` until stopped.
 - The owner is a window: closing or reloading it stops its tunnels.
+
+# Tunnel rules and status UI — SST-026
+
+**2026-10-17 · T032 · DONE through independent TEST/REVIEW/DELIVER.** [Delivery](agent-runs/sst-026-delivery.md). Adds rule CRUD through the catalog, owner-bound tunnel IPC and the **Port forwarding** page.
+
+## Behavior
+
+- **Rules** are catalog intents (`create/update/delete-tunnel-rule`) with preview/apply and revision fences, projected in `CatalogState.tunnelRules`. Main validates name, ports (1–65535), the destination (normalized like any endpoint) and the server; problems are field errors. Duplicate local ports may be saved; the second start fails `address-in-use`.
+- **Page**: each row shows name, `local → destination via server` with PROD, and a status with icon and text: Stopped, Starting, Running · N connections, Stopping, Failed with a fixed reason. Failed never reads as running; Start retries. The editor explains that the destination is resolved and connected by the SSH server, binds only to `127.0.0.1` or `::1`, and saving never starts anything.
+- **Running rules**: main refuses editing or deleting a rule whose tunnel is starting, running or stopping, and deleting a server (or group subtree) with such rules, at prepare and again at apply. The editor makes the restart explicit (“Save and restart”): a dry-run check first, then stop → save → start, with a clear message if the tunnel ends up stopped. Delete offers “Stop and delete”. Editing or deleting a failed rule clears its stale status first.
+- **IPC**: `tunnelState`/`onTunnelState` (owner-sequenced, fixed error codes), `startTunnel` (the explicit action is the unlock), `stopTunnel` (idempotent). A stopped tunnel emits a final event so no row stays “Stopping”.
+- **Restart**: rules persist; after relaunch every rule is Stopped and no listener exists.
+
+## Verification
+
+`tests/unit/tunnel-rules.test.ts` (intent guards, loopback default, field errors, normalization, running guards at prepare and apply, controller codes/unlock/idempotent stop, IPC fencing) and `tests/e2e/tunnels-ui.spec.ts` (F06 on Docker OpenSSH: create with validation, no listener after save, Start with host-key trust, HTTP 200, duplicate fails visibly, server delete refused while running, Save and restart, Stop closes the listener, contrast at 960×640, relaunch without autostart, delete). Full suite: 421 unit / 59 development / 56 packaged.
+
+## Limitations
+
+- When the catalog is truncated, a rule whose server is hidden shows “Missing server” and cannot be started from the page.
+- The running guard is service-wide while status is per window; with one window this is the same.
+- Editing a server while its tunnel runs is allowed; the tunnel keeps the settings it started with until restarted, and the server editor does not say so.

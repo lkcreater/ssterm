@@ -7,7 +7,8 @@ export const TUNNEL_MAX_CONNECTIONS = 64;
 /** Active (starting, running or stopping) tunnels per service. Each also holds one registry session. */
 export const MAX_TUNNELS = 16;
 
-export type TunnelState = "starting" | "running" | "stopping" | "failed";
+/** `stopped` appears only in the final event for a tunnel that was removed; `snapshot()` never lists it. */
+export type TunnelState = "starting" | "running" | "stopping" | "failed" | "stopped";
 /** Bind problems, rule problems, or the session's own typed failure (`locked`, `network`, `timeout`, …). */
 export type TunnelFailure =
   | "address-in-use"
@@ -136,7 +137,10 @@ export class TunnelService {
     // A failed tunnel is only forgotten once its own teardown released the port and session.
     const done = tunnel.state === "failed" ? Promise.resolve(tunnel.stopping) : this.#teardown(tunnel, "stopping", null);
     return done.then(() => {
-      if (this.#tunnels.get(key) === tunnel) this.#tunnels.delete(key);
+      if (this.#tunnels.get(key) === tunnel) {
+        this.#tunnels.delete(key);
+        this.#notify(tunnel.ownerId, { ...this.#snapshot(tunnel), state: "stopped", error: null, activeConnections: 0 });
+      }
       return { ok: true as const, value: undefined };
     });
   }
@@ -290,8 +294,10 @@ export class TunnelService {
     // A replaced or forgotten tunnel (e.g. a late teardown after a restart) never reports over its successor.
     const current = this.#tunnels.get(this.#key(tunnel.ownerId, tunnel.rule.id));
     if (current !== tunnel) return;
-    const value = this.#snapshot(tunnel);
-    for (const callback of [...(this.#observers.get(tunnel.ownerId) ?? [])]) {
+    this.#notify(tunnel.ownerId, this.#snapshot(tunnel));
+  }
+  #notify(ownerId: string, value: TunnelSnapshot): void {
+    for (const callback of [...(this.#observers.get(ownerId) ?? [])]) {
       try { callback(value); } catch { /* An observer cannot interrupt the tunnel. */ }
     }
   }

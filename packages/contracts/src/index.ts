@@ -21,6 +21,8 @@ export * from "./identities.ts";
 export * from "./links.ts";
 import type { OpenSnippetRequest, OpenSnippetResponse, SaveSnippetRequest, SaveSnippetResponse, DeleteSnippetRequest, DeleteSnippetResponse } from "./snippets.ts";
 export * from "./snippets.ts";
+import type { TunnelState, TunnelStateRequest, TunnelRuleRequest, StartTunnelResponse, StopTunnelResponse } from "./tunnels.ts";
+export * from "./tunnels.ts";
 import type { TerminalSettings, SettingsRequest, UpdateSettingsRequest } from "./settings.ts";
 export * from "./settings.ts";
 /** Serializable values crossing the isolated preload boundary. */
@@ -124,6 +126,10 @@ export interface DesktopAPI {
   openSnippet(request: OpenSnippetRequest): Promise<Result<OpenSnippetResponse>>;
   saveSnippet(request: SaveSnippetRequest): Promise<Result<SaveSnippetResponse>>;
   deleteSnippet(request: DeleteSnippetRequest): Promise<Result<DeleteSnippetResponse>>;
+  tunnelState(request: TunnelStateRequest): Promise<Result<TunnelState>>;
+  onTunnelState(callback: (state: TunnelState) => void): () => void;
+  startTunnel(request: TunnelRuleRequest): Promise<Result<StartTunnelResponse>>;
+  stopTunnel(request: TunnelRuleRequest): Promise<Result<StopTunnelResponse>>;
   settings(request: SettingsRequest): Promise<Result<TerminalSettings>>;
   updateSettings(request: UpdateSettingsRequest): Promise<Result<TerminalSettings>>;
   ping(
@@ -189,6 +195,10 @@ export const channels = Object.freeze({
   openSnippet: "ssterm:open-snippet",
   saveSnippet: "ssterm:save-snippet",
   deleteSnippet: "ssterm:delete-snippet",
+  tunnelState: "ssterm:tunnel-state",
+  tunnelStateChanged: "ssterm:tunnel-state-changed",
+  startTunnel: "ssterm:start-tunnel",
+  stopTunnel: "ssterm:stop-tunnel",
   settings: "ssterm:settings",
   updateSettings: "ssterm:update-settings",
 });

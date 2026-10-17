@@ -27,6 +27,8 @@ import {
   isOpenSnippetRequest, isOpenSnippetResponse, isSaveSnippetRequest, isSaveSnippetResponse, isDeleteSnippetRequest,
   isDeleteSnippetResponse,
   type OpenSnippetRequest, type SaveSnippetRequest, type DeleteSnippetRequest,
+  isTunnelState, isTunnelStateRequest, isTunnelRuleRequest, isStartTunnelResponse, isStopTunnelResponse,
+  type TunnelState, type TunnelStateRequest, type TunnelRuleRequest,
   isTrustState,
   isTrustStateRequest,
   isAnswerHostTrustRequest,
@@ -84,6 +86,13 @@ export function createDesktopBridge(transport: BridgeTransport): {
   let catalogSequence = -1;
   let sftpSequence = -1;
   let transferSequence = -1;
+  let tunnelSequence = -1;
+  const tunnelCallbacks = new Set<(state: TunnelState) => void>();
+  const tunnelListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !isTunnelState(value) || !sameOwner(value.owner) || value.sequence <= tunnelSequence) return;
+    tunnelSequence = value.sequence;
+    for (const callback of tunnelCallbacks) callback(value);
+  };
   const transferCallbacks = new Set<(state: TransferState) => void>();
   const transferListener = (_event: unknown, value: unknown): void => {
     if (disposed || !isTransferState(value) || !sameOwner(value.owner) || value.sequence <= transferSequence) return;
@@ -205,6 +214,7 @@ export function createDesktopBridge(transport: BridgeTransport): {
           catalogSequence = -1;
           sftpSequence = -1;
           transferSequence = -1;
+          tunnelSequence = -1;
         } else if (
           next.owner.windowId === owner.windowId &&
           next.owner.generation === owner.generation
@@ -541,6 +551,25 @@ export function createDesktopBridge(transport: BridgeTransport): {
       if (!isDeleteSnippetRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.deleteSnippet, [{ owner: { ...request.owner }, snippetId: request.snippetId,
         expectedRevision: request.expectedRevision }], isDeleteSnippetResponse);
+    },
+    async tunnelState(request: TunnelStateRequest) {
+      if (!isTunnelStateRequest(request)) return failure("invalid-request");
+      const result = await invoke(channels.tunnelState, [{ owner: { ...request.owner } }], isTunnelState);
+      if (!result.ok) return result;
+      if (!sameOwner(result.value.owner) || !sameOwner(request.owner)) return failure("stale-owner");
+      tunnelSequence = Math.max(tunnelSequence, result.value.sequence);
+      return result;
+    },
+    onTunnelState(callback: (state: TunnelState) => void): () => void {
+      return subscribe(channels.tunnelStateChanged, tunnelCallbacks, tunnelListener, callback);
+    },
+    startTunnel(request: TunnelRuleRequest) {
+      if (!isTunnelRuleRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.startTunnel, [{ owner: { ...request.owner }, ruleId: request.ruleId }], isStartTunnelResponse);
+    },
+    stopTunnel(request: TunnelRuleRequest) {
+      if (!isTunnelRuleRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.stopTunnel, [{ owner: { ...request.owner }, ruleId: request.ruleId }], isStopTunnelResponse);
     },
     settings(request: SettingsRequest) {
       if (!isSettingsRequest(request)) return Promise.resolve(failure("invalid-request"));

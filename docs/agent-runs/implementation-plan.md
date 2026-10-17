@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-025
+# Execution record — M0 ถึง SST-026
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-025/T031 `DONE`; SST-024 committed `94bf3ae`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-025-execution-plan--2026-10-17). ผู้ใช้สั่งทำ SST-026 และ SST-027 ต่อ; SST-028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-026/T032 `DONE`; SST-025 committed `e132845`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-026-execution-plan--2026-10-17). SST-027 ต่อ; SST-028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
 
 ## Authorization / acceptance
 
@@ -929,3 +929,13 @@ SST-024/T030 DONE. [Snippet Paste / Run](../snippets.md#snippet-paste--run--sst-
 ### Final SST-025 record — 2026-10-17
 
 SST-025/T031 DONE. [Tunnels](../tunnels.md) and [delivery](sst-025-delivery.md). Final source: typecheck PASS; unit 418/418; build PASS; development E2E 57/58 (terminal-flow throughput budget missed under full-suite load, 3/3 in isolation; untouched path); package PASS; packaged 55/55. The user then instructed “งานนี้เสร็จ ทำ SST-026, 027 ต่อได้เลย”: commit SST-025 locally, then SST-026 and SST-027 in order; SST-028 and DS05–DS06 stay paused.
+
+## SST-026 execution plan — 2026-10-17
+
+**Authorization / gate:** “งานนี้เสร็จ ทำ SST-026, 027 ต่อได้เลย” authorizes **SST-026/T032** then **SST-027/T033–T035 scope of the MVP gate**; SST-028 and DS05–DS06 remain paused. Plan (recorded with the delivered result): catalog `create/update/delete-tunnel-rule` intents and `tunnelRules` projection; main running-rule guard at prepare and apply (`TunnelService.active`); owner-bound tunnel IPC (`tunnelState`/`onTunnelState`/`startTunnel`/`stopTunnel`) with start-as-unlock; Port forwarding page with five states, validation, destination explanation, explicit Save and restart, Stop and delete; F06 E2E with relaunch-without-autostart. No schema change. Rollback: revert the commit.
+
+**SST-026 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+### Final SST-026 record — 2026-10-17
+
+SST-026/T032 DONE. [Tunnels UI](../tunnels.md#tunnel-rules-and-status-ui--sst-026) and [delivery](sst-026-delivery.md). Final source: typecheck PASS; unit 421/421; build PASS; development E2E 59/59; package PASS; packaged 56/56. Review: no critical/high; two mediums and lows fixed; three limitations recorded.

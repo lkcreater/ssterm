@@ -39,6 +39,7 @@ import { registerSettingsHandlers } from "./settings";
 import { createCatalogController, observeCommits, registerCatalogHandlers, type CatalogController } from "./catalog-controller";
 import { createIdentitiesController, registerIdentityHandlers, secretNamespace, type IdentitiesController } from "./identities";
 import { createSnippetsController, registerSnippetHandlers, type SnippetsController } from "./snippets";
+import { createTunnelController, registerTunnelHandlers, type TunnelController } from "./tunnels";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -85,8 +86,10 @@ let removeCatalogHandlers: (() => void) | undefined;
 let identities: IdentitiesController | undefined;
 let removeIdentityHandlers: (() => void) | undefined;
 let snippets: SnippetsController | undefined;
-// Local forwarding (SST-025): main-only until the rule UI and IPC (SST-026).
+// Local forwarding: the service (SST-025) and its owner-bound Start/Stop/status IPC (SST-026).
 let tunnels: TunnelService | undefined;
+let tunnelControls: TunnelController | undefined;
+let removeTunnelHandlers: (() => void) | undefined;
 let removeSnippetHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
@@ -195,6 +198,7 @@ const boundary = new WindowBoundary(
     transfers?.revokeOwner(owner);
     sftp?.revokeOwner(owner);
     // Listeners and sockets close before the owner's sessions are revoked.
+    tunnelControls?.revokeOwner(owner);
     void tunnels?.closeOwner(sessionOwnerId(owner)).catch(() => undefined);
     desktopSessions?.revokeOwner(owner);
   },
@@ -391,10 +395,14 @@ if (ownsInstance) {
         secretStore: () => !!secrets,
         cleanupQueued: () => identities?.cleanupQueued(),
         lockEpoch: () => savedHostSessions.registry.lockEpoch,
+        // A rule (or its server) with a starting, running or stopping tunnel is edited only after an explicit stop.
+        activeTunnel: (ruleId) => tunnels?.active(ruleId) ?? false,
       });
       // Renderers drop decrypted snippet editors when the lock epoch they see increases.
       savedHostSessions.onLock(() => catalog?.publishAll());
       tunnels = new TunnelService({ registry: savedHostSessions.registry, repository, listen: listenLocal });
+      const service = tunnels;
+      tunnelControls = createTunnelController({ service, lock: savedHostSessions.registry, checkAccess });
       snippets = createSnippetsController({
         repository,
         secrets: () => secrets,
@@ -469,6 +477,7 @@ if (ownsInstance) {
       boundary,
       controller: () => identities,
     });
+    removeTunnelHandlers = registerTunnelHandlers({ ipc: ipcMain, boundary, controller: () => tunnelControls });
     removeSnippetHandlers = registerSnippetHandlers({
       ipc: ipcMain,
       boundary,
@@ -520,6 +529,9 @@ if (ownsInstance) {
           });
           transfers?.register(result.value.owner, (channel, value) => {
             if (!event.sender.isDestroyed()) event.sender.send(channel, value);
+          });
+          tunnelControls?.register(result.value.owner, (state) => {
+            if (!event.sender.isDestroyed()) event.sender.send(channels.tunnelStateChanged, state);
           });
           catalog?.register(result.value.owner, (state) => {
             if (!event.sender.isDestroyed())
@@ -583,6 +595,7 @@ app.on("before-quit", (event) => {
   catalog?.dispose();
   identities?.dispose();
   snippets?.dispose();
+  tunnelControls?.dispose();
   knownHostPolicy?.dispose();
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
@@ -594,6 +607,7 @@ app.on("before-quit", (event) => {
   removeCatalogHandlers?.();
   removeIdentityHandlers?.();
   removeSnippetHandlers?.();
+  removeTunnelHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();

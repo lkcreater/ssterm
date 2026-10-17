@@ -82,6 +82,8 @@ import {
 import { GroupEditor, HostEditor } from "@/components/catalog/editors";
 import { IdentitiesPage } from "@/components/identities/identities-page";
 import { SnippetsPage } from "@/components/snippets/snippets-page";
+import { TunnelsPage } from "@/components/tunnels/tunnels-page";
+import { useTunnels } from "@/hooks/use-tunnels";
 import {
   DeleteGroupDialog,
   DeleteHostDialog,
@@ -94,9 +96,6 @@ import {
 import { endpointText } from "@/lib/catalog-filter";
 import iconLogo from "@/assets/icon-logo.png";
 
-const unavailable = [
-  { label: "Port forwarding", icon: WorkflowIcon },
-] as const;
 
 const storageProblems: Record<
   StorageProblem,
@@ -149,7 +148,7 @@ const storageProblems: Record<
   },
 };
 
-type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities" | "snippets";
+type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities" | "snippets" | "tunnels";
 type CatalogDialog =
   | { kind: "host"; id?: string; groupId?: string | null }
   | { kind: "group"; id?: string; parentId?: string | null }
@@ -162,6 +161,7 @@ const titles: Record<Page, string> = {
   "known-hosts": "Known hosts",
   identities: "Identities",
   snippets: "Snippets",
+  tunnels: "Port forwarding",
 };
 const phaseStates = {
   connecting: "connecting",
@@ -207,6 +207,7 @@ export function AppShell() {
   const controller = useWorkspace(owner, sessions);
   const sftp = useSftp(owner);
   const settings = useSettings(owner);
+  const tunnelState = useTunnels(owner);
   const connected = [...sessions, ...sftp.sessions].filter((session) => session.phase === "ready").length;
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
@@ -490,14 +491,22 @@ export function AppShell() {
                           <span>Snippets</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
-                      {unavailable.map(({ label, icon: Icon }) => (
-                        <SidebarMenuItem key={label}>
-                          <SidebarMenuButton disabled>
-                            <Icon />
-                            <span>{label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={page === "tunnels"}
+                          aria-current={page === "tunnels" ? "page" : undefined}
+                          onClick={() => setPage("tunnels")}
+                          disabled={!ready}
+                        >
+                          <WorkflowIcon />
+                          <span>Port forwarding</span>
+                          {tunnelState?.tunnels.some((row) => row.phase === "running") ? (
+                            <span className="ml-auto type-caption">
+                              {tunnelState.tunnels.filter((row) => row.phase === "running").length}
+                            </span>
+                          ) : null}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
                     </SidebarMenu>
                   </SidebarGroupContent>
                 </SidebarGroup>
@@ -585,7 +594,9 @@ export function AppShell() {
                     </div>
                   ) : page === "identities" && owner && state && ready ? (
                     <IdentitiesPage owner={owner} catalog={catalog} state={state} />
-                  ) : page !== "identities" && page !== "snippets" && state && ready ? (
+                  ) : page === "tunnels" && owner && state && ready ? (
+                    <TunnelsPage owner={owner} catalog={catalog} state={state} tunnels={tunnelState} />
+                  ) : page !== "identities" && page !== "snippets" && page !== "tunnels" && state && ready ? (
                     <HostsPage
                       catalog={catalog}
                       state={state}

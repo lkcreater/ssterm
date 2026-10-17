@@ -16,6 +16,7 @@ import {
   type MetadataSnapshot,
   type StoreResult,
   type TagInput,
+  type TunnelRuleInput,
 } from "@ssterm/domain";
 
 type IdentityData = Pick<Identity, "label" | "username" | "method"> &
@@ -27,6 +28,8 @@ export type CatalogIntent =
   | IntentCrud<"host", HostInput>
   | IntentCrud<"group", GroupInput>
   | IntentCrud<"tag", TagInput>
+  | IntentCrud<"tunnel-rule", TunnelRuleInput>
+  | { type: "delete-tunnel-rule"; id: Id; expectedRevision: number }
   | { type: "create-identity"; data: IdentityData }
   | {
       type: "update-identity";
@@ -143,6 +146,7 @@ const fields = {
   group: ["label", "parentId", "port", "auth"],
   identity: ["label", "username", "method", "keyId"],
   tag: ["label"],
+  "tunnel-rule": ["label", "hostId", "bindAddress", "bindPort", "destinationHost", "destinationPort"],
 } as const;
 function intent(value: unknown): CatalogIntent {
   record(
@@ -174,7 +178,7 @@ function intent(value: unknown): CatalogIntent {
   } else {
     const match =
       typeof value.type === "string" &&
-      /^(create|update|delete)-(host|group|identity|tag)$/u.exec(value.type);
+      /^(create|update|delete)-(host|group|identity|tag|tunnel-rule)$/u.exec(value.type);
     if (!match) return fail("invalid-request");
     const action = match[1]!;
     const kind = match[2] as keyof typeof fields;
@@ -493,7 +497,8 @@ export class CatalogModule {
         request.type === "create-host" ||
         request.type === "create-group" ||
         request.type === "create-tag" ||
-        request.type === "create-identity"
+        request.type === "create-identity" ||
+        request.type === "create-tunnel-rule"
       ) {
         const generated = newId();
         createdIds.push(generated);
@@ -501,9 +506,14 @@ export class CatalogModule {
       } else if (
         request.type === "update-host" ||
         request.type === "update-group" ||
-        request.type === "update-tag"
+        request.type === "update-tag" ||
+        request.type === "update-tunnel-rule"
       )
         changes.push(request);
+      else if (request.type === "delete-tunnel-rule") {
+        current(before.tunnelRules, request.id, request.expectedRevision);
+        changes.push(request);
+      }
       else if (request.type === "delete-host")
         deleteHost(current(before.hosts, request.id, request.expectedRevision));
       else if (request.type === "delete-group") {

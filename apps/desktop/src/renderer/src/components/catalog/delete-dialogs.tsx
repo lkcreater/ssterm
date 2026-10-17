@@ -31,7 +31,7 @@ const layout =
 /** Prepares whenever the intent changes (including a newer revision after a conflict) and applies on confirm. */
 export function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefined, onDone: () => void) {
   const [preview, setPreview] = useState<Preview>();
-  const [failure, setFailure] = useState<ErrorCode>();
+  const [failure, setFailure] = useState<DeleteProblem>();
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   // The dialog unmounts when the deleted row leaves the catalog, which can happen before apply resolves.
@@ -46,7 +46,7 @@ export function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefi
       if (stale) return;
       if (!result.ok) setFailure(result.error.code);
       else if (result.value.kind === "preview") setPreview(result.value);
-      else setFailure("invalid-request");
+      else setFailure(result.value.fields.some((field) => field.field === "tunnel") ? "tunnel-running" : "invalid-request");
     });
     return () => {
       stale = true;
@@ -81,7 +81,9 @@ export function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefi
   };
 }
 
-export function DeleteFailure({ code, retry }: { code: ErrorCode; retry(): Promise<void> }) {
+/** `tunnel-running`: a server being deleted has a starting, running or stopping tunnel. */
+export type DeleteProblem = ErrorCode | "tunnel-running";
+export function DeleteFailure({ code, retry }: { code: DeleteProblem; retry(): Promise<void> }) {
   return (
     <Alert variant="destructive">
       <AlertTriangleIcon />
@@ -90,7 +92,9 @@ export function DeleteFailure({ code, retry }: { code: ErrorCode; retry(): Promi
       </AlertTitle>
       <AlertDescription className="grid gap-2">
         <span>
-          {code === "conflict"
+          {code === "tunnel-running"
+            ? "A tunnel on this server is running. Stop it on the Port forwarding page, then delete again."
+            : code === "conflict"
             ? "Review the updated details, then delete again."
             : code === "busy"
               ? "The workspace is busy. Try again in a moment."

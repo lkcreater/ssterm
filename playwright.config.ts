@@ -54,6 +54,7 @@ export default defineConfig({
             "snippets.spec.ts",
             "snippet-run.spec.ts",
             "tunnel.spec.ts",
+            "tunnels-ui.spec.ts",
           ],
         },
       ]
@@ -85,6 +86,7 @@ export default defineConfig({
             "snippets.spec.ts",
             "snippet-run.spec.ts",
             "tunnel.spec.ts",
+            "tunnels-ui.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

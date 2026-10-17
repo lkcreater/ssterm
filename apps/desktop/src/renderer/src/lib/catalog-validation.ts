@@ -43,6 +43,7 @@ const messages: Record<Exclude<CatalogFieldError["code"], "required"> | "too-lon
   "too-long-address": "Use 1,024 characters or fewer.",
   cycle: "A group cannot move inside itself or its subgroups.",
   "not-found": "",
+  running: "",
 };
 const fieldMessages: Record<Field, string> = {
   label: "Check this name.",
@@ -54,6 +55,11 @@ const fieldMessages: Record<Field, string> = {
   tag: "That tag no longer exists.",
   username: "Check this user name.",
   keyId: "That key no longer exists. Choose another.",
+  bindPort: "Enter a local port from 1 to 65535.",
+  destinationPort: "Enter a destination port from 1 to 65535.",
+  destination: "Use a host name or IP address the server can reach, without spaces, user names or paths.",
+  host: "That server no longer exists. Choose another.",
+  tunnel: "Stop the tunnel first. A running tunnel keeps the settings it started with.",
 };
 const usernameMessages = {
   empty: "Enter a user name.",
@@ -65,7 +71,7 @@ const message = ({ field, code }: CatalogFieldError): string =>
     ? usernameMessages[code]
     : code === "required"
       ? "Choose a key, or import one."
-      : (field === "address" && code === "too-long"
+      : ((field === "address" || field === "destination") && code === "too-long"
           ? messages["too-long-address"]
           : messages[code]) || fieldMessages[field];
 

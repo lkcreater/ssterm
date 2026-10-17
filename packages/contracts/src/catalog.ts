@@ -69,6 +69,18 @@ export interface CatalogKey {
   passphraseSaved: boolean;
   pending: boolean;
 }
+export type TunnelBindAddress = "127.0.0.1" | "::1";
+/** A saved local forwarding rule. Saving never starts it; the destination is resolved by the SSH server. */
+export interface CatalogTunnelRule {
+  id: string;
+  revision: number;
+  label: string;
+  hostId: string;
+  bindAddress: TunnelBindAddress;
+  bindPort: number;
+  destinationHost: string;
+  destinationPort: number;
+}
 /** Metadata only: the body, its ciphertext and the key reference never cross IPC. */
 export interface CatalogSnippet {
   id: string;
@@ -94,6 +106,7 @@ export interface CatalogState {
   identities: CatalogIdentity[];
   keys: CatalogKey[];
   snippets: CatalogSnippet[];
+  tunnelRules: CatalogTunnelRule[];
   secrets: CatalogSecrets;
   /** Counts workspace locks; an increase means decrypted editor content must be dropped. */
   lockEpoch: number;
@@ -112,6 +125,14 @@ export interface CatalogGroupData {
   parentId?: string | null;
   port?: CatalogPort;
   auth?: CatalogAuth;
+}
+export interface CatalogTunnelRuleData {
+  label: string;
+  hostId: string;
+  bindAddress?: TunnelBindAddress;
+  bindPort: number;
+  destinationHost: string;
+  destinationPort: number;
 }
 export interface CatalogIdentityData {
   label: string;
@@ -136,6 +157,9 @@ export type CatalogChangeIntent =
   | { type: "create-tag"; data: { label: string } }
   | { type: "delete-tag"; id: string; expectedRevision: number }
   | { type: "set-host-tag"; hostId: string; tagId: string; present: boolean; expectedHostRevision: number }
+  | { type: "create-tunnel-rule"; data: CatalogTunnelRuleData }
+  | { type: "update-tunnel-rule"; id: string; expectedRevision: number; data: Partial<CatalogTunnelRuleData> }
+  | { type: "delete-tunnel-rule"; id: string; expectedRevision: number }
   | { type: "create-identity"; data: CatalogIdentityData }
   | {
       type: "update-identity";
@@ -158,7 +182,12 @@ export type CatalogFieldError =
   | { field: "parent"; code: "cycle" | "not-found" }
   | { field: "group" | "identity" | "tag"; code: "not-found" }
   | { field: "username"; code: "empty" | "too-long" | "control" }
-  | { field: "keyId"; code: "not-found" | "required" };
+  | { field: "keyId"; code: "not-found" | "required" }
+  | { field: "bindPort" | "destinationPort"; code: "invalid" }
+  | { field: "destination"; code: "invalid" | "too-long" }
+  | { field: "host"; code: "not-found" }
+  /** A starting, running or stopping tunnel uses this rule (or a rule of this server); stop it first. */
+  | { field: "tunnel"; code: "running" };
 export interface CatalogHostImpact {
   hostId: string;
   label: string;
@@ -267,14 +296,20 @@ function isCatalogKey(v: unknown): v is CatalogKey {
     typeof v.publicKey === "string" && v.publicKey.length <= 16_384 && v.publicKey.startsWith(`${v.algorithm} `) &&
     /^[a-z0-9-]+ [A-Za-z0-9+/]+={0,2}$/u.test(v.publicKey) && typeof v.passphraseSaved === "boolean" && typeof v.pending === "boolean";
 }
+function isCatalogTunnelRule(v: unknown): v is CatalogTunnelRule {
+  return exactObject(v, ["id", "revision", "label", "hostId", "bindAddress", "bindPort", "destinationHost", "destinationPort"]) &&
+    isCatalogId(v.id) && positive(v.revision) && label(v.label) && isCatalogId(v.hostId) &&
+    (v.bindAddress === "127.0.0.1" || v.bindAddress === "::1") && validatePort(v.bindPort) &&
+    text(v.destinationHost, MAX_CATALOG_ADDRESS) && validatePort(v.destinationPort);
+}
 function isCatalogSnippet(v: unknown): v is CatalogSnippet {
   return exactObject(v, ["id", "revision", "label", "tagIds"]) && isCatalogId(v.id) && positive(v.revision) && label(v.label) && ids(v.tagIds);
 }
 export function isCatalogState(v: unknown): v is CatalogState {
-  return exactObject(v, ["owner", "sequence", "availability", "revision", "truncated", "hosts", "groups", "tags", "identities", "keys", "snippets", "secrets", "lockEpoch"]) &&
+  return exactObject(v, ["owner", "sequence", "availability", "revision", "truncated", "hosts", "groups", "tags", "identities", "keys", "snippets", "tunnelRules", "secrets", "lockEpoch"]) &&
     isOwner(v.owner) && isCounter(v.sequence) && (v.availability === "ready" || v.availability === "unavailable") &&
     isCounter(v.revision) && typeof v.truncated === "boolean" && list(v.hosts, isCatalogHost) && list(v.groups, isCatalogGroup) &&
-    list(v.tags, isCatalogTag) && list(v.identities, isCatalogIdentity) && list(v.keys, isCatalogKey) && list(v.snippets, isCatalogSnippet) && isCounter(v.lockEpoch) &&
+    list(v.tags, isCatalogTag) && list(v.identities, isCatalogIdentity) && list(v.keys, isCatalogKey) && list(v.snippets, isCatalogSnippet) && list(v.tunnelRules, isCatalogTunnelRule) && isCounter(v.lockEpoch) &&
     exactObject(v.secrets, ["availability", "cleanupPending"]) && (v.secrets.availability === "ready" || v.secrets.availability === "unavailable") &&
     typeof v.secrets.cleanupPending === "boolean";
 }
@@ -285,6 +320,10 @@ const dataKeys = {
   group: { all: ["label", "parentId", "port", "auth"], required: ["label"] },
   tag: { all: ["label"], required: ["label"] },
   identity: { all: ["label", "username", "method", "keyId"], required: ["label", "username", "method"] },
+  "tunnel-rule": {
+    all: ["label", "hostId", "bindAddress", "bindPort", "destinationHost", "destinationPort"],
+    required: ["label", "hostId", "bindPort", "destinationHost", "destinationPort"],
+  },
 } as const;
 function isData(v: unknown, kind: keyof typeof dataKeys, creating: boolean): boolean {
   if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
@@ -299,15 +338,22 @@ function isData(v: unknown, kind: keyof typeof dataKeys, creating: boolean): boo
     (!("environment" in d) || environment(d.environment)) && (!("port" in d) || port(d.port, false)) &&
     (!("auth" in d) || auth(d.auth)) && (!("username" in d) || raw(d.username, 2048)) &&
     (!("method" in d) || d.method === "password" || d.method === "key" || d.method === "keyboard-interactive") &&
-    (!("keyId" in d) || nullableId(d.keyId));
+    (!("keyId" in d) || nullableId(d.keyId)) &&
+    (!("hostId" in d) || isCatalogId(d.hostId)) &&
+    (!("bindAddress" in d) || d.bindAddress === "127.0.0.1" || d.bindAddress === "::1") &&
+    // Port and destination content are field errors from main; the guard bounds type and size.
+    (!("bindPort" in d) || typeof d.bindPort === "number") && (!("destinationPort" in d) || typeof d.destinationPort === "number") &&
+    (!("destinationHost" in d) || raw(d.destinationHost, 2048));
 }
 export function isCatalogChangeIntent(v: unknown): v is CatalogChangeIntent {
   if (v === null || typeof v !== "object" || !("type" in v)) return false;
   const i = v as Record<string, unknown>;
   const target = () => isCatalogId(i.id) && positive(i.expectedRevision);
   switch (i.type) {
-    case "create-host": case "create-group": case "create-tag": case "create-identity":
+    case "create-host": case "create-group": case "create-tag": case "create-identity": case "create-tunnel-rule":
       return exactObject(i, ["type", "data"]) && isData(i.data, i.type.slice(7) as keyof typeof dataKeys, true);
+    case "update-tunnel-rule":
+      return exactObject(i, ["type", "id", "expectedRevision", "data"]) && target() && isData(i.data, "tunnel-rule", false);
     case "update-identity":
       if (Object.hasOwn(i, "forgetPassword"))
         return exactObject(i, ["type", "id", "expectedRevision", "data", "forgetPassword"]) && target() &&
@@ -319,7 +365,7 @@ export function isCatalogChangeIntent(v: unknown): v is CatalogChangeIntent {
           (exactObject(i.disposition, ["mode", "identityId"]) && i.disposition.mode === "reassign" && isCatalogId(i.disposition.identityId)));
     case "update-host": case "update-group":
       return exactObject(i, ["type", "id", "expectedRevision", "data"]) && target() && isData(i.data, i.type.slice(7) as "host" | "group", false);
-    case "delete-host": case "delete-tag":
+    case "delete-host": case "delete-tag": case "delete-tunnel-rule":
       return exactObject(i, ["type", "id", "expectedRevision"]) && target();
     case "delete-group":
       return exactObject(i, ["type", "id", "expectedRevision", "disposition"]) && target() &&
@@ -336,6 +382,7 @@ const fieldCodes: Record<CatalogFieldError["field"], readonly string[]> = {
   label: ["empty", "too-long", "control", "duplicate"], address: ["invalid", "too-long"], port: ["invalid"],
   parent: ["cycle", "not-found"], group: ["not-found"], identity: ["not-found"], tag: ["not-found"],
   username: ["empty", "too-long", "control"], keyId: ["not-found", "required"],
+  bindPort: ["invalid"], destinationPort: ["invalid"], destination: ["invalid", "too-long"], host: ["not-found"], tunnel: ["running"],
 };
 function isFieldError(v: unknown): v is CatalogFieldError {
   return exactObject(v, ["field", "code"]) && typeof v.field === "string" && Object.hasOwn(fieldCodes, v.field) &&

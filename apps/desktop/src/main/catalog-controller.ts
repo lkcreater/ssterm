@@ -21,7 +21,7 @@ interface Registration {
   send(state: CatalogState): void;
 }
 const unavailable: Body = {
-  availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [], snippets: [],
+  availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [], snippets: [], tunnelRules: [],
   secrets: { availability: "unavailable", cleanupPending: false }, lockEpoch: 0,
 };
 const rootDefaults: CatalogEffective = {
@@ -58,7 +58,7 @@ function project(snapshot: MetadataSnapshot, secretStore: boolean, now: number, 
     .filter((op) => op.action !== "delete" && (op.state === "reconcile" || op.state === "needs-input")).map((op) => op.ownerId));
   // Only main's import creates keys; any other algorithm could not be shown faithfully.
   const keys = snapshot.keys.filter((key) => isKeyAlgorithm(key.algorithm));
-  const counts = [views.value.length, snapshot.groups.length, snapshot.tags.length, snapshot.identities.length, keys.length, snapshot.snippets.length];
+  const counts = [views.value.length, snapshot.groups.length, snapshot.tags.length, snapshot.identities.length, keys.length, snapshot.snippets.length, snapshot.tunnelRules.length];
   const tagLabels = new Map(snapshot.tags.map((tag) => [tag.id, tag.label.normalize("NFC").toLowerCase()]));
   const snippetTags = new Map<string, string[]>();
   for (const row of snapshot.snippetTags) snippetTags.set(row.snippetId, [...(snippetTags.get(row.snippetId) ?? []), row.tagId]);
@@ -98,12 +98,29 @@ function project(snapshot: MetadataSnapshot, secretStore: boolean, now: number, 
       id: snippet.id, revision: snippet.revision, label: snippet.label,
       tagIds: (snippetTags.get(snippet.id) ?? []).sort(byTagLabel),
     }))).slice(0, MAX_CATALOG_ITEMS),
+    tunnelRules: byLabel(snapshot.tunnelRules.map((rule) => ({
+      id: rule.id, revision: rule.revision, label: rule.label, hostId: rule.hostId, bindAddress: rule.bindAddress,
+      bindPort: rule.bindPort, destinationHost: rule.destinationHost, destinationPort: rule.destinationPort,
+    }))).slice(0, MAX_CATALOG_ITEMS),
     lockEpoch,
   };
 }
 
 /** Stale targets are `conflict`; field problems the user can fix are returned as field errors. */
-function check(snapshot: MetadataSnapshot, intent: CatalogChangeIntent): "conflict" | CatalogFieldError[] {
+/** Hosts a delete removes (directly, or as a group subtree). */
+function removedHosts(snapshot: MetadataSnapshot, intent: CatalogChangeIntent): string[] {
+  if (intent.type === "delete-host") return [intent.id];
+  if (intent.type !== "delete-group" || intent.disposition.mode !== "subtree") return [];
+  const groups = new Set([intent.id]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const group of snapshot.groups)
+      if (group.parentId && groups.has(group.parentId) && !groups.has(group.id)) { groups.add(group.id); grew = true; }
+  }
+  return snapshot.hosts.filter((host) => host.groupId && groups.has(host.groupId)).map((host) => host.id);
+}
+
+function check(snapshot: MetadataSnapshot, intent: CatalogChangeIntent, active: (ruleId: string) => boolean = () => false): "conflict" | CatalogFieldError[] {
   const current = (rows: { id: string; revision: number }[], id: string, revision: number) =>
     rows.some((row) => row.id === id && row.revision === revision);
   if (intent.type === "set-host-tag") {
@@ -112,10 +129,27 @@ function check(snapshot: MetadataSnapshot, intent: CatalogChangeIntent): "confli
   }
   if ("expectedRevision" in intent) {
     const rows = intent.type.endsWith("-host") ? snapshot.hosts : intent.type.endsWith("-group") ? snapshot.groups
-      : intent.type.endsWith("-identity") ? snapshot.identities : snapshot.tags;
+      : intent.type.endsWith("-identity") ? snapshot.identities : intent.type.endsWith("-tunnel-rule") ? snapshot.tunnelRules : snapshot.tags;
     if (!current(rows, intent.id, intent.expectedRevision)) return "conflict";
   }
   const fields: CatalogFieldError[] = [];
+  // A running tunnel keeps the configuration it started with; its rule (or server) changes only after an explicit stop.
+  const affected = intent.type === "update-tunnel-rule" || intent.type === "delete-tunnel-rule" ? [intent.id]
+    : snapshot.tunnelRules.filter((rule) => removedHosts(snapshot, intent).includes(rule.hostId)).map((rule) => rule.id);
+  if (affected.some(active)) fields.push({ field: "tunnel", code: "running" });
+  if (intent.type === "create-tunnel-rule" || intent.type === "update-tunnel-rule") {
+    const data = intent.data;
+    for (const field of ["bindPort", "destinationPort"] as const)
+      if (field in data && !validatePort(data[field])) fields.push({ field, code: "invalid" });
+    if (typeof data.destinationHost === "string") {
+      if (data.destinationHost.trim().length > MAX_CATALOG_ADDRESS) fields.push({ field: "destination", code: "too-long" });
+      else {
+        try { normalizeEndpoint(data.destinationHost); } catch { fields.push({ field: "destination", code: "invalid" }); }
+      }
+    }
+    if (typeof data.hostId === "string" && !snapshot.hosts.some((host) => host.id === data.hostId))
+      fields.push({ field: "host", code: "not-found" });
+  }
   const data: Record<string, unknown> = "data" in intent ? intent.data : {};
   if (typeof data.label === "string") {
     const code = validateCatalogLabel(data.label);
@@ -178,11 +212,15 @@ export function createCatalogController(options: {
   cleanupQueued?: () => void;
   /** Test clock for `CLEANUP_STALL_MS`. */
   now?: () => number;
+  /** Whether a tunnel is starting, running or stopping for this rule; such rules (and their servers) are not edited. */
+  activeTunnel?: (ruleId: string) => boolean;
   /** The workspace lock counter; absent: never locked. */
   lockEpoch?: () => number;
 }) {
   const registrations = new Map<string, Registration>();
   const previews = new Map<string, string>();
+  // Rules a pending preview would change or delete; a tunnel started after prepare still blocks the apply.
+  const previewRules = new Map<string, string[]>();
   let disposed = false;
   let recheck: ReturnType<typeof setTimeout> | undefined;
   const body = (): Body => {
@@ -214,6 +252,7 @@ export function createCatalogController(options: {
   const discard = (key: string) => {
     const token = previews.get(key);
     previews.delete(key);
+    previewRules.delete(key);
     if (token) options.catalog.discard(token);
   };
   const revokeOwner = (owner: Owner) => {
@@ -240,7 +279,7 @@ export function createCatalogController(options: {
         discard(key);
         const snapshot = options.repository.snapshot();
         if (!snapshot.ok) return failure("unavailable");
-        const checked = check(snapshot.value, request.intent);
+        const checked = check(snapshot.value, request.intent, options.activeTunnel);
         if (checked === "conflict") return failure("conflict");
         if (checked.length) return { ok: true, value: { kind: "invalid", fields: checked } };
         const prepared = options.catalog.prepare(structuredClone(request.intent));
@@ -274,6 +313,9 @@ export function createCatalogController(options: {
           return failure("unavailable");
         }
         previews.set(key, token);
+        const intent = request.intent;
+        previewRules.set(key, intent.type === "update-tunnel-rule" || intent.type === "delete-tunnel-rule" ? [intent.id]
+          : snapshot.value.tunnelRules.filter((rule) => removedHosts(snapshot.value, intent).includes(rule.hostId)).map((rule) => rule.id));
         return { ok: true, value };
       } catch { return failure("unavailable"); }
     },
@@ -284,6 +326,12 @@ export function createCatalogController(options: {
       // Another owner's or a superseded token is indistinguishable from an expired one.
       if (previews.get(key) !== request.token) return failure("conflict");
       previews.delete(key);
+      const rules = previewRules.get(key) ?? [];
+      previewRules.delete(key);
+      if (rules.some((rule) => options.activeTunnel?.(rule))) {
+        options.catalog.discard(request.token);
+        return failure("conflict");
+      }
       try {
         const applied = options.catalog.apply(request.token);
         if (!applied.ok)

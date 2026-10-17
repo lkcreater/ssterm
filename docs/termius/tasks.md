@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-025 / T031: `DONE`** — [Local tunnel service](../tunnels.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 418/418, development E2E 57/58 (terminal-flow throughput ภายใต้โหลด, rerun 3/3 ผ่าน), packaged 55/55; ผู้ใช้สั่งทำ SST-026 และ SST-027 ต่อ; SST-028 และ DS05–DS06 ยัง `PAUSED`
+**SST-026 / T032: `DONE`** — [Tunnel rules and status UI](../tunnels.md#tunnel-rules-and-status-ui--sst-026) ผ่าน independent TEST/REVIEW/DELIVER: unit 421/421, development E2E 59/59, packaged 56/56 (SST-025 committed `e132845`); SST-027 กำลังทำ; SST-028 และ DS05–DS06 ยัง `PAUSED`
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -63,7 +63,7 @@
 - [x] **T029 / SST-023:** protected snippet persistence/editor/list/search
 - [x] **T030 / SST-024:** Paste composer/explicit Run, target capture และ sent/error status
 - [x] **T031 / SST-025:** local tunnel adapter/registry/bind conflicts/stop/resource cleanup
-- [ ] **T032 / SST-026:** tunnel rule CRUD/validation/start-stop-state and restart policy
+- [x] **T032 / SST-026:** tunnel rule CRUD/validation/start-stop-state and restart policy
 
 ## M5 — MVP acceptance และ package
 
