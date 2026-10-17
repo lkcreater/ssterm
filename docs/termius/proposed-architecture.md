@@ -1,6 +1,6 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**SST-028: automated release readiness `DONE`** — [release guide](../release/README.md): unit 422/422, development E2E 62/62, packaged 63/63; ad-hoc signed `dev.ssterm.desktop`, zip/SHA-256/manifest, notices, derived icon; T036 `DONE`; T035 manual checks และ DS06/T052 (16 px icon, Dock/Finder) ยังค้าง; Developer ID/notarization ต้องมี credentials (แยก gate); SST-027 manual Thai IME/VoiceOver ยังรอผู้ใช้
+**SST-031: remote and dynamic forwarding `DONE`** — [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031): remote `tcpip-forward` with assigned port, loopback SOCKS5, schema 2 migration with backup; unit 440/440, E2E 64/64, packaged 65/65. Later-scope range SST-029–038 authorized (ทำงาน SST-029 - SST-038 ให้จบ); next SST-030. SST-028 manual checks (T035, DS06/T052), SST-027 manual Thai IME/VoiceOver and Developer ID/notarization remain pending
 
 **ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 

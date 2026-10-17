@@ -23,6 +23,7 @@ import {
   type TunnelBindAddress,
   type TunnelState,
   type TunnelStatus,
+  type TunnelType,
 } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -54,6 +55,7 @@ export const tunnelErrorText: Record<TunnelErrorCode, string> = {
   "permission-denied": "macOS did not allow listening on this local port.",
   "address-unavailable": "This local address is unavailable on this Mac.",
   "bind-failed": "The local port could not be opened.",
+  "remote-bind-refused": "The server refused to listen on that address and port. It may be in use, or the server's settings (AllowTcpForwarding, GatewayPorts) do not allow it.",
   "rule-not-found": "This rule no longer exists.",
   "already-active": "This tunnel is already active.",
   "resource-limit": "Too many tunnels or sessions are open.",
@@ -93,6 +95,7 @@ function TunnelStatusView({ status }: { status?: TunnelStatus }) {
       {phase === "running" && status ? (
         <span className="text-muted-foreground">
           · {status.activeConnections} {status.activeConnections === 1 ? "connection" : "connections"}
+          {status.remotePort !== null ? <> · server port <span className="host-target" data-testid="tunnel-remote-port">{status.remotePort}</span></> : null}
         </span>
       ) : null}
     </span>
@@ -165,7 +168,7 @@ export function TunnelsPage({
         ) : null}
       </div>
       <p className="type-caption text-muted-foreground">
-        Local forwarding: connections to a port on this Mac travel over SSH, and the server opens the destination. Rules never start by themselves.
+        Local rules forward a port on this Mac to a destination the server opens; remote rules forward a port on the server to a destination this Mac opens; SOCKS rules give apps on this Mac a SOCKS5 proxy whose connections the server opens. Rules never start by themselves.
       </p>
       {state.truncated ? (
         <p className="type-caption text-muted-foreground">Showing the first {MAX_CATALOG_ITEMS.toLocaleString()} items of each kind.</p>
@@ -197,17 +200,35 @@ export function TunnelsPage({
             const host = hosts.get(rule.hostId);
             const status = statuses.get(rule.id);
             const phase = status?.phase;
-            const local = endpointText(rule.bindAddress, rule.bindPort);
-            const destination = endpointText(rule.destinationHost, rule.destinationPort);
+            const listen = endpointText(rule.bindAddress, rule.bindPort === 0 ? (status?.remotePort ?? 0) : rule.bindPort);
+            const destination = rule.destinationHost !== null && rule.destinationPort !== null ? endpointText(rule.destinationHost, rule.destinationPort) : "";
             return (
-              <li key={rule.id} className="tunnel-row" data-rule-id={rule.id} data-phase={phase ?? "stopped"}>
+              <li key={rule.id} className="tunnel-row" data-rule-id={rule.id} data-type={rule.type} data-phase={phase ?? "stopped"}>
                 <div className="grid min-w-0 gap-1">
-                  <span className="min-w-0 truncate font-medium" title={rule.label}>{rule.label}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate font-medium" title={rule.label}>{rule.label}</span>
+                    <Badge variant="outline">{typeText[rule.type]}</Badge>
+                  </span>
                   <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                    <span className="host-target" title="Local address on this Mac">{local}</span>
-                    <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="sr-only">forwards to</span>
-                    <span className="host-target" title="Opened by the server">{destination}</span>
+                    {rule.type === "remote" ? <span className="text-muted-foreground">Server</span> : null}
+                    <span className="host-target" title={rule.type === "remote" ? "Address the server listens on" : "Local address on this Mac"}>
+                      {rule.type === "remote" && rule.bindPort === 0 && status?.remotePort == null ? `${rule.bindAddress.includes(":") ? `[${rule.bindAddress}]` : rule.bindAddress}:assigned` : listen}
+                    </span>
+                    {rule.type === "dynamic" ? (
+                      <span className="text-muted-foreground">SOCKS5, destinations opened by the server</span>
+                    ) : (
+                      <>
+                        <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <span className="sr-only">forwards to</span>
+                        {rule.type === "remote" ? <span className="text-muted-foreground">this Mac</span> : null}
+                        <span className="host-target" title={rule.type === "remote" ? "Opened by this Mac" : "Opened by the server"}>{destination}</span>
+                      </>
+                    )}
+                    {rule.type === "remote" && (rule.bindAddress === "0.0.0.0" || rule.bindAddress === "::") ? (
+                      <Badge variant="outline" className="text-connection-connecting" title="The server listens on every address only if its GatewayPorts setting allows it">
+                        <TriangleAlertIcon data-icon="inline-start" />Public requested
+                      </Badge>
+                    ) : null}
                     <span className="text-muted-foreground">via</span>
                     <span className="min-w-0 truncate" title={host?.label}>{host?.label ?? "Missing server"}</span>
                     {host?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
@@ -270,9 +291,24 @@ export function TunnelsPage({
   );
 }
 
+const typeText: Record<TunnelType, string> = { local: "Local", remote: "Remote", dynamic: "SOCKS" };
+const typeItems = [
+  { value: "local", label: "Local: a port on this Mac" },
+  { value: "remote", label: "Remote: a port on the server" },
+  { value: "dynamic", label: "SOCKS: a proxy on this Mac" },
+] as const;
+const loopbackItems = [{ value: "127.0.0.1", label: "127.0.0.1 (IPv4 loopback)" }, { value: "::1", label: "::1 (IPv6 loopback)" }];
+const serverItems = [
+  ...loopbackItems,
+  { value: "0.0.0.0", label: "0.0.0.0 (every IPv4 address)" },
+  { value: "::", label: ":: (every IPv6 address)" },
+];
+const publicBind = (address: TunnelBindAddress) => address === "0.0.0.0" || address === "::";
+
 interface Draft {
   label: string;
   hostId: string;
+  type: TunnelType;
   bindAddress: TunnelBindAddress;
   bindPort: string;
   destinationHost: string;
@@ -306,10 +342,11 @@ function RuleEditor({
   const [draft, setDraft] = useState<Draft>(() => ({
     label: rule?.label ?? "",
     hostId: rule?.hostId ?? state.hosts[0]?.id ?? "",
+    type: rule?.type ?? "local",
     bindAddress: rule?.bindAddress ?? "127.0.0.1",
     bindPort: rule ? String(rule.bindPort) : "",
     destinationHost: rule?.destinationHost ?? "127.0.0.1",
-    destinationPort: rule ? String(rule.destinationPort) : "",
+    destinationPort: rule?.destinationPort != null ? String(rule.destinationPort) : "",
   }));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [problem, setProblem] = useState<{ title: string; text: string }>();
@@ -328,11 +365,17 @@ function RuleEditor({
     if (saving) return;
     const bindPort = portValue(draft.bindPort);
     const destinationPort = portValue(draft.destinationPort);
+    const remote = draft.type === "remote";
+    const forwarding = draft.type !== "dynamic";
+    const reach = remote ? "this Mac can reach" : "the server can reach";
     const local: FieldErrors = {
       label: labelError(draft.label),
-      bindPort: validPort(bindPort) ? undefined : "Enter a local port from 1 to 65535.",
-      destinationPort: validPort(destinationPort) ? undefined : "Enter a destination port from 1 to 65535.",
-      destination: draft.destinationHost.trim() ? addressError(draft.destinationHost)?.replace("host name or IP address", "host name or IP address the server can reach") : "Enter the host the server should connect to.",
+      bindPort: validPort(bindPort) || (remote && bindPort === 0) ? undefined
+        : remote ? "Enter a server port from 1 to 65535, or 0 to let the server choose." : "Enter a local port from 1 to 65535.",
+      destinationPort: !forwarding || validPort(destinationPort) ? undefined : "Enter a destination port from 1 to 65535.",
+      destination: !forwarding ? undefined : draft.destinationHost.trim()
+        ? addressError(draft.destinationHost)?.replace("host name or IP address", `host name or IP address ${reach}`)
+        : remote ? "Enter the host this Mac should connect to." : "Enter the host the server should connect to.",
       host: draft.hostId ? undefined : "Choose a server.",
     };
     setErrors(local);
@@ -340,8 +383,9 @@ function RuleEditor({
     setSaving(true);
     setProblem(undefined);
     const data = {
-      label: draft.label.trim(), hostId: draft.hostId, bindAddress: draft.bindAddress, bindPort,
-      destinationHost: draft.destinationHost.trim(), destinationPort,
+      label: draft.label.trim(), hostId: draft.hostId, type: draft.type,
+      bindAddress: remote || !publicBind(draft.bindAddress) ? draft.bindAddress : "127.0.0.1" as const, bindPort,
+      destinationHost: forwarding ? draft.destinationHost.trim() : null, destinationPort: forwarding ? destinationPort : null,
     };
     const intent = rule
       ? { type: "update-tunnel-rule" as const, id: rule.id, expectedRevision: rule.revision, data }
@@ -434,37 +478,83 @@ function RuleEditor({
             <FieldDescription>The SSH connection that carries the tunnel, with that server's identity and host-key checks.</FieldDescription>
             {errors.host ? <FieldError>{errors.host}</FieldError> : null}
           </Field>
+          <Field>
+            <FieldLabel htmlFor="tunnel-type">Type</FieldLabel>
+            <Select
+              items={[...typeItems]}
+              value={draft.type}
+              onValueChange={(next) => {
+                if (next !== "local" && next !== "remote" && next !== "dynamic") return;
+                // Public addresses exist only on the server side of a remote rule.
+                update({ type: next, ...(next !== "remote" && publicBind(draft.bindAddress) ? { bindAddress: "127.0.0.1" } : {}) });
+              }}
+            >
+              <SelectTrigger id="tunnel-type" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {typeItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              {draft.type === "local" ? "Apps on this Mac connect to a local port; the server opens the destination."
+                : draft.type === "remote" ? "The server listens on a port; each connection comes back over SSH and this Mac opens the destination."
+                  : "Apps on this Mac use a SOCKS5 proxy; the server resolves and opens each destination."}
+            </FieldDescription>
+          </Field>
+          {draft.type === "remote" && publicBind(draft.bindAddress) ? (
+            <Alert>
+              <TriangleAlertIcon />
+              <AlertTitle>Reachable from other machines</AlertTitle>
+              <AlertDescription>
+                Anyone who can reach the server on this port reaches the destination through this Mac. The server listens publicly only if its GatewayPorts setting allows it.
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">
-            <Field>
-              <FieldLabel htmlFor="tunnel-bind-address">Local address</FieldLabel>
+            <Field data-invalid={errors.bindAddress ? true : undefined}>
+              <FieldLabel htmlFor="tunnel-bind-address">{draft.type === "remote" ? "Server address" : "Local address"}</FieldLabel>
               <Select
-                items={[{ value: "127.0.0.1", label: "127.0.0.1 (IPv4 loopback)" }, { value: "::1", label: "::1 (IPv6 loopback)" }]}
+                items={draft.type === "remote" ? serverItems : loopbackItems}
                 value={draft.bindAddress}
-                onValueChange={(next) => { if (next === "127.0.0.1" || next === "::1") update({ bindAddress: next }); }}
+                onValueChange={(next) => {
+                  if (next === "127.0.0.1" || next === "::1" || (draft.type === "remote" && (next === "0.0.0.0" || next === "::"))) update({ bindAddress: next });
+                }}
               >
                 <SelectTrigger id="tunnel-bind-address" className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <SelectGroup>
-                    <SelectItem value="127.0.0.1">127.0.0.1 (IPv4 loopback)</SelectItem>
-                    <SelectItem value="::1">::1 (IPv6 loopback)</SelectItem>
+                    {(draft.type === "remote" ? serverItems : loopbackItems).map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <FieldDescription>Only apps on this Mac can connect.</FieldDescription>
+              <FieldDescription>
+                {draft.type === "remote" ? (publicBind(draft.bindAddress) ? "Other machines that reach the server can connect." : "Only programs on the server can connect.") : "Only apps on this Mac can connect."}
+              </FieldDescription>
+              {errors.bindAddress ? <FieldError>{errors.bindAddress}</FieldError> : null}
             </Field>
             <Field data-invalid={errors.bindPort ? true : undefined}>
-              <FieldLabel htmlFor="tunnel-bind-port">Local port</FieldLabel>
+              <FieldLabel htmlFor="tunnel-bind-port">{draft.type === "remote" ? "Server port" : "Local port"}</FieldLabel>
               <Input id="tunnel-bind-port" inputMode="numeric" value={draft.bindPort} autoComplete="off" onKeyDown={imeEnterGuard}
                 aria-invalid={errors.bindPort ? true : undefined} onChange={(event) => update({ bindPort: event.target.value })} />
+              {draft.type === "remote" ? <FieldDescription>0 lets the server choose.</FieldDescription> : null}
               {errors.bindPort ? <FieldError>{errors.bindPort}</FieldError> : null}
             </Field>
           </div>
-          <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">
+          {draft.type === "dynamic" ? (
+            <p className="type-caption text-muted-foreground" data-testid="socks-usage">
+              Set the app's proxy to SOCKS5 at this address and port (socks5h:// so names are resolved by the server). No proxy password is used; only apps on this Mac can connect.
+            </p>
+          ) : null}
+          <div className={draft.type === "dynamic" ? "hidden" : "grid grid-cols-[minmax(0,1fr)_8rem] gap-3"}>
             <Field data-invalid={errors.destination ? true : undefined}>
               <FieldLabel htmlFor="tunnel-destination">Destination host</FieldLabel>
               <Input id="tunnel-destination" value={draft.destinationHost} autoComplete="off" spellCheck={false} onKeyDown={imeEnterGuard}
                 aria-invalid={errors.destination ? true : undefined} onChange={(event) => update({ destinationHost: event.target.value })} />
-              <FieldDescription>Resolved and connected by the SSH server, not this Mac. 127.0.0.1 means the server itself.</FieldDescription>
+              <FieldDescription>
+                {draft.type === "remote" ? "Resolved and connected by this Mac. 127.0.0.1 means this Mac itself."
+                  : "Resolved and connected by the SSH server, not this Mac. 127.0.0.1 means the server itself."}
+              </FieldDescription>
               {errors.destination ? <FieldError>{errors.destination}</FieldError> : null}
             </Field>
             <Field data-invalid={errors.destinationPort ? true : undefined}>

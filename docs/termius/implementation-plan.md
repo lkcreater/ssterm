@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-028: automated release readiness `DONE`** — [release guide](../release/README.md): unit 422/422, development E2E 62/62, packaged 63/63; ad-hoc signed `dev.ssterm.desktop`, zip/SHA-256/manifest, notices, derived icon; T036 `DONE`; T035 manual checks และ DS06/T052 (16 px icon, Dock/Finder) ยังค้าง; Developer ID/notarization ต้องมี credentials (แยก gate); SST-027 manual Thai IME/VoiceOver ยังรอผู้ใช้
+**SST-031: remote and dynamic forwarding `DONE`** — [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031): remote `tcpip-forward` with assigned port, loopback SOCKS5, schema 2 migration with backup; unit 440/440, E2E 64/64, packaged 65/65. Later-scope range SST-029–038 authorized (ทำงาน SST-029 - SST-038 ให้จบ); next SST-030. SST-028 manual checks (T035, DS06/T052), SST-027 manual Thai IME/VoiceOver and Developer ID/notarization remain pending
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-028 manual/signing ยังค้าง
 

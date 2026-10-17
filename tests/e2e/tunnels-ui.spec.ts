@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
@@ -31,6 +32,32 @@ function get(port: number): Promise<{ status: number; fixtureBody: boolean }> {
     request.on("timeout", () => request.destroy());
     request.on("error", () => done({ status: 0, fixtureBody: false }));
   });
+}
+/** SOCKS5 CONNECT to 127.0.0.1:8080 through the dynamic rule, then one HTTP GET: the SOCKS reply and HTTP status. */
+function socksGet(port: number): Promise<{ reply: number; status: number }> {
+  return new Promise((done) => {
+    const socket = net.connect({ host: "127.0.0.1", port });
+    let buffer = Buffer.alloc(0);
+    let stage = 0;
+    const finish = () => {
+      socket.destroy();
+      done({ reply: buffer.length >= 4 ? buffer[3]! : -1, status: Number(/HTTP\/1\.[01] (\d{3})/u.exec(buffer.subarray(12).toString())?.[1] ?? 0) });
+    };
+    setTimeout(finish, 8_000);
+    socket.on("error", () => undefined);
+    socket.on("close", finish);
+    socket.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      if (stage === 0 && buffer.length >= 2) { stage = 1; socket.write(Buffer.from([5, 1, 0, 1, 127, 0, 0, 1, 0x1f, 0x90])); }
+      if (stage === 1 && buffer.length >= 12) { stage = 2; if (buffer[3] === 0) socket.write("GET / HTTP/1.0\r\n\r\n"); else finish(); }
+    });
+    socket.write(Buffer.from([5, 1, 0]));
+  });
+}
+/** A GET from inside the fixture container to the server-side listener of a remote rule. */
+function containerGet(container: string, port: number): Promise<string> {
+  const script = `import urllib.request\ntry:\n print(urllib.request.urlopen('http://127.0.0.1:${port}/', timeout=5).read().decode(), end='')\nexcept Exception as e:\n print('ERR', type(e).__name__, end='')`;
+  return new Promise((done) => execFile("docker", ["exec", container, "python3", "-c", script], { timeout: 20_000 }, (_error, stdout) => done(String(stdout))));
 }
 function ui(page: Page) {
   const root = page.getByTestId("tunnels-page");
@@ -136,6 +163,68 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
     const renamed = s.row("เว็บ fixture 2");
     await expect(renamed.locator(".tunnel-status")).toContainText("Running");
     expect(await get(port)).toEqual({ status: 200, fixtureBody: true });
+
+    // SOCKS rule: no destination fields, usage text, real HTTP through CONNECT.
+    const choose = async (label: string, option: string) => {
+      await s.editor.getByLabel(label, { exact: true }).click();
+      await page.getByRole("option", { name: option, exact: true }).click();
+    };
+    const socksPort = await freePort();
+    await s.root.getByRole("button", { name: "New rule" }).click();
+    await s.editor.getByLabel("Name", { exact: true }).fill("SOCKS proxy");
+    await choose("Type", "SOCKS: a proxy on this Mac");
+    await expect(s.editor.getByTestId("socks-usage")).toBeVisible();
+    await expect(s.editor.getByLabel("Destination port")).toBeHidden();
+    await s.editor.getByLabel("Local port").fill(String(socksPort));
+    await s.editor.getByRole("button", { name: "Save rule" }).click();
+    await expect(s.editor).toHaveCount(0);
+    const socksRow = s.row("SOCKS proxy");
+    await expect(socksRow).toHaveAttribute("data-type", "dynamic");
+    await expect(socksRow).toContainText("SOCKS5, destinations opened by the server");
+    await socksRow.getByRole("button", { name: "Start SOCKS proxy" }).click();
+    await expect(socksRow.locator(".tunnel-status")).toContainText("Running");
+    expect(await socksGet(socksPort)).toEqual({ reply: 0, status: 200 });
+
+    // Remote rule: a public server address warns; port 0 lets the server choose; a container GET reaches this Mac.
+    const local = http.createServer((_request, response) => response.end("ssterm-remote-ok\n"));
+    await new Promise<void>((done) => local.listen(0, "127.0.0.1", done));
+    try {
+      await s.root.getByRole("button", { name: "New rule" }).click();
+      await s.editor.getByLabel("Name", { exact: true }).fill("กลับมาที่ Mac");
+      await choose("Type", "Remote: a port on the server");
+      await expect(s.editor.getByText("Resolved and connected by this Mac.", { exact: false })).toBeVisible();
+      await choose("Server address", "0.0.0.0 (every IPv4 address)");
+      await expect(s.editor.getByText("Reachable from other machines")).toBeVisible();
+      await choose("Server address", "127.0.0.1 (IPv4 loopback)");
+      await expect(s.editor.getByText("Reachable from other machines")).toHaveCount(0);
+      await s.editor.getByLabel("Server port").fill("0");
+      await s.editor.getByLabel("Destination port").fill(String((local.address() as net.AddressInfo).port));
+      await s.editor.getByRole("button", { name: "Save rule" }).click();
+      await expect(s.editor).toHaveCount(0);
+      const remoteRow = s.row("กลับมาที่ Mac");
+      await expect(remoteRow).toContainText("127.0.0.1:assigned");
+      await remoteRow.getByRole("button", { name: "Start กลับมาที่ Mac" }).click();
+      await expect(remoteRow.locator(".tunnel-status")).toContainText("Running");
+      const assigned = Number(await remoteRow.getByTestId("tunnel-remote-port").textContent());
+      expect(assigned).toBeGreaterThan(0);
+      await expect(remoteRow).toContainText(`127.0.0.1:${assigned}`);
+      expect(await containerGet(lab.container, assigned)).toBe("ssterm-remote-ok\n");
+      await remoteRow.getByRole("button", { name: "Stop กลับมาที่ Mac" }).click();
+      await expect(remoteRow.locator(".tunnel-status")).toHaveText("Stopped");
+      expect(await containerGet(lab.container, assigned)).toMatch(/^ERR/u);
+      // Switching a SOCKS rule's type keeps the loopback address and needs a destination.
+      await socksRow.getByRole("button", { name: "Stop SOCKS proxy" }).click();
+      await expect(socksRow.locator(".tunnel-status")).toHaveText("Stopped");
+      await socksRow.getByRole("button", { name: "Edit SOCKS proxy" }).click();
+      await choose("Type", "Local: a port on this Mac");
+      await s.editor.getByLabel("Destination port").fill("");
+      await s.editor.getByRole("button", { name: "Save" , exact: true }).click();
+      await expect(s.editor.getByText("Enter a destination port from 1 to 65535.")).toBeVisible();
+      await s.editor.getByRole("button", { name: "Cancel" }).click();
+      await expect(socksRow).toHaveAttribute("data-type", "dynamic");
+    } finally {
+      await new Promise<void>((done) => local.close(() => done()));
+    }
 
     // 960×640: rows fit and status text meets 4.5:1.
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(960, 640));

@@ -33,11 +33,20 @@ test("shipped tunnel service forwards HTTP over a real OpenSSH host and closes l
     heldActive: true, stop: true, heldClosed: true, listenerAfterStop: false, sessionsAfterStop: 0,
     // Lock fails the tunnel and closes its listener; starting while locked is refused and leaves nothing bound.
     lockedState: "failed/locked", listenerAfterLock: false, startWhileLocked: "locked", listenerAfterLockedStart: false, unlocked: true,
+    // SOCKS5: real HTTP through CONNECT; a destination the server refuses gets a SOCKS failure reply, not a hang.
+    socksRunning: true, socksIpv4: { reply: 0, status: 200, fixtureBody: true }, socksDomain: { reply: 0, status: 200, fixtureBody: true },
+    socksStillRunning: "running/-", socksListenerAfterStop: false,
+    // Remote: assigned server port, a container-side GET reaches this Mac, stop removes the server listener.
+    remoteRunning: true, remoteAssigned: true, remoteGet: "ssterm-remote-ok\n", remoteCounted: 1, remoteAfterStop: true, remoteSessionsAfterStop: 0,
+    remotePrivileged: "failed/remote-bind-refused", remoteSessionsAfterRefusal: 0,
+    // The fixture permits listening on loopback only (PermitListen 127.0.0.1:*): a 0.0.0.0 request is the server's refusal.
+    remoteWildcard: "failed/remote-bind-refused", remoteWildcardLoopback: "none",
     // Quit (dispose) and transport loss leave no listener.
     listenerAfterDispose: false, sessionsAfterDispose: 0,
     httpBeforeLoss: 200, listenerAfterLoss: false,
     cleanup: { fixtureCleaned: true, leftoverItems: 0 }, labCleaned: true,
   });
+  expect([1, 2, 5]).toContain(receipt.socksRefused);
   expect(receipt.runningMs).toBeGreaterThanOrEqual(0);
   expect(receipt.lossFailedMs).toBeGreaterThanOrEqual(0);
   expect(["network", "timeout"]).toContain(receipt.lossError);

@@ -12,8 +12,9 @@ PermitEmptyPasswords no
 AuthorizedKeysFile .ssh/authorized_keys
 StrictModes yes
 PermitTTY yes
-AllowTcpForwarding local
+AllowTcpForwarding yes
 PermitOpen 127.0.0.1:8080
+PermitListen 127.0.0.1:* localhost:*
 GatewayPorts no
 X11Forwarding no
 AllowAgentForwarding no

@@ -1,13 +1,15 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "node:net";
 import { test, expect, changeCatalog, launchDesktop } from "./fixtures";
+import { downgradeToSchemaV1 } from "../fixtures/storage/schema-v1";
 
 // SST-028 upgrade fixture: a profile written by a different build (the development build) reopens in the packaged
-// build with storage and Keychain identifiers unchanged. No earlier release exists, so this proves identifier
-// stability across builds of the same schema, not a migration.
+// build with storage and Keychain identifiers unchanged. SST-031: the seeded store is rewritten to the schema-1
+// tunnel_rule layout first, so the packaged build runs the real v1→v2 migration (with its backup) on open.
 test.use({ trace: "off", screenshot: "off", video: "off" });
 const packaged = process.env.SSTERM_PACKAGED_EXECUTABLE;
 test.skip(!packaged, "packaged project only");
@@ -48,7 +50,15 @@ test("metadata written by another build reopens in the packaged build; Keychain-
     } finally {
       await seeded.close();
     }
-    expect(existsSync(join(profile, "metadata/catalog.sqlite")), "storage location is userData/metadata/catalog.sqlite").toBe(true);
+    const store = join(profile, "metadata/catalog.sqlite");
+    expect(existsSync(store), "storage location is userData/metadata/catalog.sqlite").toBe(true);
+    // The schema-1 layout: local-only, loopback-only tunnel rules (the table shipped before SST-031).
+    const v1 = new DatabaseSync(store);
+    try {
+      downgradeToSchemaV1(v1);
+    } finally {
+      v1.close();
+    }
 
     // 2. The packaged build reads it unchanged, starts nothing, then saves secrets under the same namespace.
     const first = await launchDesktop(profile, { secretNamespace: namespace });
@@ -75,9 +85,10 @@ test("metadata written by another build reopens in the packaged build; Keychain-
         };
       }, { body: BODY });
       expect(state).toEqual({
-        storage: { status: "ready", schemaVersion: 1 }, host: ["เซิร์ฟเวอร์อัปเกรด/PROD"], rules: ["Upgrade rule"],
+        storage: { status: "ready", schemaVersion: 2 }, host: ["เซิร์ฟเวอร์อัปเกรด/PROD"], rules: ["Upgrade rule"],
         fontSize: 17, runningTunnels: 0, password: "saved", snippet: "saved",
       });
+      expect(readdirSync(join(profile, "metadata")).filter((name) => /^catalog\.sqlite\.v1-.+\.backup$/u.test(name)), "a schema-1 backup is kept").toHaveLength(1);
       expect(await listening(18765), "rules never autostart after an upgrade").toBe(false);
       expect(first.errors).toEqual([]);
     } finally {

@@ -1,10 +1,11 @@
 import { strict as assert } from "node:assert";
 import { test, type TestContext } from "node:test";
 import { randomUUID } from "node:crypto";
-import { connect, createServer, type Server, type Socket } from "node:net";
+import { connect, createServer, Socket, type Server } from "node:net";
 import { PassThrough, type Duplex } from "node:stream";
 import { listenLocal } from "../../packages/adapters/src/local-listener.ts";
-import { createTunnelChannel, TUNNEL_MAX_OPENING } from "../../packages/adapters/src/tunnel.ts";
+import { createTunnelChannel, TUNNEL_MAX_OPENING, TUNNEL_MAX_REMOTE_LISTENERS } from "../../packages/adapters/src/tunnel.ts";
+import { socksHandshake } from "../../packages/services/src/socks5.ts";
 import { TunnelService, TUNNEL_MAX_CONNECTIONS, type TunnelSnapshot } from "../../packages/services/src/tunnels.ts";
 import type { SessionSnapshot } from "../../packages/services/src/sessions.ts";
 import type { TunnelForward, TunnelRule } from "../../packages/domain/src/index.ts";
@@ -97,7 +98,7 @@ test("tunnel channel: bounded opens, refused opens carry no server text, dispose
 });
 
 /** A registry stand-in: sessions become Ready on demand; forward() dials the destination directly. */
-function harness(t: TestContext, destinationPort: number) {
+function harness(t: TestContext, destinationPort: number, options: { dial?: (host: string, port: number) => Socket } = {}) {
   const ownerId = "window:1:1";
   const hostId = randomUUID();
   const rules: TunnelRule[] = [];
@@ -105,6 +106,10 @@ function harness(t: TestContext, destinationPort: number) {
   const sessions = new Map<string, { generation: number; state: SessionSnapshot["state"]; error?: string }>();
   const forwards: TunnelForward[] = [];
   let refuse = false;
+  let refuseListen = false;
+  /** Stand-ins for the server's remote listeners: a loopback server whose connections arrive as forwarded streams. */
+  const remoteListeners = new Map<string, Server[]>();
+  const listens: { address: string; port: number }[] = [];
   const snapshotOf = (id: string): SessionSnapshot => {
     const row = sessions.get(id)!;
     return { id, kind: "tunnel", generation: row.generation, hostId, state: row.state, cleanup: "none",
@@ -123,7 +128,12 @@ function harness(t: TestContext, destinationPort: number) {
       sessions.set(id, { generation: 1, state: "Connecting" });
       return { ok: true, value: snapshotOf(id) } as const;
     },
-    async close(_owner: string, id: string) { if (sessions.has(id)) set(id, "Closed"); return { ok: true, value: undefined } as const; },
+    async close(_owner: string, id: string) {
+      for (const server of remoteListeners.get(id) ?? []) server.close();
+      remoteListeners.delete(id);
+      if (sessions.has(id)) set(id, "Closed");
+      return { ok: true, value: undefined } as const;
+    },
     settled: async () => {},
     forget(_owner: string, id: string) { sessions.delete(id); return { ok: true, value: undefined } as const; },
     snapshot: () => [],
@@ -132,6 +142,14 @@ function harness(t: TestContext, destinationPort: number) {
       const row = sessions.get(id);
       if (!row || row.generation !== generation || row.state !== "Ready") return undefined;
       return {
+        listen: async (address: string, port: number, connection: (stream: Duplex, origin: { address: string; port: number }) => void) => {
+          listens.push({ address, port });
+          if (refuseListen) return { ok: false as const, code: "refused" as const };
+          const server = createServer((socket) => connection(socket, { address: "127.0.0.1", port: 1 }));
+          await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+          remoteListeners.set(id, [...(remoteListeners.get(id) ?? []), server]);
+          return { ok: true as const, port: (server.address() as { port: number }).port };
+        },
         forward: async (_origin: unknown, destination: { host: string; port: number }): Promise<TunnelForward> => {
           if (refuse) return { ok: false, code: "refused" };
           const stream = connect({ host: destination.host, port: destination.port });
@@ -147,6 +165,7 @@ function harness(t: TestContext, destinationPort: number) {
     registry: registry as never,
     repository: { snapshot: () => ({ ok: true, value: { tunnelRules: rules } }) as never },
     listen: listenLocal as never,
+    ...(options.dial ? { dial: options.dial, dialTimeoutMs: 100 } : {}),
   });
   t.after(() => service.dispose());
   const events: TunnelSnapshot[] = [];
@@ -159,7 +178,10 @@ function harness(t: TestContext, destinationPort: number) {
   };
   const ready = (id: string) => set(id, "Ready");
   const sessionOf = () => [...sessions.keys()].at(-1)!;
-  return { ownerId, service, registry, sessions, events, rule, ready, set, sessionOf, forwards, refuse: (value: boolean) => { refuse = value; } };
+  return {
+    ownerId, service, registry, sessions, events, rule, ready, set, sessionOf, forwards, listens, remoteListeners,
+    refuse: (value: boolean) => { refuse = value; }, refuseListen: (value: boolean) => { refuseListen = value; },
+  };
 }
 
 test("service: bind first, running only after Ready, bytes round-trip, stop closes listener, sockets and session", async (t) => {
@@ -346,4 +368,278 @@ test("service: a start waiting on an old teardown opens nothing for an owner rev
   assert.equal(h.sessions.size, 0, "no orphaned session");
   assert.deepEqual(h.service.snapshot(h.ownerId), []);
   assert.equal(h.service.active(rule.id), false);
+});
+
+/** A SOCKS5 client: greeting, CONNECT (with early payload in the same write), then the reply and echoed bytes. */
+async function socksRoundTrip(port: number, request: number[], payload: string): Promise<{ reply: number[]; echoed: string }> {
+  const socket = connect({ host: "127.0.0.1", port });
+  socket.on("error", () => undefined);
+  let buffer = Buffer.alloc(0);
+  return new Promise((done) => {
+    let stage = 0;
+    const finish = () => { socket.destroy(); done({ reply: [...buffer.subarray(2, 12)].slice(0, 2), echoed: buffer.subarray(12).toString() }); };
+    socket.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      if (stage === 0 && buffer.length >= 2) {
+        stage = 1;
+        socket.write(Buffer.concat([Buffer.from(request), Buffer.from(payload)]));
+      }
+      if (buffer.length >= 12 && (buffer[3] !== 0 || buffer.length >= 12 + Buffer.byteLength(payload))) finish();
+    });
+    socket.on("close", finish);
+    socket.write(Buffer.from([5, 1, 0]));
+  });
+}
+const connectRequest = (host: number[], port: number, type = 1) => [5, 1, 0, type, ...host, port >> 8, port & 0xff];
+
+test("socks5: no-auth CONNECT for IPv4, domain and IPv6; early bytes stay; other methods, commands and garbage are refused", async () => {
+  const pair = async () => {
+    const server = createServer();
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    const accepted = new Promise<Socket>((done) => server.once("connection", done));
+    const client = connect({ host: "127.0.0.1", port: (server.address() as { port: number }).port });
+    client.on("error", () => undefined);
+    const socket = await accepted;
+    server.close();
+    return { client, socket };
+  };
+  const read = (socket: Socket, length: number) => new Promise<number[]>((done) => {
+    let buffer = Buffer.alloc(0);
+    const on = (chunk: Buffer) => { buffer = Buffer.concat([buffer, chunk]); if (buffer.length >= length) { socket.off("data", on); done([...buffer]); } };
+    socket.on("data", on);
+  });
+  {
+    const { client, socket } = await pair();
+    const handshake = socksHandshake(socket);
+    client.write(Buffer.from([5, 2, 2, 0]));
+    assert.deepEqual(await read(client, 2), [5, 0]);
+    const name = [...Buffer.from("db.internal")];
+    client.write(Buffer.from([...connectRequest([name.length, ...name], 5432, 3), ...Buffer.from("early")]));
+    const request = await handshake;
+    assert.ok(request.ok, JSON.stringify(request));
+    assert.deepEqual([request.host, request.port], ["db.internal", 5432], "names go to the server unresolved");
+    const rest = await new Promise<string>((done) => { socket.once("data", (chunk) => done(chunk.toString())); socket.resume(); });
+    assert.equal(rest, "early");
+    request.reply(0);
+    assert.deepEqual((await read(client, 10)).slice(0, 2), [5, 0]);
+    client.destroy(); socket.destroy();
+  }
+  {
+    const { client, socket } = await pair();
+    const handshake = socksHandshake(socket);
+    client.write(Buffer.from([5, 1, 0, ...connectRequest([0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 443, 4)]));
+    const request = await handshake;
+    assert.ok(request.ok);
+    assert.equal(request.host, "2001:db8:0:0:0:0:0:1");
+    client.destroy(); socket.destroy();
+  }
+  for (const [bytes, expected] of [
+    [[5, 1, 2], [5, 0xff]], // username/password only
+    [[5, 1, 0, 5, 2, 0, 1, 127, 0, 0, 1, 0, 80], [5, 0, 5, 7]], // BIND
+    [[5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1, 0, 0], [5, 0, 5, 2]], // port 0
+    [[5, 1, 0, 5, 1, 0, 9], [5, 0, 5, 8]], // unknown address type
+    [[4, 1, 0, 80, 127, 0, 0, 1, 0], []], // SOCKS4
+  ] as const) {
+    const { client, socket } = await pair();
+    const handshake = socksHandshake(socket);
+    const received: number[] = [];
+    client.on("data", (chunk) => received.push(...chunk));
+    const closed = new Promise<void>((done) => client.once("close", () => done()));
+    client.write(Buffer.from(bytes));
+    assert.deepEqual(await handshake, { ok: false });
+    client.end();
+    await closed;
+    assert.deepEqual(received.slice(0, expected.length), [...expected], JSON.stringify(bytes));
+    socket.destroy();
+  }
+  {
+    const { client, socket } = await pair();
+    const started = Date.now();
+    assert.deepEqual(await socksHandshake(socket, 50), { ok: false }, "a silent client times out");
+    assert.ok(Date.now() - started < 1_000);
+    client.write(Buffer.alloc(0));
+    client.destroy();
+  }
+});
+
+test("service (dynamic): SOCKS5 on loopback forwards each request through the session; refusals reply and count", async (t) => {
+  const echo = await echoServer(t);
+  const h = harness(t, echo.port);
+  const rule = h.rule(await freePort(), { type: "dynamic", destinationHost: null, destinationPort: null });
+  assert.ok((await h.service.start(h.ownerId, rule.id)).ok);
+  h.ready(h.sessionOf());
+  assert.equal(h.service.snapshot(h.ownerId)[0]!.state, "running");
+  assert.deepEqual(await socksRoundTrip(rule.bindPort, connectRequest([127, 0, 0, 1], echo.port), "ผ่าน socks"), { reply: [5, 0], echoed: "ผ่าน socks" });
+  const name = [...Buffer.from("localhost")];
+  assert.equal((await socksRoundTrip(rule.bindPort, connectRequest([name.length, ...name], echo.port, 3), "by name")).echoed, "by name");
+  h.refuse(true);
+  assert.deepEqual((await socksRoundTrip(rule.bindPort, connectRequest([127, 0, 0, 1], echo.port), "x")).reply, [5, 5]);
+  await until(() => h.service.snapshot(h.ownerId)[0]!.failedConnections === 1, "refusal counted");
+  assert.equal(h.service.snapshot(h.ownerId)[0]!.totalConnections, 3);
+  await h.service.stop(h.ownerId, rule.id);
+  assert.equal(await listening(rule.bindPort), false);
+});
+
+test("service (remote): no local listener; running once the server listens (assigned port reported); connections reach the destination from this Mac", async (t) => {
+  const echo = await echoServer(t);
+  const h = harness(t, echo.port);
+  const rule = h.rule(0, { type: "remote", bindAddress: "0.0.0.0" });
+  const started = await h.service.start(h.ownerId, rule.id);
+  assert.ok(started.ok);
+  assert.equal(h.listens.length, 0, "nothing asked of the server before Ready");
+  h.ready(h.sessionOf());
+  await until(() => h.service.snapshot(h.ownerId)[0]?.state === "running", "running");
+  assert.deepEqual(h.listens, [{ address: "0.0.0.0", port: 0 }]);
+  const assigned = h.service.snapshot(h.ownerId)[0]!.remotePort!;
+  assert.ok(assigned > 0);
+  assert.equal(await roundTrip(assigned, "กลับมา remote"), "กลับมา remote");
+  const held = connect({ host: "127.0.0.1", port: assigned });
+  held.on("error", () => undefined);
+  const heldClosed = new Promise<void>((done) => held.once("close", () => done()));
+  held.write("x");
+  await until(() => h.service.snapshot(h.ownerId)[0]?.activeConnections === 1, "held");
+  const session = h.sessionOf();
+  await h.service.stop(h.ownerId, rule.id);
+  await heldClosed;
+  assert.equal(h.sessions.has(session), false);
+  await until(() => echo.sockets.size === 0, "destination sockets closed");
+  // An unreachable destination on this Mac closes the forwarded stream and is counted.
+  const dead = h.rule(0, { type: "remote", destinationPort: await freePort() });
+  assert.ok((await h.service.start(h.ownerId, dead.id)).ok);
+  h.ready(h.sessionOf());
+  await until(() => h.service.snapshot(h.ownerId).find((row) => row.ruleId === dead.id)?.state === "running", "dead running");
+  assert.equal(await roundTrip(h.service.snapshot(h.ownerId).find((row) => row.ruleId === dead.id)!.remotePort!, "x"), "");
+  await until(() => h.service.snapshot(h.ownerId).find((row) => row.ruleId === dead.id)?.failedConnections === 1, "dial failure counted");
+  // The server refusing the listener fails the tunnel with a fixed code and closes the session.
+  h.refuseListen(true);
+  const refused = h.rule(2222, { type: "remote" });
+  assert.ok((await h.service.start(h.ownerId, refused.id)).ok);
+  const refusedSession = h.sessionOf();
+  h.ready(refusedSession);
+  await until(() => h.service.snapshot(h.ownerId).find((row) => row.ruleId === refused.id)?.state === "failed", "failed");
+  assert.equal(h.service.snapshot(h.ownerId).find((row) => row.ruleId === refused.id)!.error, "remote-bind-refused");
+  await until(() => !h.sessions.has(refusedSession), "refused session closed");
+});
+
+test("tunnel channel: remote listeners (assigned port, bounded, refusals), routed connections, dispose unforwards and destroys", async () => {
+  const forwardIns: ((error: Error | undefined, port: number) => void)[] = [];
+  const unforwarded: string[] = [];
+  const client = {
+    forwardOut: () => undefined,
+    forwardIn: (_address: string, _port: number, callback: (error: Error | undefined, port: number) => void) => { forwardIns.push(callback); },
+    unforwardIn: (address: string, port: number) => { unforwarded.push(`${address}:${port}`); },
+  };
+  const channel = createTunnelChannel(client, Promise.resolve());
+  const received: Duplex[] = [];
+  const first = channel.listen("127.0.0.1", 0, (stream) => received.push(stream));
+  forwardIns[0]!(undefined, 40_001);
+  assert.deepEqual(await first, { ok: true, port: 40_001 });
+  const refused = channel.listen("0.0.0.0", 80, () => undefined);
+  forwardIns[1]!(new Error("remote port forwarding failed for listen port 80"), 0);
+  assert.deepEqual(await refused, { ok: false, code: "refused" }, "no server text");
+  const accepted = new PassThrough();
+  channel.incoming({ destIP: "127.0.0.1", destPort: 40_001, srcIP: "10.0.0.2", srcPort: 5 }, () => accepted, () => assert.fail("rejected"));
+  assert.deepEqual(received, [accepted]);
+  let rejected = 0;
+  channel.incoming({ destIP: "127.0.0.1", destPort: 40_002, srcIP: "", srcPort: 0 }, () => assert.fail("accepted a stranger") as never, () => { rejected += 1; });
+  assert.equal(rejected, 1, "connections to a port we do not listen on are refused");
+  for (let i = 1; i < TUNNEL_MAX_REMOTE_LISTENERS; i += 1) {
+    const more = channel.listen("127.0.0.1", 50_000 + i, () => undefined);
+    forwardIns.at(-1)!(undefined, 0);
+    assert.equal((await more).ok, true);
+  }
+  assert.deepEqual(await channel.listen("127.0.0.1", 1, () => undefined), { ok: false, code: "resource-limit" });
+  const pending = channel.listen("::1", 3000, () => undefined);
+  channel.dispose();
+  assert.equal(accepted.destroyed, true);
+  assert.ok(unforwarded.includes("127.0.0.1:40001"));
+  assert.equal(unforwarded.length, TUNNEL_MAX_REMOTE_LISTENERS);
+  void pending;
+  assert.deepEqual(await channel.listen("127.0.0.1", 2, () => undefined), { ok: false, code: "closed" });
+});
+
+test("socks5: early data larger than the header bound after a complete request is kept, not refused", async () => {
+  const server = createServer();
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const accepted = new Promise<Socket>((done) => server.once("connection", done));
+  const client = connect({ host: "127.0.0.1", port: (server.address() as { port: number }).port });
+  client.on("error", () => undefined);
+  const socket = await accepted;
+  server.close();
+  const handshake = socksHandshake(socket);
+  const early = Buffer.alloc(2_000, 0x16); // e.g. a TLS ClientHello sent with the request
+  client.write(Buffer.concat([Buffer.from([5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1, 1, 187]), early]));
+  const request = await handshake;
+  assert.ok(request.ok);
+  let kept = 0;
+  socket.on("data", (chunk) => { kept += chunk.length; });
+  socket.resume();
+  await until(() => kept === early.length, "early bytes kept");
+  client.destroy(); socket.destroy();
+});
+
+test("tunnel channel: pending listens count toward the cap; port-0 confirmations without a port and dead transports are not refusals", async () => {
+  const forwardIns: ((error: Error | undefined, port: number) => void)[] = [];
+  let throwing = false;
+  const client = {
+    forwardOut: () => undefined,
+    forwardIn: (_address: string, _port: number, callback: (error: Error | undefined, port: number) => void) => {
+      if (throwing) throw new Error("Not connected");
+      forwardIns.push(callback);
+    },
+    unforwardIn: () => undefined,
+  };
+  const channel = createTunnelChannel(client, Promise.resolve());
+  const pending = Array.from({ length: TUNNEL_MAX_REMOTE_LISTENERS }, (_v, i) => channel.listen("127.0.0.1", 41_000 + i, () => undefined));
+  assert.deepEqual(await channel.listen("127.0.0.1", 1, () => undefined), { ok: false, code: "resource-limit" }, "pending requests are counted");
+  forwardIns[0]!(undefined, 0);
+  assert.equal((await pending[0]!).ok, true);
+  forwardIns[1]!(new Error("x"), 0);
+  assert.deepEqual(await pending[1], { ok: false, code: "refused" });
+  const zero = channel.listen("127.0.0.1", 0, () => undefined);
+  forwardIns.at(-1)!(undefined, 0);
+  assert.deepEqual(await zero, { ok: false, code: "refused" }, "an assigned port of 0 is unusable");
+  throwing = true;
+  assert.deepEqual(await channel.listen("127.0.0.1", 2, () => undefined), { ok: false, code: "closed" });
+  channel.dispose();
+});
+
+test("service (remote): a connection in the same tick as the confirmation is served; an unanswered dial times out and is counted", async (t) => {
+  const echo = await echoServer(t);
+  const blackholes: Socket[] = [];
+  let blackhole = false;
+  const h = harness(t, echo.port, { dial: (host, port) => {
+    if (!blackhole) return connect({ host, port });
+    const socket = new Socket(); // never connects
+    blackholes.push(socket);
+    return socket;
+  } });
+  const rule = h.rule(0, { type: "remote" });
+  assert.ok((await h.service.start(h.ownerId, rule.id)).ok);
+  const session = h.sessionOf();
+  // Wrap listen so the server delivers a connection before the confirmation reaches the service.
+  const original = h.registry.tunnel.bind(h.registry);
+  let early: Duplex | undefined;
+  h.registry.tunnel = ((owner: string, id: string, generation: number) => {
+    const real = original(owner, id, generation);
+    if (!real) return real;
+    return { ...real, listen: async (address: string, port: number, connection: (stream: Duplex, origin: { address: string; port: number }) => void) => {
+      const result = await real.listen(address, port, connection);
+      early = new PassThrough();
+      connection(early, { address: "127.0.0.1", port: 1 });
+      return result;
+    } };
+  }) as never;
+  h.ready(session);
+  await until(() => h.service.snapshot(h.ownerId)[0]?.state === "running", "running");
+  assert.ok(early);
+  assert.equal(h.service.snapshot(h.ownerId)[0]!.failedConnections, 0, "the same-tick connection was not refused");
+  early!.destroy();
+  blackhole = true;
+  const port = h.service.snapshot(h.ownerId)[0]!.remotePort!;
+  const client = connect({ host: "127.0.0.1", port });
+  client.on("error", () => undefined);
+  await until(() => h.service.snapshot(h.ownerId)[0]!.failedConnections === 1, "dial timeout counted");
+  await until(() => blackholes.every((socket) => socket.destroyed), "the dial was abandoned");
+  client.destroy();
 });

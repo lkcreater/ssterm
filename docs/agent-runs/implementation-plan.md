@@ -998,3 +998,25 @@ SST-026/T032 DONE. [Tunnels UI](../tunnels.md#tunnel-rules-and-status-ui--sst-02
 ## Later-scope authorization — SST-029 to SST-038 (2026-10-17)
 
 The user instructed “ทำงาน SST-029 - SST-038 ให้จบ” and chose (question round): **SST-029** macOS local terminal (node-pty) plus a declared Windows/Linux capability matrix, no untested builds; **SST-034** opt-in local logs, history and autocomplete with retention/export/delete, AI documented as a privacy spec only (nothing sent); **SST-035/037** a self-hosted sync server in this repository (Node + SQLite, Docker/local tests), end-to-end encrypted, then team ACL/revocation on top, with no hosting or deployment; **SST-038** Mosh through an owned Docker fixture and FIDO as investigation/ADR only (no hardware key here); loop per ticket: TEST → REVIEW → local commit → next, no push. Order by dependencies: 031, 030, 033, 032, 029, 034, 036, 038, 035, 037. Each ticket records its own plan section before code.
+
+## SST-031 execution plan — remote and dynamic forwarding (2026-10-17)
+
+**Scope (T039):** remote (`tcpip-forward`) and dynamic (SOCKS5) rules beside local ones, same ownership/stop/lock/quit contract as SST-025/026. Recorded during implementation (the storage step started before this section was written); the content below is what was built and verified.
+
+| ID | Files | Decision / validation |
+|---|---|---|
+| D1 domain + storage | `packages/domain`, `packages/adapters/src/{schema,schema-migrations,migrations,index,validation}.ts` | Schema v2 rebuilds `tunnel_rule`: `type local\|remote\|dynamic`; `0.0.0.0`/`::` and port 0 (server-assigned) only for remote; dynamic has no destination. First real migration: verified backup next to the store, step declares `preservesProtection` (snippet ciphertext/secret refs untouched). Unit: real v1 store with a protected vault + encrypted snippet. |
+| D2 transport | `packages/adapters/src/{tunnel,ssh}.ts` | `listen()` via ssh2 `forwardIn`/`unforwardIn`; ssh2 `tcp connection` routed only to our listeners (others rejected); ≤ 4 server listeners; dispose unforwards. No server text in errors. |
+| D3 SOCKS5 | `packages/services/src/socks5.ts` | No-auth, CONNECT only (BIND/UDP refused), IPv4/domain/IPv6, names unresolved on this Mac (socks5h), 10 s handshake, 600-byte header bound, early bytes kept. Loopback only. |
+| D4 service | `packages/services/src/tunnels.ts` | Remote: no local listener; running only after the server confirms (assigned port in status); a refusal → `remote-bind-refused`; this Mac dials the destination. Dynamic: per-connection SOCKS target, SOCKS failure replies. |
+| D5 contracts/main/UI | `packages/contracts`, `apps/desktop/src/main/{catalog-controller,tunnels}.ts`, `tunnels-page.tsx` | Type selector; per-type field errors from main; public-bind warning + GatewayPorts text; SOCKS usage text; assigned server port shown. |
+| D6 lab | `tests/fixtures/ssh/sshd_config`, `tests/fixtures/tunnel/ssh.cjs`, E2E specs | Fixture: `AllowTcpForwarding yes`, `PermitOpen 127.0.0.1:8080`, `PermitListen 127.0.0.1:* localhost:*`, `GatewayPorts no`. Image rebuilt by layering the new config on the existing `m0` (no network for apt here). |
+
+**Verification:** `npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e`, `npm run package:mac`, `npm run test:packaged`, `git diff --check`.
+**Rollback:** revert the commit; a store already migrated to v2 is refused by older builds (`unsupported-schema`); the `catalog.sqlite.v1-*.backup` written before migrating restores it.
+
+**SST-031 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE (recorded during implementation) · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+### Final SST-031 record — 2026-10-17
+
+[Tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031), [delivery](sst-031-delivery.md). typecheck PASS; unit 440/440; build PASS; E2E 64/64; package PASS; packaged 65/65. Review: no critical; the pending-journal upgrade high fixed; mediums and actionable lows fixed.

@@ -1,4 +1,4 @@
-import { normalizeEndpoint, normalizeLabel, normalizeTag, type MetadataSnapshot, type MetadataChange, type Entity, type Id, type SecretKind, type SecretOperation } from '@ssterm/domain';
+import { normalizeEndpoint, normalizeLabel, normalizeTag, tunnelRuleProblem, type MetadataSnapshot, type MetadataChange, type Entity, type Id, type SecretKind, type SecretOperation } from '@ssterm/domain';
 import { fail } from './errors.ts';
 import { validHostKeyIdentity } from './host-key.ts';
 import { ENVELOPE_OVERHEAD, ENVELOPE_VERSION, MAX_ENVELOPE, PROTECTION_FORMAT } from './protection.ts';
@@ -32,7 +32,7 @@ const required = {
   group: ['label'],
   identity: ['label', 'username', 'method'],
   tag: ['label'],
-  'tunnel-rule': ['label', 'hostId', 'bindPort', 'destinationHost', 'destinationPort'],
+  'tunnel-rule': ['label', 'hostId', 'bindPort'],
   key: ['label', 'algorithm', 'publicKey', 'fingerprint', 'privateKeyRef'],
   snippet: ['label', 'bodyEnvelope', 'envelopeVersion', 'keyRef', 'protectionFormat']
 };
@@ -63,7 +63,9 @@ const defaults = {
   tag: {},
   'tunnel-rule': {
     type: 'local',
-    bindAddress: '127.0.0.1'
+    bindAddress: '127.0.0.1',
+    destinationHost: null,
+    destinationPort: null
   },
   key: {
     passphraseRef: null
@@ -95,8 +97,16 @@ function normalizeData(kind: keyof typeof fields, data: Record<string, unknown>,
           fail('invalid-request');
         }
         break;
-      case 'address':
       case 'destinationHost':
+        // Dynamic (SOCKS) rules have no fixed destination.
+        if (value === null) break;
+        try {
+          result[key] = normalizeEndpoint(value as string);
+        } catch {
+          fail('invalid-request');
+        }
+        break;
+      case 'address':
         try {
           result[key] = normalizeEndpoint(value as string);
         } catch {
@@ -160,14 +170,17 @@ function normalizeData(kind: keyof typeof fields, data: Record<string, unknown>,
         } else fail('invalid-request');
         break;
       case 'bindPort':
+        // 0 asks the server to assign a port (remote rules only; checked per type in the graph).
+        integer(value, 0, 65535);
+        break;
       case 'destinationPort':
-        integer(value, 1, 65535);
+        if (value !== null) integer(value, 1, 65535);
         break;
       case 'type':
-        oneOf(value, ['local']);
+        oneOf(value, ['local', 'remote', 'dynamic']);
         break;
       case 'bindAddress':
-        oneOf(value, ['127.0.0.1', '::1']);
+        oneOf(value, ['127.0.0.1', '::1', '0.0.0.0', '::']);
         break;
       case 'theme':
         oneOf(value, ['dark']);
@@ -616,7 +629,8 @@ export function validateGraph(s: MetadataSnapshot): void {
   }
   validateJournal(s, utc);
   for (const row of s.tunnelRules) {
-    if (!has(s.hosts, row.hostId)) fail('constraint');
+    if (!has(s.hosts, row.hostId) || tunnelRuleProblem(row)) fail('constraint');
+    if (row.destinationHost === null) continue;
     try {
       if (normalizeEndpoint(row.destinationHost) !== row.destinationHost) fail('constraint');
     } catch {

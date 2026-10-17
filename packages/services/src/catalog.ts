@@ -146,7 +146,7 @@ const fields = {
   group: ["label", "parentId", "port", "auth"],
   identity: ["label", "username", "method", "keyId"],
   tag: ["label"],
-  "tunnel-rule": ["label", "hostId", "bindAddress", "bindPort", "destinationHost", "destinationPort"],
+  "tunnel-rule": ["label", "hostId", "type", "bindAddress", "bindPort", "destinationHost", "destinationPort"],
 } as const;
 function intent(value: unknown): CatalogIntent {
   record(

@@ -251,6 +251,11 @@ export function createSshConnection(options: {
     const exit = ready ? terminal?.exited() : undefined;
     if (exit) options.ended(exit); else fail("network");
   });
+  // Connections to a server-side listener (remote forwarding) belong to the tunnel; anything else is refused.
+  client.on("tcp connection", (info: { destIP: string; destPort: number; srcIP: string; srcPort: number }, accept: () => unknown, reject: () => void) => {
+    if (tunnel && live()) tunnel.incoming(info, accept as never, reject);
+    else { try { reject(); } catch { /* gone */ } }
+  });
   client.on("ready", () => {
     clearCredential();
     if (!live()) return;

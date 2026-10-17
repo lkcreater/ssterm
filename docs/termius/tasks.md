@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-028: automated release readiness `DONE`** — [release guide](../release/README.md): unit 422/422, development E2E 62/62, packaged 63/63; ad-hoc signed `dev.ssterm.desktop`, zip/SHA-256/manifest, notices, derived icon; T036 `DONE`; T035 manual checks และ DS06/T052 (16 px icon, Dock/Finder) ยังค้าง; Developer ID/notarization ต้องมี credentials (แยก gate); SST-027 manual Thai IME/VoiceOver ยังรอผู้ใช้
+**SST-031: remote and dynamic forwarding `DONE`** — [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031): remote `tcpip-forward` with assigned port, loopback SOCKS5, schema 2 migration with backup; unit 440/440, E2E 64/64, packaged 65/65. Later-scope range SST-029–038 authorized (ทำงาน SST-029 - SST-038 ให้จบ); next SST-030. SST-028 manual checks (T035, DS06/T052), SST-027 manual Thai IME/VoiceOver and Developer ID/notarization remain pending
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -80,7 +80,7 @@
 
 - [ ] **T037 / SST-029:** local PTY and additional OS capability/packaging matrix
 - [ ] **T038 / SST-030:** jump host/multi-hop/proxy resolver, per-hop auth/trust/cleanup
-- [ ] **T039 / SST-031:** remote/dynamic tunnel capabilities and UI
+- [x] **T039 / SST-031:** remote/dynamic tunnel capabilities and UI — DONE ([tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031), [delivery](../agent-runs/sst-031-delivery.md))
 - [ ] **T040 / SST-032:** remote editing/stale version/temp cleanup/advanced transfers
 - [ ] **T041 / SST-033:** workspace templates/explicit broadcast/multi-host snippet target orchestration
 - [ ] **T042 / SST-034:** logs/history/autocomplete/AI privacy and implementation scope

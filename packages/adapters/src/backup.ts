@@ -11,11 +11,15 @@ export function reconciled(db: DatabaseSync): void {
   if (db.prepare("SELECT count(*) AS n FROM secret_operation WHERE state<>'complete'").get()?.n !== 0) fail('recovery-required');
 }
 /** Reserves both artifacts exclusively. The SQLite online backup includes committed WAL pages. */
-export async function createBackup(db: DatabaseSync, source: string, destination: string): Promise<BackupManifest> {
+/**
+ * `allowPendingJournal` is only for the pre-migration copy: a byte-for-byte snapshot taken before a step that never
+ * touches the secret journal, so an unreconciled journal is carried over unchanged for runtime reconciliation.
+ */
+export async function createBackup(db: DatabaseSync, source: string, destination: string, options: { allowPendingJournal?: boolean } = {}): Promise<BackupManifest> {
   if (typeof destination !== 'string' || !isAbsolute(destination) || destination.includes('\0')) fail('invalid-request');
   if (canonicalDestination(destination) === canonicalDestination(source)) fail('invalid-request');
   writable(destination);
-  reconciled(db);
+  if (!options.allowPendingJournal) reconciled(db);
   const sidecar = `${destination}.manifest.json`;
   const owned: {
     path: string;
@@ -48,7 +52,7 @@ export async function createBackup(db: DatabaseSync, source: string, destination
     let snapshot;
     try {
       if (check.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok' || check.prepare('PRAGMA foreign_key_check').all().length) fail('corrupt');
-      reconciled(check);
+      if (!options.allowPendingJournal) reconciled(check);
       snapshot = readSnapshot(check);
     } finally {
       check.close();

@@ -9,16 +9,20 @@ import { readSnapshot, reserveNewIds, writeSnapshot } from './records.ts';
 import { createBackup } from './backup.ts';
 import { ENVELOPE_VERSION, PROTECTION_FORMAT } from './protection.ts';
 import { privateStore, writable } from './files.ts';
+import { runMigrations } from './migrations.ts';
+import { MIGRATIONS } from './schema-migrations.ts';
 export { seal, open, ProtectionFault, PROTECTION_FORMAT, ENVELOPE_VERSION, CONTENT_KEY_BYTES, MAX_BODY } from './protection.ts';
 export type { MetadataRepository, MetadataSnapshot, MetadataChange, StoreResult, StorageErrorCode, BackupManifest } from '@ssterm/domain';
 function foreignKeys(db: DatabaseSync): void {
   db.exec('PRAGMA foreign_keys=ON');
   if (db.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 1) fail('unavailable');
 }
-function preflight(db: DatabaseSync): void {
+/** Returns the stored schema version. An older (migratable) store gets only the identity and integrity checks. */
+function preflight(db: DatabaseSync, allowOlder = false): number {
   if (db.prepare('PRAGMA application_id').get()?.application_id !== APPLICATION_ID) fail('foreign-database');
   const version = db.prepare('PRAGMA user_version').get()?.user_version;
-  if (version !== SCHEMA_VERSION) fail('unsupported-schema');
+  if (typeof version !== 'number' || version > SCHEMA_VERSION || version < 1) fail('unsupported-schema');
+  if (version < SCHEMA_VERSION && !allowOlder) fail('unsupported-schema');
   if (db.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok' || db.prepare('PRAGMA foreign_key_check').all().length) fail('corrupt');
   let manifest;
   try {
@@ -27,6 +31,7 @@ function preflight(db: DatabaseSync): void {
     fail('foreign-database');
   }
   if (manifest.length !== 1 || manifest[0]?.singleton !== 1 || manifest[0]?.identity !== IDENTITY) fail('foreign-database');
+  if (version < SCHEMA_VERSION) return version;
   let snapshot;
   try {
     snapshot = readSnapshot(db);
@@ -40,6 +45,7 @@ function preflight(db: DatabaseSync): void {
   } catch {
     fail('corrupt');
   }
+  return version;
 }
 class Repository implements MetadataRepository {
   private closed = false;
@@ -131,6 +137,7 @@ export async function openMetadata(request: {
     const path = request.path;
     if (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0')) fail('invalid-request');
     let fresh = false;
+    let stored = SCHEMA_VERSION;
     try {
       const stat = lstatSync(path);
       if (!stat.isFile() || stat.isSymbolicLink()) fail('foreign-database');
@@ -146,7 +153,7 @@ export async function openMetadata(request: {
         foreignKeys(inspect);
         inspect.exec('BEGIN');
         try {
-          preflight(inspect);
+          stored = preflight(inspect, true);
         } finally {
           inspect.exec('ROLLBACK');
         }
@@ -165,7 +172,16 @@ export async function openMetadata(request: {
     });
     foreignKeys(db);
     // Repeat inspection on the writable handle before any persistent PRAGMA, defending replacement races.
-    if (!fresh) preflight(db);
+    if (!fresh && preflight(db, true) < SCHEMA_VERSION) {
+      // Upgrade in place after a verified backup next to the store (kept for the user; never deleted automatically).
+      const migrated = await runMigrations({
+        db, path, targetVersion: SCHEMA_VERSION, steps: MIGRATIONS,
+        backupDestination: `${path}.v${stored}-${new Date().toISOString().replace(/[:.]/gu, '-')}.backup`,
+      });
+      // fail() reaches the catch below, which closes the writable handle.
+      if (!migrated.ok) fail(migrated.error.code);
+      preflight(db);
+    }
     if (fresh) initialize(db);
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=200');
     return success(new Repository(db, path));

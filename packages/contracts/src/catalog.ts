@@ -69,17 +69,23 @@ export interface CatalogKey {
   passphraseSaved: boolean;
   pending: boolean;
 }
-export type TunnelBindAddress = "127.0.0.1" | "::1";
-/** A saved local forwarding rule. Saving never starts it; the destination is resolved by the SSH server. */
+/** `0.0.0.0`/`::` only for remote rules (the server listens publicly, which also needs GatewayPorts on the server). */
+export type TunnelBindAddress = "127.0.0.1" | "::1" | "0.0.0.0" | "::";
+export type TunnelType = "local" | "remote" | "dynamic";
+/**
+ * A saved forwarding rule; saving never starts it. local: this Mac listens, the server opens the destination.
+ * remote: the server listens (port 0 = assigned) and this Mac opens the destination. dynamic: SOCKS5 on this Mac.
+ */
 export interface CatalogTunnelRule {
   id: string;
   revision: number;
   label: string;
   hostId: string;
+  type: TunnelType;
   bindAddress: TunnelBindAddress;
   bindPort: number;
-  destinationHost: string;
-  destinationPort: number;
+  destinationHost: string | null;
+  destinationPort: number | null;
 }
 /** Metadata only: the body, its ciphertext and the key reference never cross IPC. */
 export interface CatalogSnippet {
@@ -129,10 +135,11 @@ export interface CatalogGroupData {
 export interface CatalogTunnelRuleData {
   label: string;
   hostId: string;
+  type?: TunnelType;
   bindAddress?: TunnelBindAddress;
   bindPort: number;
-  destinationHost: string;
-  destinationPort: number;
+  destinationHost?: string | null;
+  destinationPort?: number | null;
 }
 export interface CatalogIdentityData {
   label: string;
@@ -183,7 +190,7 @@ export type CatalogFieldError =
   | { field: "group" | "identity" | "tag"; code: "not-found" }
   | { field: "username"; code: "empty" | "too-long" | "control" }
   | { field: "keyId"; code: "not-found" | "required" }
-  | { field: "bindPort" | "destinationPort"; code: "invalid" }
+  | { field: "bindPort" | "destinationPort" | "bindAddress"; code: "invalid" }
   | { field: "destination"; code: "invalid" | "too-long" }
   | { field: "host"; code: "not-found" }
   /** A starting, running or stopping tunnel uses this rule (or a rule of this server); stop it first. */
@@ -296,11 +303,15 @@ function isCatalogKey(v: unknown): v is CatalogKey {
     typeof v.publicKey === "string" && v.publicKey.length <= 16_384 && v.publicKey.startsWith(`${v.algorithm} `) &&
     /^[a-z0-9-]+ [A-Za-z0-9+/]+={0,2}$/u.test(v.publicKey) && typeof v.passphraseSaved === "boolean" && typeof v.pending === "boolean";
 }
+const tunnelTypes: readonly unknown[] = ["local", "remote", "dynamic"];
+const bindAddresses: readonly unknown[] = ["127.0.0.1", "::1", "0.0.0.0", "::"];
 function isCatalogTunnelRule(v: unknown): v is CatalogTunnelRule {
-  return exactObject(v, ["id", "revision", "label", "hostId", "bindAddress", "bindPort", "destinationHost", "destinationPort"]) &&
-    isCatalogId(v.id) && positive(v.revision) && label(v.label) && isCatalogId(v.hostId) &&
-    (v.bindAddress === "127.0.0.1" || v.bindAddress === "::1") && validatePort(v.bindPort) &&
-    text(v.destinationHost, MAX_CATALOG_ADDRESS) && validatePort(v.destinationPort);
+  if (!exactObject(v, ["id", "revision", "label", "hostId", "type", "bindAddress", "bindPort", "destinationHost", "destinationPort"]) ||
+    !isCatalogId(v.id) || !positive(v.revision) || !label(v.label) || !isCatalogId(v.hostId) || !tunnelTypes.includes(v.type) ||
+    !bindAddresses.includes(v.bindAddress) || !isCounter(v.bindPort) || (v.bindPort as number) > 65_535) return false;
+  if (v.type !== "remote" && (v.bindAddress === "0.0.0.0" || v.bindAddress === "::" || v.bindPort === 0)) return false;
+  return v.type === "dynamic" ? v.destinationHost === null && v.destinationPort === null
+    : text(v.destinationHost, MAX_CATALOG_ADDRESS) && validatePort(v.destinationPort);
 }
 function isCatalogSnippet(v: unknown): v is CatalogSnippet {
   return exactObject(v, ["id", "revision", "label", "tagIds"]) && isCatalogId(v.id) && positive(v.revision) && label(v.label) && ids(v.tagIds);
@@ -321,8 +332,8 @@ const dataKeys = {
   tag: { all: ["label"], required: ["label"] },
   identity: { all: ["label", "username", "method", "keyId"], required: ["label", "username", "method"] },
   "tunnel-rule": {
-    all: ["label", "hostId", "bindAddress", "bindPort", "destinationHost", "destinationPort"],
-    required: ["label", "hostId", "bindPort", "destinationHost", "destinationPort"],
+    all: ["label", "hostId", "type", "bindAddress", "bindPort", "destinationHost", "destinationPort"],
+    required: ["label", "hostId", "bindPort"],
   },
 } as const;
 function isData(v: unknown, kind: keyof typeof dataKeys, creating: boolean): boolean {
@@ -340,10 +351,10 @@ function isData(v: unknown, kind: keyof typeof dataKeys, creating: boolean): boo
     (!("method" in d) || d.method === "password" || d.method === "key" || d.method === "keyboard-interactive") &&
     (!("keyId" in d) || nullableId(d.keyId)) &&
     (!("hostId" in d) || isCatalogId(d.hostId)) &&
-    (!("bindAddress" in d) || d.bindAddress === "127.0.0.1" || d.bindAddress === "::1") &&
+    (!("type" in d) || tunnelTypes.includes(d.type)) && (!("bindAddress" in d) || bindAddresses.includes(d.bindAddress)) &&
     // Port and destination content are field errors from main; the guard bounds type and size.
-    (!("bindPort" in d) || typeof d.bindPort === "number") && (!("destinationPort" in d) || typeof d.destinationPort === "number") &&
-    (!("destinationHost" in d) || raw(d.destinationHost, 2048));
+    (!("bindPort" in d) || typeof d.bindPort === "number") && (!("destinationPort" in d) || d.destinationPort === null || typeof d.destinationPort === "number") &&
+    (!("destinationHost" in d) || d.destinationHost === null || raw(d.destinationHost, 2048));
 }
 export function isCatalogChangeIntent(v: unknown): v is CatalogChangeIntent {
   if (v === null || typeof v !== "object" || !("type" in v)) return false;
@@ -382,7 +393,7 @@ const fieldCodes: Record<CatalogFieldError["field"], readonly string[]> = {
   label: ["empty", "too-long", "control", "duplicate"], address: ["invalid", "too-long"], port: ["invalid"],
   parent: ["cycle", "not-found"], group: ["not-found"], identity: ["not-found"], tag: ["not-found"],
   username: ["empty", "too-long", "control"], keyId: ["not-found", "required"],
-  bindPort: ["invalid"], destinationPort: ["invalid"], destination: ["invalid", "too-long"], host: ["not-found"], tunnel: ["running"],
+  bindPort: ["invalid"], destinationPort: ["invalid"], bindAddress: ["invalid"], destination: ["invalid", "too-long"], host: ["not-found"], tunnel: ["running"],
 };
 function isFieldError(v: unknown): v is CatalogFieldError {
   return exactObject(v, ["field", "code"]) && typeof v.field === "string" && Object.hasOwn(fieldCodes, v.field) &&

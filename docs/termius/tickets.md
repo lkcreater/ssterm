@@ -1,6 +1,6 @@
 # Tickets สำหรับ ssterm
 
-**SST-028: automated release readiness `DONE`** — [release guide](../release/README.md): unit 422/422, development E2E 62/62, packaged 63/63; ad-hoc signed `dev.ssterm.desktop`, zip/SHA-256/manifest, notices, derived icon; T036 `DONE`; T035 manual checks และ DS06/T052 (16 px icon, Dock/Finder) ยังค้าง; Developer ID/notarization ต้องมี credentials (แยก gate); SST-027 manual Thai IME/VoiceOver ยังรอผู้ใช้
+**SST-031: remote and dynamic forwarding `DONE`** — [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031): remote `tcpip-forward` with assigned port, loopback SOCKS5, schema 2 migration with backup; unit 440/440, E2E 64/64, packaged 65/65. Later-scope range SST-029–038 authorized (ทำงาน SST-029 - SST-038 ให้จบ); next SST-030. SST-028 manual checks (T035, DS06/T052), SST-027 manual Thai IME/VoiceOver and Developer ID/notarization remain pending
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) และ SST-029–038 เป็น later scope
 
@@ -381,6 +381,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Acceptance:** one-hop ก่อน multi-hop; cycle/depth limits, per-hop trust/auth, cancel/failure cleanup; HTTP/SOCKS5 optional capability; no credential leak across hops. **Validation:** bastion fixture + failed intermediate hop. **Tasks:** chain resolver; transport composition; progress/errors.
 
 ### SST-031 — Remote and dynamic forwarding
+
+**Status:** `DONE` — ผ่าน independent TEST/REVIEW/DELIVER; [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031), [delivery](../agent-runs/sst-031-delivery.md); remote assigned port/`remote-bind-refused`, SOCKS5 CONNECT-only (socks5h), schema 2 migration
 
 **Evidence:** S05/W08. **Outcome:** additional tunnel types.
 

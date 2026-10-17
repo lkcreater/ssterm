@@ -1,7 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 export const APPLICATION_ID = 0x5353544d;
-export const SCHEMA_VERSION = 1;
+/** v2 (SST-031): tunnel rules gain remote and dynamic types. */
+export const SCHEMA_VERSION = 2;
 export const IDENTITY = 'ssterm-metadata-v1';
 const uuidCheck = (name: string) => `CHECK(length(${name})=36 AND ${name} NOT GLOB '*[^0-9a-f-]*')`;
 const common = `id TEXT PRIMARY KEY ${uuidCheck('id')}, vaultId TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>=1), createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL`;
@@ -11,6 +12,13 @@ const portAuth = `portMode TEXT NOT NULL CHECK(portMode IN ('inherit','value')),
  CHECK((authMode IN ('inherit','clear') AND identityId IS NULL) OR (authMode='value' AND identityId IS NOT NULL)),
  FOREIGN KEY(vaultId,identityId) REFERENCES identity(vaultId,id) DEFERRABLE INITIALLY DEFERRED`;
 const secretKind = `CHECK(kind IN ('password','private-key','passphrase','content-key'))`;
+/** Per-type shape, mirrored by `tunnelRuleProblem` in the domain. */
+export const tunnelColumns = `${common}, ${label}, hostId TEXT NOT NULL, type TEXT NOT NULL CHECK(type IN ('local','remote','dynamic')),
+ bindAddress TEXT NOT NULL CHECK(bindAddress IN ('127.0.0.1','::1','0.0.0.0','::')), bindPort INTEGER NOT NULL CHECK(bindPort BETWEEN 0 AND 65535),
+ destinationHost TEXT CHECK(destinationHost IS NULL OR length(destinationHost)>0), destinationPort INTEGER CHECK(destinationPort IS NULL OR destinationPort BETWEEN 1 AND 65535),
+ CHECK(type='remote' OR bindAddress IN ('127.0.0.1','::1')), CHECK(type='remote' OR bindPort>=1),
+ CHECK((type='dynamic' AND destinationHost IS NULL AND destinationPort IS NULL) OR (type<>'dynamic' AND destinationHost IS NOT NULL AND destinationPort IS NOT NULL)),
+ FOREIGN KEY(vaultId,hostId) REFERENCES host(vaultId,id) DEFERRABLE INITIALLY DEFERRED`;
 const rawSchemaSql = `
 CREATE TABLE identity_manifest (singleton INTEGER PRIMARY KEY CHECK(singleton=1), identity TEXT NOT NULL CHECK(identity='${IDENTITY}')) STRICT;
 CREATE TABLE entity_registry (id TEXT PRIMARY KEY) STRICT;
@@ -26,7 +34,7 @@ CREATE TABLE host_tag (vaultId TEXT NOT NULL, hostId TEXT NOT NULL, tagId TEXT N
 CREATE TABLE snippet (${common}, ${label}, bodyEnvelope BLOB NOT NULL CHECK(length(bodyEnvelope)>0), envelopeVersion INTEGER NOT NULL CHECK(envelopeVersion>=1), keyRef TEXT NOT NULL, protectionFormat TEXT NOT NULL CHECK(length(protectionFormat)>0), FOREIGN KEY(vaultId,keyRef) REFERENCES secret_ref(vaultId,id) DEFERRABLE INITIALLY DEFERRED) STRICT;
 CREATE TABLE snippet_tag (vaultId TEXT NOT NULL, snippetId TEXT NOT NULL, tagId TEXT NOT NULL, PRIMARY KEY(vaultId,snippetId,tagId), FOREIGN KEY(vaultId,snippetId) REFERENCES snippet(vaultId,id) DEFERRABLE INITIALLY DEFERRED, FOREIGN KEY(vaultId,tagId) REFERENCES tag(vaultId,id) DEFERRABLE INITIALLY DEFERRED) STRICT;
 CREATE TABLE known_host (${common}, endpointHost TEXT NOT NULL CHECK(length(endpointHost)>0), endpointPort INTEGER NOT NULL CHECK(endpointPort BETWEEN 1 AND 65535), algorithm TEXT NOT NULL CHECK(length(algorithm)>0), publicKey TEXT NOT NULL CHECK(length(publicKey)>0), fingerprint TEXT NOT NULL CHECK(length(fingerprint)>0), firstAcceptedAt TEXT NOT NULL, lastVerifiedAt TEXT NOT NULL, UNIQUE(vaultId,endpointHost,endpointPort)) STRICT;
-CREATE TABLE tunnel_rule (${common}, ${label}, hostId TEXT NOT NULL, type TEXT NOT NULL CHECK(type='local'), bindAddress TEXT NOT NULL CHECK(bindAddress IN ('127.0.0.1','::1')), bindPort INTEGER NOT NULL CHECK(bindPort BETWEEN 1 AND 65535), destinationHost TEXT NOT NULL CHECK(length(destinationHost)>0), destinationPort INTEGER NOT NULL CHECK(destinationPort BETWEEN 1 AND 65535), FOREIGN KEY(vaultId,hostId) REFERENCES host(vaultId,id) DEFERRABLE INITIALLY DEFERRED) STRICT;
+CREATE TABLE tunnel_rule (${tunnelColumns}) STRICT;
 CREATE TABLE app_settings (${common}, theme TEXT NOT NULL CHECK(theme='dark'), uiFont TEXT NOT NULL CHECK(uiFont='Inter'), uiFontSize INTEGER NOT NULL CHECK(uiFontSize BETWEEN 11 AND 20), terminalFont TEXT NOT NULL CHECK(terminalFont='JetBrains Mono'), terminalFontSize INTEGER NOT NULL CHECK(terminalFontSize BETWEEN 10 AND 32), terminalScrollback INTEGER NOT NULL CHECK(terminalScrollback BETWEEN 100 AND 100000), terminalPalette TEXT NOT NULL CHECK(terminalPalette='signal-blue-dark'), terminalCursor TEXT NOT NULL CHECK(terminalCursor IN ('block','bar','underline')), terminalCursorBlink INTEGER NOT NULL CHECK(terminalCursorBlink IN (0,1)), reducedMotion TEXT NOT NULL CHECK(reducedMotion IN ('system','on','off')), UNIQUE(vaultId)) STRICT;
 CREATE TABLE secret_operation (operationId TEXT PRIMARY KEY ${uuidCheck('operationId')}, vaultId TEXT NOT NULL, action TEXT NOT NULL CHECK(action IN ('create','replace','delete')), state TEXT NOT NULL CHECK(state IN ('staged','reconcile','cleanup','complete','needs-input')), intendedRef TEXT NOT NULL ${uuidCheck('intendedRef')}, kind TEXT NOT NULL ${secretKind}, oldRef TEXT, ownerType TEXT NOT NULL CHECK(ownerType IN ('vault','identity','key','snippet')), ownerId TEXT NOT NULL ${uuidCheck('ownerId')}, expectedRevision INTEGER CHECK(expectedRevision IS NULL OR expectedRevision>=1), createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, CHECK((action='replace' AND oldRef IS NOT NULL) OR action IN ('create','delete')), FOREIGN KEY(vaultId) REFERENCES local_vault(id) DEFERRABLE INITIALLY DEFERRED) STRICT;
 CREATE UNIQUE INDEX single_vault ON local_vault((1));

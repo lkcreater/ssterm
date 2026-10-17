@@ -21,6 +21,7 @@ const errorCode = (code: TunnelFailure | null): TunnelErrorCode =>
 const status = (row: TunnelSnapshot & { state: TunnelStatus["phase"] }): TunnelStatus => ({
   ruleId: row.ruleId, phase: row.state, error: row.state === "failed" ? errorCode(row.error) : null,
   activeConnections: row.activeConnections, totalConnections: row.totalConnections, failedConnections: row.failedConnections,
+  remotePort: row.remotePort,
 });
 
 /** Owner-bound tunnel status and the explicit Start/Stop actions. Start is the unlock, as for other explicit actions. */

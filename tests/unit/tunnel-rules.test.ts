@@ -44,8 +44,9 @@ test("tunnel rule intents: guards, loopback default, typed field errors, persist
   const data = { label: "DB", hostId: s.hostId, bindPort: 15432, destinationHost: "db.internal", destinationPort: 5432 };
   assert.ok(isCatalogChangeIntent({ type: "create-tunnel-rule", data }));
   for (const bad of [
-    { type: "create-tunnel-rule", data: { ...data, bindAddress: "0.0.0.0" } },
-    { type: "create-tunnel-rule", data: { ...data, type: "remote" } },
+    { type: "create-tunnel-rule", data: { ...data, bindAddress: "10.0.0.1" } },
+    { type: "create-tunnel-rule", data: { ...data, type: "reverse" } },
+    { type: "create-tunnel-rule", data: { ...data, destinationPort: "22" } },
     { type: "create-tunnel-rule", data: { ...data, hostId: "web" } },
     { type: "create-tunnel-rule", data: { label: "x" } },
     { type: "update-tunnel-rule", id: id(), expectedRevision: 1, data: {} },
@@ -55,8 +56,23 @@ test("tunnel rule intents: guards, loopback default, typed field errors, persist
   const created = s.apply({ type: "create-tunnel-rule", data }) as string[];
   const rule = s.state().tunnelRules.find((row) => row.id === created[0])!;
   assert.deepEqual({ ...rule, id: "", revision: 0 }, {
-    id: "", revision: 0, label: "DB", hostId: s.hostId, bindAddress: "127.0.0.1", bindPort: 15432, destinationHost: "db.internal", destinationPort: 5432,
+    id: "", revision: 0, label: "DB", hostId: s.hostId, type: "local", bindAddress: "127.0.0.1", bindPort: 15432, destinationHost: "db.internal", destinationPort: 5432,
   });
+  // Per-type shape is checked by main as field errors: public addresses and port 0 belong to remote rules only,
+  // dynamic rules have no destination, and forwarding rules need one.
+  assert.deepEqual(s.apply({ type: "create-tunnel-rule", data: { ...data, bindAddress: "0.0.0.0" } }), [{ field: "bindAddress", code: "invalid" }]);
+  assert.deepEqual(s.apply({ type: "create-tunnel-rule", data: { ...data, type: "dynamic" } }), [{ field: "destination", code: "invalid" }]);
+  assert.deepEqual(s.apply({ type: "create-tunnel-rule", data: { label: "R", hostId: s.hostId, type: "remote", bindPort: 0 } }),
+    [{ field: "destinationPort", code: "invalid" }, { field: "destination", code: "invalid" }]);
+  const [remoteId] = s.apply({ type: "create-tunnel-rule", data: { ...data, label: "Public", type: "remote", bindAddress: "::", bindPort: 0 } }) as string[];
+  const [socksId] = s.apply({ type: "create-tunnel-rule", data: { label: "SOCKS", hostId: s.hostId, type: "dynamic", bindPort: 1080, destinationHost: null, destinationPort: null } }) as string[];
+  assert.deepEqual(s.state().tunnelRules.find((row) => row.id === socksId)?.destinationPort, null);
+  assert.equal(s.state().tunnelRules.find((row) => row.id === remoteId)?.bindAddress, "::");
+  // Changing a remote rule's type away keeps its public address only if the change fixes it too.
+  assert.deepEqual(s.apply({ type: "update-tunnel-rule", id: remoteId!, expectedRevision: 1, data: { type: "local" } }),
+    [{ field: "bindAddress", code: "invalid" }, { field: "bindPort", code: "invalid" }]);
+  assert.deepEqual(s.apply({ type: "update-tunnel-rule", id: remoteId!, expectedRevision: 1, data: { type: "dynamic", bindAddress: "127.0.0.1", bindPort: 1081, destinationHost: null, destinationPort: null } }), []);
+  for (const extra of [remoteId, socksId]) assert.deepEqual(s.apply({ type: "delete-tunnel-rule", id: extra!, expectedRevision: extra === remoteId ? 2 : 1 }), []);
   assert.deepEqual(s.apply({ type: "create-tunnel-rule", data: { ...data, bindPort: 0, destinationPort: 70_000, destinationHost: "a b" } }), [
     { field: "bindPort", code: "invalid" }, { field: "destinationPort", code: "invalid" }, { field: "destination", code: "invalid" },
   ]);
@@ -97,7 +113,7 @@ test("tunnel controller: owner-sequenced state with fixed codes, start unlocks, 
   const service = {
     async start(_owner: string, rule: string) {
       if (rule !== ruleId) return { ok: false as const, code: "rule-not-found" as const };
-      rows = [{ ruleId, hostId: id(), bindAddress: "127.0.0.1", bindPort: 1, destinationHost: "x", destinationPort: 2, state: "failed",
+      rows = [{ ruleId, hostId: id(), type: "local", bindAddress: "127.0.0.1", bindPort: 1, destinationHost: "x", destinationPort: 2, remotePort: null, state: "failed",
         error: "some-new-code" as never, activeConnections: 0, totalConnections: 0, failedConnections: 0 }];
       for (const observer of observers) observer();
       return { ok: true as const, value: rows[0]! };

@@ -101,14 +101,32 @@ export interface KnownHost extends Entity {
   firstAcceptedAt: string;
   lastVerifiedAt: string;
 }
+/**
+ * `local`: listen on this Mac, the server opens the destination. `remote`: the server listens (port 0 = the server
+ * assigns one) and this Mac opens the destination. `dynamic`: a SOCKS5 proxy on this Mac; the server opens each target.
+ */
+export type TunnelType = 'local' | 'remote' | 'dynamic';
+export type TunnelBindAddress = '127.0.0.1' | '::1' | '0.0.0.0' | '::';
 export interface TunnelRule extends Entity {
   label: string;
   hostId: Id;
-  type: 'local';
-  bindAddress: '127.0.0.1' | '::1';
+  type: TunnelType;
+  bindAddress: TunnelBindAddress;
   bindPort: number;
-  destinationHost: string;
-  destinationPort: number;
+  /** Null only for `dynamic`. */
+  destinationHost: string | null;
+  destinationPort: number | null;
+}
+/** The per-type shape every stored rule must have; null when valid. */
+export function tunnelRuleProblem(rule: Pick<TunnelRule, 'type' | 'bindAddress' | 'bindPort' | 'destinationHost' | 'destinationPort'>):
+  'bind-address' | 'bind-port' | 'destination' | null {
+  const loopback = rule.bindAddress === '127.0.0.1' || rule.bindAddress === '::1';
+  // Only a remote (server-side) listener may be public, and only there may the port be assigned (0).
+  if (rule.type !== 'remote' && !loopback) return 'bind-address';
+  if (!Number.isInteger(rule.bindPort) || rule.bindPort < (rule.type === 'remote' ? 0 : 1) || rule.bindPort > 65535) return 'bind-port';
+  if (rule.type === 'dynamic') return rule.destinationHost === null && rule.destinationPort === null ? null : 'destination';
+  return typeof rule.destinationHost === 'string' && rule.destinationHost.length > 0 && Number.isInteger(rule.destinationPort) &&
+    rule.destinationPort! >= 1 && rule.destinationPort! <= 65535 ? null : 'destination';
 }
 export interface AppSettings extends Entity {
   theme: 'dark';
@@ -167,7 +185,7 @@ export type SecretOperationState = SecretOperation['state'];
 export type TagInput = {
   label: string;
 };
-export type TunnelRuleInput = Pick<Fields<TunnelRule>, 'label' | 'hostId' | 'bindPort' | 'destinationHost' | 'destinationPort'> & Partial<Pick<Fields<TunnelRule>, 'type' | 'bindAddress'>>;
+export type TunnelRuleInput = Pick<Fields<TunnelRule>, 'label' | 'hostId' | 'bindPort'> & Partial<Pick<Fields<TunnelRule>, 'type' | 'bindAddress' | 'destinationHost' | 'destinationPort'>>;
 type Crud<K extends string, T> = {
   type: `create-${K}`;
   id: Id;
@@ -362,10 +380,16 @@ export interface SftpChannel extends SftpSession {
 export type TunnelForward =
   | { ok: true; stream: import('node:stream').Duplex }
   | { ok: false; code: 'refused' | 'closed' | 'resource-limit' };
-/** Main-only local-forwarding capability of one tunnel session generation. Never throws. */
+export type RemoteListen = { ok: true; port: number } | { ok: false; code: 'refused' | 'closed' | 'resource-limit' };
+/** Main-only forwarding capability (local, remote and SOCKS targets) of one tunnel session generation. Never throws. */
 export interface TunnelSession {
   /** Opens one `direct-tcpip` channel; the destination is resolved by the SSH server. */
   forward(origin: { address: string; port: number }, destination: { host: string; port: number }): Promise<TunnelForward>;
+  /**
+   * Asks the server to listen (`tcpip-forward`); port 0 lets it assign one. Each accepted connection arrives as a
+   * stream; the listener ends with the session. `refused` carries no server text.
+   */
+  listen(address: string, port: number, connection: (stream: import('node:stream').Duplex, origin: { address: string; port: number }) => void): Promise<RemoteListen>;
 }
 /** Lifecycle owner's view. Only the session registry holds this; consumers receive `TunnelSession`. */
 export interface TunnelChannel extends TunnelSession {

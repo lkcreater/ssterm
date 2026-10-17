@@ -99,7 +99,7 @@ function project(snapshot: MetadataSnapshot, secretStore: boolean, now: number, 
       tagIds: (snippetTags.get(snippet.id) ?? []).sort(byTagLabel),
     }))).slice(0, MAX_CATALOG_ITEMS),
     tunnelRules: byLabel(snapshot.tunnelRules.map((rule) => ({
-      id: rule.id, revision: rule.revision, label: rule.label, hostId: rule.hostId, bindAddress: rule.bindAddress,
+      id: rule.id, revision: rule.revision, label: rule.label, hostId: rule.hostId, type: rule.type, bindAddress: rule.bindAddress,
       bindPort: rule.bindPort, destinationHost: rule.destinationHost, destinationPort: rule.destinationPort,
     }))).slice(0, MAX_CATALOG_ITEMS),
     lockEpoch,
@@ -139,9 +139,26 @@ function check(snapshot: MetadataSnapshot, intent: CatalogChangeIntent, active: 
   if (affected.some(active)) fields.push({ field: "tunnel", code: "running" });
   if (intent.type === "create-tunnel-rule" || intent.type === "update-tunnel-rule") {
     const data = intent.data;
-    for (const field of ["bindPort", "destinationPort"] as const)
-      if (field in data && !validatePort(data[field])) fields.push({ field, code: "invalid" });
-    if (typeof data.destinationHost === "string") {
+    // The rule as it would be stored: per-type shape (bind address, assigned port, destination) is checked whole.
+    const before = intent.type === "update-tunnel-rule" ? snapshot.tunnelRules.find((rule) => rule.id === intent.id) : undefined;
+    const merged = {
+      type: data.type ?? before?.type ?? "local", bindAddress: data.bindAddress ?? before?.bindAddress ?? "127.0.0.1",
+      bindPort: data.bindPort ?? before?.bindPort ?? -1,
+      destinationHost: data.destinationHost !== undefined ? data.destinationHost : before?.destinationHost ?? null,
+      destinationPort: data.destinationPort !== undefined ? data.destinationPort : before?.destinationPort ?? null,
+    };
+    // Every problem is reported at once (the repository check, `tunnelRuleProblem`, stops at the first).
+    const remote = merged.type === "remote";
+    if (!remote && (merged.bindAddress === "0.0.0.0" || merged.bindAddress === "::")) fields.push({ field: "bindAddress", code: "invalid" });
+    if (!validatePort(merged.bindPort) && !(remote && merged.bindPort === 0)) fields.push({ field: "bindPort", code: "invalid" });
+    if (merged.type === "dynamic") {
+      if (merged.destinationHost !== null || merged.destinationPort !== null) fields.push({ field: "destination", code: "invalid" });
+    } else {
+      if (!validatePort(merged.destinationPort)) fields.push({ field: "destinationPort", code: "invalid" });
+      if (merged.destinationHost === null) fields.push({ field: "destination", code: "invalid" });
+    }
+    // A dynamic rule with a destination already reported "destination"; one entry per field is enough.
+    if (typeof data.destinationHost === "string" && merged.type !== "dynamic") {
       if (data.destinationHost.trim().length > MAX_CATALOG_ADDRESS) fields.push({ field: "destination", code: "too-long" });
       else {
         try { normalizeEndpoint(data.destinationHost); } catch { fields.push({ field: "destination", code: "invalid" }); }

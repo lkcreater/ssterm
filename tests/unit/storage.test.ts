@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { openMetadata, decodeHostPublicKey } from '../../packages/adapters/src/index.ts';
 import { runMigrations } from '../../packages/adapters/src/migrations.ts';
+import { downgradeToSchemaV1 } from '../fixtures/storage/schema-v1.ts';
 import { CatalogModule } from '../../packages/services/src/index.ts';
 import { normalizeEndpoint, normalizeTag, type StoreResult, type MetadataRepository, type MetadataSnapshot, type MetadataChange } from '../../packages/domain/src/index.ts';
 function value<T>(result: StoreResult<T>): T {
@@ -75,7 +76,7 @@ test('metadata CRUD, Thai, independent settings and restart durability cross the
   const f = await fixture(t);
   const id = randomUUID();
   const before = f.snapshot();
-  assert.equal(before.schemaVersion, 1);
+  assert.equal(before.schemaVersion, 2);
   assert.equal(before.catalogRevision, 0);
   assert.equal(before.settings.terminalScrollback, 10000);
   let next = f.commit([host(id)]);
@@ -605,7 +606,7 @@ test('safe open blocks zero/foreign/newer/corrupt/FK-invalid/unwritable storage 
       }));
       const s = value(repo.snapshot());
       repo.close();
-      if (kind === 'newer') raw(path, 'PRAGMA user_version=2');
+      if (kind === 'newer') raw(path, 'PRAGMA user_version=3');
       if (kind === 'version-zero') raw(path, 'PRAGMA user_version=0');
       if (kind === 'manifest') raw(path, "PRAGMA ignore_check_constraints=ON; UPDATE identity_manifest SET identity='foreign'");
       if (kind === 'fk') raw(path, `PRAGMA foreign_keys=OFF; INSERT INTO host VALUES('${randomUUID()}','${s.vault.id}',1,'${s.vault.createdAt}','${s.vault.createdAt}','x','example.com','${randomUUID()}',NULL,'inherit',NULL,'inherit',NULL)`);
@@ -679,25 +680,25 @@ test('future internal migration chain preflights all steps, backs up v1, preserv
   const missing = await runMigrations({
     db,
     path: f.path,
-    targetVersion: 3,
+    targetVersion: 4,
     backupDestination: destination,
     steps: [{
-      from: 1,
-      to: 2,
+      from: 2,
+      to: 3,
       apply: () => assert.fail('must not run')
     }]
   });
   code(missing, 'unsupported-schema');
   assert.equal(existsSync(destination), false);
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 1);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 2);
   code(await runMigrations({
     db,
     path: f.path,
-    targetVersion: 2,
+    targetVersion: 3,
     backupDestination: destination,
     steps: [{
-      from: 1,
-      to: 2,
+      from: 2,
+      to: 3,
       requiresProtection: true,
       apply: () => assert.fail('must not run')
     }]
@@ -706,46 +707,46 @@ test('future internal migration chain preflights all steps, backs up v1, preserv
   const result = await runMigrations({
     db,
     path: f.path,
-    targetVersion: 3,
-    backupDestination: destination,
-    steps: [{
-      from: 1,
-      to: 2,
-      apply: handle => handle.exec('CREATE TABLE migration_2_fixture(id INTEGER) STRICT')
-    }, {
-      from: 2,
-      to: 3,
-      apply: handle => {
-        handle.exec('CREATE TABLE migration_3_fixture(id INTEGER) STRICT');
-        throw Error('fixture-sensitive');
-      }
-    }]
-  });
-  code(result, 'migration-failed');
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 2);
-  assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='migration_2_fixture'").get()?.n, 1);
-  assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='migration_3_fixture'").get()?.n, 0);
-  const backup = new DatabaseSync(destination, {
-    readOnly: true
-  });
-  t.after(() => backup.close());
-  assert.equal(backup.prepare('PRAGMA user_version').get()?.user_version, 1);
-  assert.equal(backup.prepare('SELECT count(*) AS n FROM host').get()?.n, 1);
-  assert.equal(JSON.parse(readFileSync(destination + '.manifest.json', 'utf8')).schemaVersion, 1);
-  const original = readFileSync(destination);
-  code(await runMigrations({
-    db,
-    path: f.path,
-    targetVersion: 3,
+    targetVersion: 4,
     backupDestination: destination,
     steps: [{
       from: 2,
       to: 3,
       apply: handle => handle.exec('CREATE TABLE migration_3_fixture(id INTEGER) STRICT')
+    }, {
+      from: 3,
+      to: 4,
+      apply: handle => {
+        handle.exec('CREATE TABLE migration_4_fixture(id INTEGER) STRICT');
+        throw Error('fixture-sensitive');
+      }
+    }]
+  });
+  code(result, 'migration-failed');
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 3);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='migration_3_fixture'").get()?.n, 1);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='migration_4_fixture'").get()?.n, 0);
+  const backup = new DatabaseSync(destination, {
+    readOnly: true
+  });
+  t.after(() => backup.close());
+  assert.equal(backup.prepare('PRAGMA user_version').get()?.user_version, 2);
+  assert.equal(backup.prepare('SELECT count(*) AS n FROM host').get()?.n, 1);
+  assert.equal(JSON.parse(readFileSync(destination + '.manifest.json', 'utf8')).schemaVersion, 2);
+  const original = readFileSync(destination);
+  code(await runMigrations({
+    db,
+    path: f.path,
+    targetVersion: 4,
+    backupDestination: destination,
+    steps: [{
+      from: 3,
+      to: 4,
+      apply: handle => handle.exec('CREATE TABLE migration_4_fixture(id INTEGER) STRICT')
     }]
   }), 'constraint');
   assert.deepEqual(readFileSync(destination), original);
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 2);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 3);
 });
 test('migration failed first step remains v1 and successful chain activates each version atomically', async t => {
   const f = await fixture(t);
@@ -756,33 +757,36 @@ test('migration failed first step remains v1 and successful chain activates each
   code(await runMigrations({
     db,
     path: f.path,
-    targetVersion: 2,
+    targetVersion: 3,
     backupDestination: join(f.dir, 'first-backup.db'),
     steps: [{
-      from: 1,
-      to: 2,
+      from: 2,
+      to: 3,
       apply: handle => handle.exec('CREATE TABLE transient_fixture(id INTEGER); INSERT INTO nonexistent VALUES(1)')
     }]
   }), 'migration-failed');
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 1);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 2);
   assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='transient_fixture'").get()?.n, 0);
+  // Nothing committed, so the store is unchanged and this attempt's backup is removed (no pile-up per launch).
+  assert.equal(existsSync(join(f.dir, 'first-backup.db')), false);
+  assert.equal(existsSync(join(f.dir, 'first-backup.db.manifest.json')), false);
   const result = value(await runMigrations({
     db,
     path: f.path,
-    targetVersion: 3,
+    targetVersion: 4,
     backupDestination: join(f.dir, 'success-backup.db'),
     steps: [{
-      from: 1,
-      to: 2,
-      apply: handle => handle.exec('CREATE TABLE v2_fixture(id INTEGER) STRICT')
-    }, {
       from: 2,
       to: 3,
+      apply: handle => handle.exec('CREATE TABLE v2_fixture(id INTEGER) STRICT')
+    }, {
+      from: 3,
+      to: 4,
       apply: handle => handle.exec('CREATE TABLE v3_fixture(id INTEGER) STRICT')
     }]
   }));
-  assert.equal(result.schemaVersion, 3);
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 3);
+  assert.equal(result.schemaVersion, 4);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 4);
 });
 
 test('deleting a host preserves normalized shared trust, identity and tags; SQL rejects duplicate endpoint trust', async t => {
@@ -867,4 +871,77 @@ test('settings writes keep the catalog revision, so an outstanding catalog previ
   assert.equal(f.snapshot().catalogRevision, before.catalogRevision + 1);
   const mixed = f.commit([host(), { type: 'update-settings', expectedRevision: after.settings.revision, data: { terminalFontSize: 21 } }]);
   assert.equal(mixed.catalogRevision, before.catalogRevision + 2, 'a batch with catalog edits still bumps');
+});
+
+test('a real v1 store (protected vault, encrypted snippet, local rule) upgrades to v2 after a backup and keeps every byte of protected content', async t => {
+  const { PROTECTION_FORMAT, ENVELOPE_VERSION } = await import('../../packages/adapters/src/protection.ts');
+  const { readdirSync } = await import('node:fs');
+  const f = await fixture(t);
+  const h = randomUUID();
+  const rule = randomUUID();
+  f.commit([host(h), { type: 'create-tunnel-rule', id: rule, data: { label: 'db', hostId: h, bindPort: 15432, destinationHost: 'db.internal', destinationPort: 5432 } }]);
+  const s = f.snapshot();
+  f.repo.close();
+  // Make it what a v1 build leaves behind: protected vault, one encrypted snippet, the v1 tunnel_rule table.
+  const db = new DatabaseSync(f.path);
+  const ref = randomUUID();
+  const snippet = randomUUID();
+  const envelope = Buffer.from(Array.from({ length: 64 }, (_v, i) => (i ? (i * 37) & 0xff : ENVELOPE_VERSION)));
+  db.exec('PRAGMA foreign_keys=ON; BEGIN');
+  const operation = randomUUID();
+  db.prepare('INSERT INTO secret_operation VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(operation, s.vault.id, 'create', 'complete', ref, 'content-key', null, 'vault', s.vault.id, null, s.vault.createdAt, s.vault.createdAt);
+  db.prepare('INSERT INTO secret_ref VALUES(?,?,?,?,?,?,?)').run(ref, s.vault.id, 1, s.vault.createdAt, s.vault.createdAt, 'content-key', operation);
+  db.prepare('UPDATE local_vault SET contentKeyRef=?,protectionFormat=?').run(ref, PROTECTION_FORMAT);
+  db.prepare('INSERT INTO snippet (id,vaultId,revision,createdAt,updatedAt,label,bodyEnvelope,envelopeVersion,keyRef,protectionFormat) VALUES(?,?,?,?,?,?,?,?,?,?)')
+    .run(snippet, s.vault.id, 1, s.vault.createdAt, s.vault.createdAt, 'deploy', envelope, ENVELOPE_VERSION, ref, PROTECTION_FORMAT);
+  db.exec('COMMIT');
+  downgradeToSchemaV1(db);
+  assert.throws(() => db.prepare("UPDATE tunnel_rule SET type='remote'").run(), /CHECK/u, 'the v1 table refuses remote rules');
+  db.close();
+
+  const repo = value(await openMetadata({ path: f.path }));
+  t.after(() => repo.close());
+  const after = value(repo.snapshot());
+  assert.deepEqual(after.tunnelRules.map((row) => [row.id, row.type, row.bindPort, row.destinationHost]), [[rule, 'local', 15432, 'db.internal']]);
+  assert.deepEqual(Buffer.from(after.snippets[0]!.bodyEnvelope), envelope, 'encrypted snippet bytes untouched');
+  assert.equal(after.vault.contentKeyRef, ref);
+  const backups = readdirSync(f.dir).filter((name) => /^metadata\.db\.v1-.*\.backup$/u.test(name));
+  assert.equal(backups.length, 1, 'a backup of the v1 store is kept next to it');
+  const check = new DatabaseSync(join(f.dir, backups[0]!), { readOnly: true });
+  assert.equal(check.prepare('PRAGMA user_version').get()?.user_version, 1);
+  check.close();
+  // v2 accepts the new rule types.
+  value(repo.commit({ expectedCatalogRevision: after.catalogRevision, changes: [
+    { type: 'create-tunnel-rule', id: randomUUID(), data: { label: 'socks', hostId: h, type: 'dynamic', bindPort: 1080 } },
+    { type: 'create-tunnel-rule', id: randomUUID(), data: { label: 'public', hostId: h, type: 'remote', bindAddress: '0.0.0.0', bindPort: 0, destinationHost: '127.0.0.1', destinationPort: 3000 } },
+  ] }));
+  code(repo.commit({ expectedCatalogRevision: value(repo.snapshot()).catalogRevision, changes: [
+    { type: 'create-tunnel-rule', id: randomUUID(), data: { label: 'bad', hostId: h, bindAddress: '0.0.0.0', bindPort: 8080, destinationHost: 'x', destinationPort: 1 } },
+  ] }), 'constraint');
+  repo.close();
+  const reopened = value(await openMetadata({ path: f.path }));
+  assert.equal(value(reopened.snapshot()).tunnelRules.length, 3, 'reopens as v2 without another migration');
+  reopened.close();
+  assert.equal(readdirSync(f.dir).filter((name) => name.endsWith('.backup')).length, 1);
+});
+
+test('a v1 store whose credential journal awaits runtime reconciliation still upgrades (the step never touches the journal)', async t => {
+  const { readdirSync } = await import('node:fs');
+  const f = await fixture(t);
+  const s = f.snapshot();
+  f.repo.close();
+  const db = new DatabaseSync(f.path);
+  // e.g. a Keychain denial left this operation waiting for input; v1 opened it and reconciled at runtime.
+  db.prepare('INSERT INTO secret_operation VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(randomUUID(), s.vault.id, 'create', 'needs-input', randomUUID(), 'password', null, 'identity', randomUUID(), null, s.vault.createdAt, s.vault.createdAt);
+  downgradeToSchemaV1(db);
+  const v1Sql = db.prepare("SELECT sql FROM sqlite_master WHERE name='tunnel_rule'").get()?.sql as string;
+  assert.match(v1Sql, /CHECK\(type='local'\)/u);
+  assert.match(v1Sql, /length\(id\)=36/u, 'the shipped id checks are kept');
+  db.close();
+  const repo = value(await openMetadata({ path: f.path }));
+  t.after(() => repo.close());
+  const after = value(repo.snapshot());
+  assert.equal(after.schemaVersion, 2);
+  assert.deepEqual(after.secretOperations.map((op) => op.state), ['needs-input'], 'the journal is carried over for reconciliation');
+  assert.equal(readdirSync(f.dir).filter((name) => /\.v1-.*\.backup$/u.test(name)).length, 1);
 });
