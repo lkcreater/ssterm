@@ -31,3 +31,5 @@ The independent tester confirmed the renderer has no filesystem or Node access, 
 ## Boundaries and rollback
 
 There are no transfer buttons yet. Native ⌘C/⌘A routing through the macOS menu, VoiceOver, and the first-launch privacy prompt from Finder were not exercised. They are recorded as [deferred manual checks for SST-028](termius/tickets.md#sst-028--macos-package--release-readiness), together with the missing folder usage descriptions and the ad-hoc `Identifier=Electron` signature found in the packaged `Info.plist`. A hung network mount can still occupy a Node I/O thread after the timeout (a killable utility process is the recorded upgrade). Quit prompts list terminals only. Rollback removes the Files page, the file IPC and the local provider; terminal behavior is unchanged and there is no data change.
+
+SST-022 adds per-file [Overwrite/Skip/Rename and staged publication](transfer-conflicts.md). Retained temporary paths and publication uncertainty are visible in the transfer queue; Clear finished affects history only.

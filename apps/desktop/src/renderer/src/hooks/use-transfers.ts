@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { EnqueueTransfersRequest, ErrorCode, Owner, TransferState } from "@ssterm/contracts";
+import type { EnqueueTransfersRequest, ErrorCode, Owner, ResolveTransferConflictRequest, TransferState } from "@ssterm/contracts";
 import { acceptTransferState } from "@/lib/transfer-display";
 
 const problems: Partial<Record<ErrorCode, string>> = {
@@ -44,8 +44,8 @@ export function useTransfers(owner: Owner) {
     return () => { disposed = true; unsubscribe(); };
   }, [windowId, generation]);
 
-  const invoke = async (key: string, call: () => Promise<{ ok: boolean; error?: { code: ErrorCode } }>) => {
-    if (inFlight.current.has(key)) return;
+  const invoke = async (key: string, call: () => Promise<{ ok: boolean; error?: { code: ErrorCode } }>, action?: "retry" | "resolve") => {
+    if (inFlight.current.has(key)) return false;
     const captured = liveOwner.current;
     const current = () => liveOwner.current.windowId === captured.windowId && liveOwner.current.generation === captured.generation;
     inFlight.current.add(key);
@@ -53,9 +53,20 @@ export function useTransfers(owner: Owner) {
     setFailure(undefined);
     try {
       const result = await call();
-      if (!result.ok && current()) setFailure(problems[result.error?.code ?? "unavailable"] ?? "The transfer action could not be completed.");
+      if (!result.ok && current()) {
+        const code = result.error?.code ?? "unavailable";
+        setFailure(action === "retry" && code === "busy"
+          ? "The previous transfer is still closing its files. Wait for cleanup, then choose Retry again."
+          : action === "retry" && code === "conflict"
+            ? "The original SFTP session is no longer available. Open a fresh session manually, review both folders, and start a new transfer."
+            : action === "resolve" && code === "conflict"
+              ? "This conflict changed. Review the current destination and choose again."
+              : problems[code] ?? "The transfer action could not be completed.");
+      }
+      return result.ok && current();
     } catch {
       if (current()) setFailure(problems.unavailable);
+      return false;
     } finally {
       if (current()) {
         inFlight.current.delete(key);
@@ -73,6 +84,9 @@ export function useTransfers(owner: Owner) {
     enqueue: (request: EnqueueTransfersRequest) => bridge && invoke("enqueue", () => bridge.enqueueTransfers(request)),
     cancel: (jobId: string) => bridge && invoke(jobId, () => bridge.cancelTransfer({ owner, jobId })),
     clear: () => bridge && invoke("clear", () => bridge.clearFinishedTransfers({ owner })),
+    resolve: (jobId: string, conflictId: string, decision: ResolveTransferConflictRequest["decision"], name: string | null) =>
+      bridge && invoke(jobId, () => bridge.resolveTransferConflict({ owner, jobId, conflictId, decision, name }), "resolve"),
+    retry: (jobId: string) => bridge && invoke(jobId, () => bridge.retryTransfer({ owner, jobId }), "retry"),
   };
 }
 export type TransferController = ReturnType<typeof useTransfers>;

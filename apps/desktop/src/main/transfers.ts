@@ -1,8 +1,8 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { posix } from "node:path";
 import {
-  channels, failure, isCancelTransferRequest, isEnqueueTransfersRequest, isTerminalStateRequest, isTransferState,
-  type CancelTransferRequest, type EnqueueTransfersRequest, type Owner, type Result, type TerminalActionResponse,
+  channels, failure, isCancelTransferRequest, isEnqueueTransfersRequest, isTerminalStateRequest, isTransferState, isResolveTransferConflictRequest, isRetryTransferRequest,
+  type CancelTransferRequest, type EnqueueTransfersRequest, type ResolveTransferConflictRequest, type RetryTransferRequest, type Owner, type Result, type TerminalActionResponse,
   type TransferState,
 } from "@ssterm/contracts";
 import { createTransferEngine, type SessionRegistry, type TransferFileProvider } from "@ssterm/services";
@@ -40,6 +40,7 @@ export function createTransferController(options: {
       id: job.id, sessionId: job.sessionId, generation: job.generation, direction: job.direction,
       sourcePath: job.sourcePath, destinationPath: job.destinationPath, target: job.target,
       state: job.state, bytes: job.bytes, total: job.total, error: job.error, partial: job.partial,
+      partialPath: job.partialPath, atomicReplace: job.atomicReplace, conflictId: job.conflictId,
     })),
   });
   const publish = (row: Registration) => {
@@ -113,6 +114,24 @@ export function createTransferController(options: {
       if (!current(request.owner)) return failure("stale-owner");
       return engine.cancel(sessionOwnerId(request.owner), request.jobId) ? accepted : failure("conflict");
     },
+    resolveTransferConflict(request: ResolveTransferConflictRequest): Result<TerminalActionResponse> {
+      if (!isResolveTransferConflictRequest(request) || (request.name !== null && Buffer.byteLength(request.name) > 1_024)) return failure("invalid-request");
+      if (!current(request.owner)) return failure("stale-owner");
+      const ownerId = sessionOwnerId(request.owner);
+      const job = engine.snapshot(ownerId).find((row) => row.id === request.jobId);
+      if (!job || registry.locked || !registry.sftp(ownerId, job.sessionId, job.generation)) return failure("conflict");
+      const result = engine.resolveConflict(ownerId, request.jobId, request.conflictId, request.decision, request.name);
+      return result.ok ? accepted : failure(result.code === "resource-limit" ? "busy" : "conflict");
+    },
+    retryTransfer(request: RetryTransferRequest): Result<TerminalActionResponse> {
+      if (!isRetryTransferRequest(request)) return failure("invalid-request");
+      if (!current(request.owner)) return failure("stale-owner");
+      const ownerId = sessionOwnerId(request.owner);
+      const job = engine.snapshot(ownerId).find((row) => row.id === request.jobId);
+      if (!job || registry.locked || !registry.sftp(ownerId, job.sessionId, job.generation)) return failure("conflict");
+      const result = engine.retry(ownerId, request.jobId);
+      return result.ok ? accepted : failure(result.code === "resource-limit" ? "busy" : "conflict");
+    },
     clearFinishedTransfers(owner: Owner): Result<TerminalActionResponse> {
       if (!current(owner)) return failure("stale-owner");
       engine.clearFinished(sessionOwnerId(owner));
@@ -135,7 +154,7 @@ export function createTransferController(options: {
   };
 }
 export type TransferController = ReturnType<typeof createTransferController>;
-export const transferChannels = Object.freeze([channels.transferState, channels.enqueueTransfers, channels.cancelTransfer, channels.clearFinishedTransfers]);
+export const transferChannels = Object.freeze([channels.transferState, channels.enqueueTransfers, channels.cancelTransfer, channels.clearFinishedTransfers, channels.resolveTransferConflict, channels.retryTransfer]);
 export function registerTransferHandlers(options: {
   ipc: Pick<IpcMain, "handle" | "removeHandler">;
   boundary: WindowBoundary;
@@ -159,6 +178,8 @@ export function registerTransferHandlers(options: {
   handle(channels.transferState, isTerminalStateRequest, (controller, request) => controller.transferState(request.owner));
   handle(channels.enqueueTransfers, isEnqueueTransfersRequest, (controller, request) => controller.enqueueTransfers(request));
   handle(channels.cancelTransfer, isCancelTransferRequest, (controller, request) => controller.cancelTransfer(request));
+  handle(channels.resolveTransferConflict, isResolveTransferConflictRequest, (controller, request) => controller.resolveTransferConflict(request));
+  handle(channels.retryTransfer, isRetryTransferRequest, (controller, request) => controller.retryTransfer(request));
   handle(channels.clearFinishedTransfers, isTerminalStateRequest, (controller, request) => controller.clearFinishedTransfers(request.owner));
   return () => { for (const channel of transferChannels) options.ipc.removeHandler(channel); };
 }
@@ -166,7 +187,7 @@ export function registerTransferHandlers(options: {
 /** Both terminal sessions and file writes are consequential on window/app exit. */
 export function withTransferPrompt(prompt: { message: string; detail: string } | undefined, count: number, action: "close" | "quit") {
   if (count === 0) return prompt;
-  const transfers = `${count} pending ${count === 1 ? "transfer will" : "transfers will"} be cancelled. Newly created incomplete files are retained at their destination paths.`;
+  const transfers = `${count} pending ${count === 1 ? "transfer will" : "transfers will"} be cancelled. Temporary files are retained at the paths shown in Transfers. A publication already in progress may finish; check its outcome.`;
   return { message: prompt?.message ?? (action === "quit" ? "Quit with pending transfers?" : "Close with pending transfers?"),
     detail: prompt ? `${prompt.detail}\n\n${transfers}` : transfers };
 }

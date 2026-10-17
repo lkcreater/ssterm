@@ -50,6 +50,7 @@ export default defineConfig({
             "sftp.spec.ts",
             "sftp-browser.spec.ts",
             "transfers.spec.ts",
+            "transfer-conflicts.spec.ts",
           ],
         },
       ]
@@ -77,6 +78,7 @@ export default defineConfig({
             "sftp.spec.ts",
             "sftp-browser.spec.ts",
             "transfers.spec.ts",
+            "transfer-conflicts.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

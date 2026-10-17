@@ -4,7 +4,7 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { createTransferController, registerTransferHandlers, transferChannels, withTransferPrompt } from "../../apps/desktop/src/main/transfers.ts";
 import { WindowBoundary } from "../../apps/desktop/src/main/boundary.ts";
 import { createTransferEngine } from "../../packages/services/src/index.ts";
-import { failure, isEnqueueTransfersRequest, isTransferState, type EnqueueTransfersRequest, type TransferState } from "../../packages/contracts/src/index.ts";
+import { failure, isEnqueueTransfersRequest, isTransferState, isResolveTransferConflictRequest, type EnqueueTransfersRequest, type TransferState } from "../../packages/contracts/src/index.ts";
 import type { TransferFileProvider } from "../../packages/services/src/transfers.ts";
 
 const owner = { windowId: 1, generation: 1 };
@@ -15,10 +15,12 @@ const tick = async () => { await new Promise<void>((resolve) => setImmediate(res
 function fixture() {
   let locked = false;
   let live = true;
+  let exists = false;
   let observer: ((snapshot: any) => void) | undefined;
   const provider: TransferFileProvider = {
-    maxRead: 32_768, maxWrite: 32_768,
-    lstat: async (path) => path.startsWith("/local") ? { ok: true, value: { type: "file", size: 1, permissions: 0o600, mtime: 0 } } : { ok: false, code: "not-found" },
+    maxRead: 32_768, maxWrite: 32_768, atomicReplace: true,
+    publish: async () => ({ ok: true, value: { retainedPartial: false } }),
+    lstat: async (path) => (path.startsWith("/local") || exists) ? { ok: true, value: { type: "file", size: 1, permissions: 0o600, mtime: 0 } } : { ok: false, code: "not-found" },
     openRead: async () => ({ ok: true, value: { read: async (position) => ({ ok: true, value: position ? null : new Uint8Array([1]) }), close: async () => ({ ok: true, value: undefined }) } }),
     openWrite: async () => ({ ok: true, value: { write: async () => ({ ok: true, value: undefined }), close: async () => ({ ok: true, value: undefined }) } }),
   };
@@ -34,7 +36,7 @@ function fixture() {
   const sent: TransferState[] = [];
   controller.register(owner, (_, value) => sent.push(value));
   controller.register(other, () => {});
-  return { controller, sent, engine, lock() { locked = true; observer?.({ kind: "sftp", state: "Closed", id: "session", generation: 1 }); },
+  return { controller, sent, engine, provider, setExisting() { exists = true; }, lock() { locked = true; observer?.({ kind: "sftp", state: "Closed", id: "session", generation: 1 }); },
     stale() { live = false; }, dispose() { controller.dispose(); } };
 }
 
@@ -92,4 +94,57 @@ test("close and quit prompts include pending transfers and retained partial poli
   assert.equal(withTransferPrompt(undefined, 0, "quit"), undefined);
   assert.match(withTransferPrompt(undefined, 2, "close")!.detail, /2 pending transfers.*cancelled/);
   assert.match(withTransferPrompt({ message: "Quit?", detail: "Disconnect." }, 1, "quit")!.detail, /Disconnect.*\n\n1 pending transfer/s);
+});
+
+
+test("conflict decisions require exact owner/job/nonce and captured Ready generation", async () => {
+  const f = fixture();
+  try {
+    f.setExisting();
+    assert.ok(f.controller.enqueueTransfers(request).ok);
+    await tick();
+    const job = f.engine.snapshot("window:1:1")[0]!;
+    assert.equal(job.state, "conflict");
+    assert.equal(f.controller.pendingCount(owner), 1);
+    const decision = { owner, jobId: job.id, conflictId: job.conflictId!, decision: "skip" as const, name: null };
+    assert.deepEqual(f.controller.resolveTransferConflict({ ...decision, owner: other }), failure("conflict"));
+    assert.deepEqual(f.controller.resolveTransferConflict({ ...decision, conflictId: "stale" }), failure("conflict"));
+    assert.deepEqual(f.controller.resolveTransferConflict({ ...decision, decision: "rename", name: "ก".repeat(400) }), failure("invalid-request"));
+    assert.ok(f.controller.resolveTransferConflict(decision).ok);
+    assert.equal(f.engine.snapshot("window:1:1")[0]!.state, "skipped");
+    assert.deepEqual(f.controller.resolveTransferConflict(decision), failure("conflict"));
+    assert.deepEqual(f.controller.retryTransfer({ owner, jobId: job.id }), failure("conflict"), "skip cannot silently restart");
+  } finally { f.dispose(); }
+});
+
+test("conflict rename guards exclude arbitrary paths and reject accidental overwrite consent", () => {
+  const valid = { owner, jobId: "job", conflictId: "nonce", decision: "rename", name: "ไฟล์ใหม่.txt" };
+  assert.ok(isResolveTransferConflictRequest(valid));
+  for (const name of ["..", ".", "a/b", "", "bad\0", "�", null])
+    assert.equal(isResolveTransferConflictRequest({ ...valid, name }), false);
+  assert.equal(isResolveTransferConflictRequest({ ...valid, decision: "overwrite" }), false);
+  assert.equal(isResolveTransferConflictRequest({ ...valid, decision: "skip", name: null, path: "/foreign" }), false);
+  assert.ok(isResolveTransferConflictRequest({ ...valid, decision: "overwrite", name: null }));
+});
+
+test("retry creates a fresh captured attempt, refuses foreign/stale generations and preserves old history", async () => {
+  const f = fixture();
+  try {
+    const publish = f.provider.publish;
+    delete f.provider.publish;
+    assert.ok(f.controller.enqueueTransfers(request).ok);
+    await tick();
+    const job = f.engine.snapshot("window:1:1")[0]!;
+    assert.equal(job.state, "failed");
+    f.provider.publish = publish;
+    assert.deepEqual(f.controller.retryTransfer({ owner: other, jobId: job.id }), failure("conflict"));
+    assert.ok(f.controller.retryTransfer({ owner, jobId: job.id }).ok);
+    await tick();
+    const jobs = f.engine.snapshot("window:1:1");
+    assert.equal(jobs.length, 2);
+    assert.notEqual(jobs[0]!.id, jobs[1]!.id);
+    assert.equal(jobs[1]!.generation, job.generation);
+    f.stale();
+    assert.deepEqual(f.controller.retryTransfer({ owner, jobId: job.id }), failure("conflict"));
+  } finally { f.dispose(); }
 });

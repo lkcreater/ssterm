@@ -1,8 +1,8 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**SST-021 / T027: `DONE`** — [Transfer jobs / progress / cancel](../transfers.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 374/374, development E2E 52/52 พร้อม final-code transfer rerun 1/1, packaged 49/49; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้อนุมัติเฉพาะ SST-021 (“ทำ SST-021 ต่อได้”); SST-022–028 และ DS05–DS06 ยัง `PAUSED` ไม่เริ่มงานถัดไป
+**SST-022 / T028: `DONE`** — [Transfer conflicts / partial files / errors](../transfer-conflicts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 397/397, development E2E 54/54, packaged 51/51; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้อนุมัติเฉพาะ SST-022 (“ทำ SST-022 ให้เสร็จ”); SST-023–028 และ DS05–DS06 ยัง `PAUSED` ไม่เริ่มงานถัดไป
 
-**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-001–021 ส่งมอบแล้ว; SST-022–028 หยุดรอคำสั่ง รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
+**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-001–022 ส่งมอบแล้ว; SST-023–028 หยุดรอคำสั่ง รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
 ## Baseline / stack decision
 
@@ -176,4 +176,4 @@ SST-019 adds the [SFTP capability](../sftp.md) as a registry session kind with i
 
 SST-020 adds the [Files browser](../sftp-browser.md): a main-only local metadata provider, fenced file IPC over local and remote sources, a kind-checked lifecycle helper shared with terminals, and a keyboard-first dual-pane UI with safe name display.
 
-SST-021 adds the [transfer job service](../transfers.md): two process-wide workers, 100 retained jobs, regular-file-only local↔remote copying, owner/generation-fenced metadata IPC, confirmed-byte progress and close-gated completion. Native local I/O keeps quarantined permits and close/quit counts until actual cleanup; stalled remote I/O invalidates only its captured SFTP generation. Conflict decisions and automatic partial cleanup remain SST-022.
+SST-021 adds the [transfer job service](../transfers.md): two process-wide workers, 100 retained jobs, regular-file-only local↔remote copying, owner/generation-fenced metadata IPC, confirmed-byte progress and close-gated completion. Native local I/O keeps quarantined permits and close/quit counts until actual cleanup; stalled remote I/O invalidates only its captured SFTP generation. SST-022 adds [conflict decisions and staged publication](../transfer-conflicts.md): per-file Overwrite/Skip/Rename, same-directory `.part` staging, capability-gated replacement, retained stages (no automatic cleanup) and fresh-consent retry.

@@ -22,6 +22,7 @@ interface Internals {
   maxOpenHandles?: unknown;
   incoming?: { state?: unknown };
   outgoing?: { state?: unknown };
+  _extensions?: Record<string, unknown>;
 }
 type Failure = (Error & { code?: unknown }) | null | undefined;
 type Callback = (error: Failure, ...values: any[]) => void;
@@ -71,6 +72,7 @@ export function createSftpChannel(sftp: SFTPWrapper, home: string): SftpChannel 
   const internals = sftp as unknown as Internals;
   const maxRead = Math.min(SFTP_MAX_READ, positive(internals._maxReadLen, FALLBACK_IO));
   const maxWrite = positive(internals._maxWriteLen, FALLBACK_IO);
+  const atomicReplace = internals._extensions?.["posix-rename@openssh.com"] === "1";
   // ssh2 reports "no limit" as Infinity, which the fallback caps at the session bound anyway.
   const maxHandles = Math.min(SFTP_MAX_HANDLES, positive(internals.maxOpenHandles, SFTP_MAX_HANDLES));
   const pending = new Set<(code: SftpFailure) => void>();
@@ -178,6 +180,16 @@ export function createSftpChannel(sftp: SFTPWrapper, home: string): SftpChannel 
     home,
     maxRead,
     maxWrite,
+    atomicReplace,
+    publish(stagedPath, finalPath, options, signal) {
+      const staged = remotePath(stagedPath), final = remotePath(finalPath);
+      if (!staged || !final || staged === final || posix.dirname(staged) !== posix.dirname(final)
+        || typeof options?.replace !== "boolean") return Promise.resolve(fail("invalid-request"));
+      if (options.replace && !atomicReplace) return Promise.resolve(fail("unsupported"));
+      return call(signal, 0, (callback) => options.replace
+        ? sftp.ext_openssh_rename(staged, final, callback)
+        : sftp.rename(staged, final, callback), (error) => error ? fail(failureOf(error)) : ok({ retainedPartial: false }));
+    },
     lost: () => end("connection-lost"),
     drained,
     realpath(path, signal) {

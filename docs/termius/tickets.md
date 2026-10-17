@@ -1,10 +1,10 @@
 # Tickets สำหรับ ssterm
 
-**SST-021 / T027: `DONE`** — [Transfer jobs / progress / cancel](../transfers.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 374/374, development E2E 52/52 พร้อม final-code transfer rerun 1/1, packaged 49/49; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้อนุมัติเฉพาะ SST-021 (“ทำ SST-021 ต่อได้”); SST-022–028 และ DS05–DS06 ยัง `PAUSED` ไม่เริ่มงานถัดไป
+**SST-022 / T028: `DONE`** — [Transfer conflicts / partial files / errors](../transfer-conflicts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 397/397, development E2E 54/54, packaged 51/51; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้อนุมัติเฉพาะ SST-022 (“ทำ SST-022 ให้เสร็จ”); SST-023–028 และ DS05–DS06 ยัง `PAUSED` ไม่เริ่มงานถัดไป
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–021 ส่งมอบแล้ว; SST-022–028 หยุดรอคำสั่ง และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–022 ส่งมอบแล้ว; SST-023–028 หยุดรอคำสั่ง และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-022–028 คือ `PAUSED` (รอคำสั่งให้ทำต่อ) (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-023–028 คือ `PAUSED` (รอคำสั่งให้ทำต่อ) (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง
 
@@ -284,6 +284,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Validation:** real transfer hash compare, cancel mid-write, multiple jobs, disconnect. **Tasks:** job engine; progress events; cancel/cleanup UI.
 
 ### SST-022 — Transfer conflicts / partial files / errors
+
+**Status:** `DONE` — T028; [evidence](../transfer-conflicts.md) และ [delivery](../agent-runs/sst-022-delivery.md), independent TEST/REVIEW passed. Scope: regular files only; same-directory `.part` staging, capability-gated replacement, retained stages without automatic cleanup, retry as a fresh job with new consent.
 
 **Outcome:** users รู้ผลของ overwrite/failure/cancel. **Evidence:** W05; destructive/atomicity policies Proposed.
 

@@ -74,7 +74,7 @@ test("bridge exposes only narrow methods and forwards a rebuilt, validated ping"
     "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "importKey", "listDirectory", "onCatalogState", "onCredentialState",
     "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping",
     "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "renameKey", "resizeTerminal",
-    "resolvePath", "retrySecrets", "revokeKnownHost", "setIdentityPassword", "settings", "sftpState", "statPath", "terminalState", "transferState",
+    "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "setIdentityPassword", "settings", "sftpState", "statPath", "terminalState", "transferState",
     "trustState", "updateSettings", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
@@ -632,4 +632,61 @@ test("transfer subscriptions fence owners, malformed jobs, sequence snapshots, a
   f.dispose(); f.emit(state(9));
   assert.equal(received.length, 2);
   assert.equal(f.listeners.size, 0);
+});
+
+test("transfer conflict decisions and retries rebuild captured identities and reject malformed names and extra authority", async () => {
+  const f = fixture(); await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const identity = { owner, jobId: "transfer-1", conflictId: "conflict-1" };
+  f.setReply({ ok: true, value: { accepted: true } });
+  for (const [decision, name] of [["overwrite", null], ["skip", null], ["rename", "รายงานใหม่.txt"]] as const) {
+    const request = { ...identity, decision, name };
+    assert.deepEqual(await f.api.resolveTransferConflict(request), { ok: true, value: { accepted: true } });
+    const call = f.calls.at(-1)!;
+    assert.deepEqual(call, { channel: channels.resolveTransferConflict, args: [request] });
+    assert.notEqual(call.args[0], request);
+    assert.notEqual((call.args[0] as typeof request).owner, owner);
+  }
+  const retry = { owner, jobId: "transfer-1" };
+  assert.deepEqual(await f.api.retryTransfer(retry), { ok: true, value: { accepted: true } });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.retryTransfer, args: [retry] });
+  assert.notEqual(f.calls.at(-1)!.args[0], retry);
+  const before = f.calls.length;
+  for (const request of [
+    { ...identity, decision: "overwrite", name: "unrequested.txt" },
+    { ...identity, decision: "skip" },
+    { ...identity, decision: "rename", name: "../outside" },
+    { ...identity, decision: "rename", name: "." },
+    { ...identity, decision: "rename", name: null },
+    { ...identity, decision: "overwrite", name: null, conflictId: "" },
+    { ...identity, decision: "overwrite", name: null, destinationPath: "/tmp/other-target" },
+  ]) assert.deepEqual(await f.api.resolveTransferConflict(request as never), failure("invalid-request"));
+  for (const request of [{ ...retry, jobId: "" }, { ...retry, generation: 99 }, { ...retry, partialPath: "/tmp/unlink" }])
+    assert.deepEqual(await f.api.retryTransfer(request as never), failure("invalid-request"));
+  assert.equal(f.calls.length, before);
+  f.setReply({ ok: true, value: { accepted: true, deletedPath: "/tmp/file" } });
+  assert.deepEqual(await f.api.retryTransfer(retry), failure("unavailable"));
+  f.setReject();
+  assert.deepEqual(await f.api.resolveTransferConflict({ ...identity, decision: "skip", name: null }), failure("unavailable"));
+});
+
+test("transfer bridge projects conflict and retained-stage fields while refusing server-text and malformed paths", async () => {
+  const f = fixture(); await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const job = { id: "transfer-1", sessionId: "s-1", generation: 1, direction: "upload", sourcePath: "/tmp/รายงาน.txt",
+    destinationPath: "/home/fixture/รายงาน.txt", target: null, state: "conflict", bytes: 0, total: null, error: null,
+    partial: false, partialPath: null, atomicReplace: true, conflictId: "conflict-1" };
+  const state = { owner, sequence: 1, jobs: [job] };
+  const received: unknown[] = []; f.api.onTransferState((value) => received.push(value));
+  f.emit(state); assert.deepEqual(received, [state]);
+  for (const patch of [{ partialPath: "relative.part" }, { atomicReplace: "supported" }, { conflictId: "" },
+    { error: "server: disk full" }, { rawError: "/private/credential" }, { contents: new Uint8Array([1]) }]) {
+    f.emit({ ...state, sequence: 2, jobs: [{ ...job, ...patch }] });
+    f.setReply({ ok: true, value: { ...state, sequence: 2, jobs: [{ ...job, ...patch }] } });
+    assert.deepEqual(await f.api.transferState({ owner }), failure("unavailable"));
+  }
+  assert.equal(received.length, 1);
+  const failed = { ...state, sequence: 2, jobs: [{ ...job, state: "failed", error: "publication-unknown",
+    partial: true, partialPath: "/home/fixture/.ssterm-owned.part", conflictId: null }] };
+  f.emit(failed); assert.deepEqual(received.at(-1), failed);
 });

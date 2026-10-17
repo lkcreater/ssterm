@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { test, type TestContext } from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { EventEmitter } from "node:events";
 import ssh2, { type Connection, type SFTPWrapper } from "ssh2";
 import type { ResolvedHostConfig, SecretProvider, SftpFailure, SftpResult, SftpSession } from "../../packages/domain/src/index.ts";
 import { openMetadata } from "../../packages/adapters/src/index.ts";
@@ -674,4 +675,44 @@ test("a maximum-size read fits ssh2's inbound packet limit; malformed negotiated
   assert.equal(code(await writer.write(0, new Uint8Array(32_769))), "invalid-request");
   assert.equal(channelGone({} as SFTPWrapper), true, "missing channel state counts as gone");
   wide.dispose();
+});
+
+test("publication uses standard exclusive rename or the exact negotiated OpenSSH replacement capability", async () => {
+  for (const extension of [undefined, "0", 1, Buffer.from("1"), "1"]) {
+    const raw = new EventEmitter() as EventEmitter & Record<string, any>;
+    raw.incoming = { state: "open" }; raw.outgoing = { state: "open" };
+    raw._extensions = { "posix-rename@openssh.com": extension };
+    const calls: { kind: string; source: string; destination: string }[] = [];
+    raw.rename = (source: string, destination: string, callback: (error?: Error) => void) => { calls.push({ kind: "rename", source, destination }); callback(); };
+    raw.ext_openssh_rename = (source: string, destination: string, callback: (error?: Error) => void) => { calls.push({ kind: "replace", source, destination }); callback(); };
+    raw.unlink = () => assert.fail("replacement must never fall back to deleting the destination");
+    raw.end = () => raw.emit("close");
+    const channel = createSftpChannel(raw as unknown as SFTPWrapper, HOME);
+    assert.equal(channel.atomicReplace, extension === "1");
+    assert.deepEqual(await channel.publish!(`${HOME}/.ssterm-owned.part`, `${HOME}/final`, { replace: false }), { ok: true, value: { retainedPartial: false } });
+    assert.equal(calls[0]!.kind, "rename");
+    const replace = await channel.publish!(`${HOME}/.ssterm-owned.part`, `${HOME}/final`, { replace: true });
+    assert.equal(code(replace), extension === "1" ? "ok" : "unsupported");
+    assert.equal(calls.length, extension === "1" ? 2 : 1);
+    if (extension === "1") assert.equal(calls[1]!.kind, "replace");
+    assert.equal(code(await channel.publish!(`${HOME}/.part`, "/other/final", { replace: false })), "invalid-request");
+    assert.equal(code(await channel.publish!(`${HOME}/.part`, `${HOME}/.part`, { replace: true })), "invalid-request");
+    channel.dispose();
+  }
+});
+
+test("remote publication maps v3 generic failures without claiming quota detail and preserves no-delete policy", async () => {
+  const raw = new EventEmitter() as EventEmitter & Record<string, any>;
+  raw.incoming = { state: "open" }; raw.outgoing = { state: "open" };
+  raw._extensions = { "posix-rename@openssh.com": "1" };
+  let status = 4;
+  const operation = (_source: string, _destination: string, callback: (error: Error & { code: number }) => void) => callback(Object.assign(new Error(SERVER_TEXT), { code: status }));
+  raw.rename = operation; raw.ext_openssh_rename = operation;
+  raw.unlink = () => assert.fail("never remove the original"); raw.end = () => raw.emit("close");
+  const channel = createSftpChannel(raw as unknown as SFTPWrapper, HOME);
+  for (const [remoteStatus, expected] of [[4, "failure"], [3, "permission-denied"], [2, "not-found"], [7, "connection-lost"]] as const) {
+    status = remoteStatus;
+    assert.deepEqual(await channel.publish!(`${HOME}/.part`, `${HOME}/final`, { replace: true }), { ok: false, code: expected });
+  }
+  channel.dispose();
 });

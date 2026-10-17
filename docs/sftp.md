@@ -28,3 +28,5 @@ There is no renderer access until SST-020. A FIFO lists as a symlink or `other` 
 
 
 SST-021 adds [regular-file transfer jobs](transfers.md), local I/O and post-open remote FSTAT validation. Transfer callers preflight `lstat`, refuse selected symlinks/special files, and invalidate stalled remote generations. Close/quit prompts now include pending transfer/cleanup work; the SST-019 evidence above remains historical.
+
+SST-022 adds [conflict decisions and staged publication](transfer-conflicts.md). The main-only SFTP provider uses standard rename for nonreplacement and exposes atomic replacement only when ssh2 reports the supported OpenSSH POSIX rename extension; its pinned internal extension map must be revalidated when ssh2 is upgraded.

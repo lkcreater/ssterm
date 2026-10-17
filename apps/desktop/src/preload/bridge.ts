@@ -1,7 +1,7 @@
 import {
   channels,
-  isTransferState, isEnqueueTransfersRequest, isCancelTransferRequest,
-  type TransferState, type EnqueueTransfersRequest, type CancelTransferRequest,
+  isTransferState, isEnqueueTransfersRequest, isCancelTransferRequest, isResolveTransferConflictRequest, isRetryTransferRequest,
+  type TransferState, type EnqueueTransfersRequest, type CancelTransferRequest, type ResolveTransferConflictRequest, type RetryTransferRequest,
   isCredentialState, isCredentialStateRequest, isAnswerCredentialsRequest,
   isCancelCredentialPromptRequest, isCredentialActionResponse,
   type CredentialState, type CredentialStateRequest, type AnswerCredentialsRequest,
@@ -415,6 +415,15 @@ export function createDesktopBridge(transport: BridgeTransport): {
     cancelTransfer(request: CancelTransferRequest) {
       if (!isCancelTransferRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.cancelTransfer, [{ owner: { ...request.owner }, jobId: request.jobId }], isTerminalActionResponse);
+    },
+    resolveTransferConflict(request: ResolveTransferConflictRequest) {
+      if (!isResolveTransferConflictRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.resolveTransferConflict, [{ owner: { ...request.owner }, jobId: request.jobId,
+        conflictId: request.conflictId, decision: request.decision, name: request.name }], isTerminalActionResponse);
+    },
+    retryTransfer(request: RetryTransferRequest) {
+      if (!isRetryTransferRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.retryTransfer, [{ owner: { ...request.owner }, jobId: request.jobId }], isTerminalActionResponse);
     },
     clearFinishedTransfers(request: TerminalStateRequest) {
       if (!isTerminalStateRequest(request)) return Promise.resolve(failure("invalid-request"));

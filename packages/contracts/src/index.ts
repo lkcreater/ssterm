@@ -6,7 +6,7 @@ import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarge
 export * from "./terminals.ts";
 import type { SftpState, FilePathRequest, FileOutcome, DirectoryListing, FileAttributes } from "./files.ts";
 export * from "./files.ts";
-import type { TransferState, EnqueueTransfersRequest, CancelTransferRequest } from "./transfers.ts";
+import type { TransferState, EnqueueTransfersRequest, CancelTransferRequest, ResolveTransferConflictRequest, RetryTransferRequest } from "./transfers.ts";
 export * from "./transfers.ts";
 import type { OpenLinkRequest, OpenLinkResponse } from "./links.ts";
 import type { CatalogState, CatalogStateRequest, PrepareCatalogChangeRequest, CatalogPrepareResponse, ApplyCatalogChangeRequest, CatalogApplyResponse, ConnectHostRequest, ConnectHostResponse } from "./catalog.ts";
@@ -102,6 +102,8 @@ export interface DesktopAPI {
   onTransferState(callback: (state: TransferState) => void): () => void;
   enqueueTransfers(request: EnqueueTransfersRequest): Promise<Result<TerminalActionResponse>>;
   cancelTransfer(request: CancelTransferRequest): Promise<Result<TerminalActionResponse>>;
+  resolveTransferConflict(request: ResolveTransferConflictRequest): Promise<Result<TerminalActionResponse>>;
+  retryTransfer(request: RetryTransferRequest): Promise<Result<TerminalActionResponse>>;
   clearFinishedTransfers(request: TerminalStateRequest): Promise<Result<TerminalActionResponse>>;
   openLink(request: OpenLinkRequest): Promise<Result<OpenLinkResponse>>;
   catalogState(request: CatalogStateRequest): Promise<Result<CatalogState>>;
@@ -163,6 +165,8 @@ export const channels = Object.freeze({
   enqueueTransfers: "ssterm:enqueue-transfers",
   cancelTransfer: "ssterm:cancel-transfer",
   clearFinishedTransfers: "ssterm:clear-finished-transfers",
+  resolveTransferConflict: "ssterm:resolve-transfer-conflict",
+  retryTransfer: "ssterm:retry-transfer",
   openLink: "ssterm:open-link",
   catalogState: "ssterm:catalog-state",
   catalogStateChanged: "ssterm:catalog-state-changed",

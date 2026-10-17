@@ -25,7 +25,7 @@ export const LOCAL_FILES_TIMEOUT_MS = 10_000;
 
 // Server status text never exists past the adapter; these are fixed codes only.
 const fileError = (code: SftpFailure): FileErrorCode =>
-  code === "cancelled" || code === "not-file" ? "failure" : code === "invalid-request" ? "invalid-path" : code;
+  code === "cancelled" || code === "not-file" || code === "no-space" || code === "quota-exceeded" ? "failure" : code === "invalid-request" ? "invalid-path" : code;
 const fail = (error: FileErrorCode): FileOutcome<never> => ({ ok: false, error });
 const settle = <A, T>(result: SftpResult<A>, map: (value: A) => T): FileOutcome<T> =>
   result.ok ? { ok: true, value: map(result.value) } : fail(fileError(result.code));

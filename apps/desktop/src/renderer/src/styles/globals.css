@@ -1412,3 +1412,26 @@
 .transfer-job[data-state="cancelling"] .transfer-job-heading > svg {
   color: var(--connection-connecting);
 }
+.transfer-conflict {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.transfer-overwrite-dialog {
+  display: flex;
+  max-height: calc(100dvh - 32px);
+  flex-direction: column;
+}
+.transfer-overwrite-details {
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.transfer-job[data-state="conflict"] .transfer-job-heading > svg,
+.transfer-job[data-state="publishing"] .transfer-job-heading > svg {
+  color: var(--connection-connecting);
+}
