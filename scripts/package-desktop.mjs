@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { writeNotices } from "./third-party-notices.mjs";
+import { flipFuses, FuseVersion, FuseV1Options } from "@electron/fuses";
 
 /**
  * Bundle identity. Storage (userData "ssterm") and the Keychain service name do not depend on the signature, but
@@ -126,6 +127,16 @@ try {
     try { plist(bundle, "-remove", key); } catch { /* absent */ }
   }
   await rm(join(paths[0], "__MACOSX"), { recursive: true, force: true });
+  // Fuses (ADR 0004): the packaged binary cannot run as plain Node or take NODE_OPTIONS, and loads the app only from
+  // its integrity-checked archive. The inspector switch stays on: Playwright drives the packaged app through it.
+  await flipFuses(join(bundle, "Contents/MacOS/SSTerm"), {
+    version: FuseVersion.V1,
+    [FuseV1Options.RunAsNode]: false,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+    [FuseV1Options.OnlyLoadAppFromAsar]: true,
+    // GrantFileProtocolExtraPrivileges stays at its default: the renderer is loaded from file:// inside the archive.
+  });
   // Local provenance/quarantine attributes are machine metadata; strip them before sealing.
   execFileSync("/usr/bin/xattr", ["-cr", bundle]);
   // Ad-hoc signature with a stable identifier (no Developer ID is available): nested code first, then the app,

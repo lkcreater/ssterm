@@ -69,13 +69,7 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "ackTerminal", "answerCredentials", "answerHostTrust", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "cancelTransfer", "catalogState",
-    "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "connectHost", "connectSftp", "credentialState", "deleteKey", "deleteSnippet", "discardKeyImport",
-    "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "importKey", "listDirectory", "onCatalogState", "onCredentialState",
-    "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onTunnelState", "onWindowState", "openLink", "openSnippet", "openTerminal", "ping",
-    "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "renameKey", "resizeTerminal",
-    "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "saveSnippet", "setIdentityPassword", "settings", "sftpState", "startTunnel", "statPath", "stopTunnel", "terminalState", "transferState",
-    "trustState", "tunnelState", "updateSettings", "writeTerminal",
+    "ackTerminal", "answerCredentials", "answerHostTrust", "appLockState", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "cancelGoogleSignIn", "cancelTransfer", "catalogState", "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "confirmAppLockPassword", "connectHost", "connectSftp", "credentialState", "deleteKey", "deleteSnippet", "discardKeyImport", "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "googleSignIn", "importKey", "listDirectory", "onCatalogState", "onCredentialState", "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onTunnelState", "onWindowState", "openLink", "openSnippet", "openTerminal", "ping", "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "recoverAppLock", "regenerateRecoveryCode", "renameKey", "resizeTerminal", "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "saveSnippet", "setIdentityPassword", "settings", "setupAppLockPassword", "sftpState", "startTunnel", "statPath", "stopTunnel", "terminalState", "transferState", "trustState", "tunnelState", "unlockAppLock", "unlockAppLockOffline", "updateSettings", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();

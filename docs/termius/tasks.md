@@ -72,6 +72,10 @@
 - [ ] **T035 / SST-028:** local packaged artifact/clean fixture/upgrade/storage and native binding checks; รวม [deferred manual checks จาก SST-020](tickets.md#sst-028--macos-package--release-readiness) (⌘C/⌘A ผ่านเมนูจริง, VoiceOver, privacy prompt จาก Finder)
 - [x] **T036 / SST-028:** checksums/release notes/known limitations/signing gate และ installation guide
 
+## Post-MVP — authorized
+
+- [x] **T053 / SST-039:** local app lock — password or Google (loopback OAuth), recovery code, main-side IPC gate, Settings
+
 ## Later — ยังไม่รวมใน MVP confirmation
 
 - [ ] **T037 / SST-029:** local PTY and additional OS capability/packaging matrix

@@ -56,7 +56,7 @@ export async function emptyTestNamespace(app: ElectronApplication, namespace: st
  */
 export async function launchDesktop(
   profile: string,
-  options: { showcase?: boolean; secretNamespace?: string } = {},
+  options: { showcase?: boolean; secretNamespace?: string; env?: Record<string, string> } = {},
 ): Promise<Desktop> {
   const { showcase = false, secretNamespace = `dev.ssterm.test.${randomUUID()}` } = options;
   const env = Object.fromEntries(
@@ -68,6 +68,8 @@ export async function launchDesktop(
   delete env.ELECTRON_RENDERER_URL;
   env.SSTERM_TEST_USER_DATA = profile;
   env.SSTERM_TEST_SECRET_NAMESPACE = secretNamespace;
+  // Test-only switches (e.g. SSTERM_TEST_APP_LOCK, SSTERM_TEST_GOOGLE); main honours them only with a test profile.
+  Object.assign(env, options.env ?? {});
   const packaged = process.env.SSTERM_PACKAGED_EXECUTABLE;
   if (showcase) env.ELECTRON_RENDERER_URL = "http://127.0.0.1:5174/";
   // A packaged build must ignore even an explicitly supplied development URL.

@@ -34,6 +34,11 @@ test("bundle identity, version, usage strings, icon and signature are release-re
   expect(details).toContain("Signature=adhoc");
   expect(details).toMatch(/Sealed Resources version=2/u);
   execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", bundle]);
+  // Fuses: no run-as-node, no NODE_OPTIONS, archive-only with integrity validation.
+  // eslint-disable-next-line no-control-regex -- the CLI colours its output.
+  const fuses = execFileSync(process.execPath, ["node_modules/@electron/fuses/dist/bin.js", "read", "--app", bundle], { encoding: "utf8" }).replace(/\u001b\[[0-9;]*m/gu, "");
+  for (const line of ["RunAsNode is Disabled", "EnableNodeOptionsEnvironmentVariable is Disabled", "EnableEmbeddedAsarIntegrityValidation is Enabled", "OnlyLoadAppFromAsar is Enabled"])
+    expect(fuses, line).toContain(line);
 });
 
 test("package contents: offline fonts, notices and licences, native keyring unpacked, no Windows helper, fixtures or build metadata", async () => {

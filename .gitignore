@@ -6,3 +6,4 @@ apps/desktop/out/
 artifacts/
 test-results/
 playwright-report/
+client_secret_*.json

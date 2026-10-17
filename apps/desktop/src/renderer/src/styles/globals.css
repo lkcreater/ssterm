@@ -841,6 +841,53 @@
 .live-terminal-pane:is([data-phase="closed"], [data-phase="failed"]) .live-terminal {
   opacity: 0.72;
 }
+/* App lock (SST-039): one centered card on the app background; nothing else renders until unlock. */
+.app-lock-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px 16px;
+  overflow: auto;
+  background: var(--background);
+}
+.app-lock-card {
+  display: grid;
+  width: min(420px, 100%);
+  gap: 16px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.app-lock-logo {
+  width: 56px;
+  height: 56px;
+}
+.app-lock-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.app-lock-divider::before,
+.app-lock-divider::after {
+  content: "";
+  height: 1px;
+  background: var(--border);
+}
+.app-lock-code {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  font: 15px / 24px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-align: center;
+  user-select: all;
+  overflow-wrap: anywhere;
+}
 /* Port forwarding rules: state is an icon plus text, colored per Signal Blue operational states. */
 .tunnel-list {
   display: flex;

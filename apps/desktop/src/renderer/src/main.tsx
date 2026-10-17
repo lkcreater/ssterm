@@ -1,6 +1,7 @@
 import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell } from "@/components/app-shell";
+import { AppLockGate } from "@/components/app-lock/app-lock-gate";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
 import { Spinner } from "@/components/ui/spinner";
@@ -27,7 +28,9 @@ createRoot(root).render(
             <Showcase />
           </Suspense>
         ) : (
-          <AppShell />
+          <AppLockGate>
+            <AppShell />
+          </AppLockGate>
         )}
       </Toaster>
     </TooltipProvider>

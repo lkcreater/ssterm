@@ -46,6 +46,8 @@ export class WindowBoundary {
   private readonly windows = new Map<number, Registration>();
   private generation = 0;
   private disposed = false;
+  /** App lock (ADR 0004): until it opens, only bootstrap, ping and the app-lock channels are served. */
+  private accessGate: () => boolean = () => true;
 
   constructor(
     private readonly entryURL: string,
@@ -131,7 +133,20 @@ export class WindowBoundary {
     return { ok: true, value: registration };
   }
 
+  /** Installs the app-lock check consulted by `authorizeOwner`. */
+  setAccessGate(open: () => boolean): void {
+    this.accessGate = open;
+  }
+
+  /** Every feature channel: owner checks plus the app lock. */
   authorizeOwner(event: Invocation, owner: unknown): Result<Owner> {
+    const authorized = this.authorizeLockOwner(event, owner);
+    if (!authorized.ok) return authorized;
+    return this.accessGate() ? authorized : failure("unauthorized");
+  }
+
+  /** The app-lock channels themselves: the same owner checks without the lock. */
+  authorizeLockOwner(event: Invocation, owner: unknown): Result<Owner> {
     const authorized = this.authorize(event);
     if (!authorized.ok) return authorized;
     if (!isOwner(owner)) return failure("invalid-request");

@@ -23,6 +23,12 @@ import type { OpenSnippetRequest, OpenSnippetResponse, SaveSnippetRequest, SaveS
 export * from "./snippets.ts";
 import type { TunnelState, TunnelStateRequest, TunnelRuleRequest, StartTunnelResponse, StopTunnelResponse } from "./tunnels.ts";
 export * from "./tunnels.ts";
+import type {
+  AppLockStatus, AppLockStateRequest, SetupPasswordRequest, SetupPasswordResponse, UnlockPasswordRequest, AttemptResponse,
+  ConfirmPasswordRequest, GoogleSignInRequest, GoogleSignInResponse, CancelGoogleRequest, UnlockOfflineRequest,
+  UnlockOfflineResponse, RecoverRequest, RegenerateRecoveryRequest, RegenerateRecoveryResponse,
+} from "./app-lock.ts";
+export * from "./app-lock.ts";
 import type { TerminalSettings, SettingsRequest, UpdateSettingsRequest } from "./settings.ts";
 export * from "./settings.ts";
 /** Serializable values crossing the isolated preload boundary. */
@@ -126,6 +132,15 @@ export interface DesktopAPI {
   openSnippet(request: OpenSnippetRequest): Promise<Result<OpenSnippetResponse>>;
   saveSnippet(request: SaveSnippetRequest): Promise<Result<SaveSnippetResponse>>;
   deleteSnippet(request: DeleteSnippetRequest): Promise<Result<DeleteSnippetResponse>>;
+  appLockState(request: AppLockStateRequest): Promise<Result<AppLockStatus>>;
+  setupAppLockPassword(request: SetupPasswordRequest): Promise<Result<SetupPasswordResponse>>;
+  unlockAppLock(request: UnlockPasswordRequest): Promise<Result<AttemptResponse>>;
+  confirmAppLockPassword(request: ConfirmPasswordRequest): Promise<Result<AttemptResponse>>;
+  googleSignIn(request: GoogleSignInRequest): Promise<Result<GoogleSignInResponse>>;
+  cancelGoogleSignIn(request: CancelGoogleRequest): Promise<Result<{ status: "cancelled" }>>;
+  unlockAppLockOffline(request: UnlockOfflineRequest): Promise<Result<UnlockOfflineResponse>>;
+  recoverAppLock(request: RecoverRequest): Promise<Result<AttemptResponse>>;
+  regenerateRecoveryCode(request: RegenerateRecoveryRequest): Promise<Result<RegenerateRecoveryResponse>>;
   tunnelState(request: TunnelStateRequest): Promise<Result<TunnelState>>;
   onTunnelState(callback: (state: TunnelState) => void): () => void;
   startTunnel(request: TunnelRuleRequest): Promise<Result<StartTunnelResponse>>;
@@ -195,6 +210,15 @@ export const channels = Object.freeze({
   openSnippet: "ssterm:open-snippet",
   saveSnippet: "ssterm:save-snippet",
   deleteSnippet: "ssterm:delete-snippet",
+  appLockState: "ssterm:app-lock-state",
+  setupAppLockPassword: "ssterm:app-lock-setup-password",
+  unlockAppLock: "ssterm:app-lock-unlock",
+  confirmAppLockPassword: "ssterm:app-lock-confirm",
+  googleSignIn: "ssterm:app-lock-google",
+  cancelGoogleSignIn: "ssterm:app-lock-google-cancel",
+  unlockAppLockOffline: "ssterm:app-lock-offline",
+  recoverAppLock: "ssterm:app-lock-recover",
+  regenerateRecoveryCode: "ssterm:app-lock-regenerate",
   tunnelState: "ssterm:tunnel-state",
   tunnelStateChanged: "ssterm:tunnel-state-changed",
   startTunnel: "ssterm:start-tunnel",

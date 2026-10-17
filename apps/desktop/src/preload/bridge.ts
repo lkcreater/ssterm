@@ -28,6 +28,10 @@ import {
   isDeleteSnippetResponse,
   type OpenSnippetRequest, type SaveSnippetRequest, type DeleteSnippetRequest,
   isTunnelState, isTunnelStateRequest, isTunnelRuleRequest, isStartTunnelResponse, isStopTunnelResponse,
+  appLockRequestGuards, isAppLockStatus, isSetupPasswordResponse, isAttemptResponse, isGoogleSignInResponse, isUnlockOfflineResponse,
+  isRegenerateRecoveryResponse, isCancelGoogleResponse,
+  type AppLockStateRequest, type SetupPasswordRequest, type UnlockPasswordRequest, type ConfirmPasswordRequest,
+  type GoogleSignInRequest, type CancelGoogleRequest, type UnlockOfflineRequest, type RecoverRequest, type RegenerateRecoveryRequest,
   type TunnelState, type TunnelStateRequest, type TunnelRuleRequest,
   isTrustState,
   isTrustStateRequest,
@@ -551,6 +555,43 @@ export function createDesktopBridge(transport: BridgeTransport): {
       if (!isDeleteSnippetRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.deleteSnippet, [{ owner: { ...request.owner }, snippetId: request.snippetId,
         expectedRevision: request.expectedRevision }], isDeleteSnippetResponse);
+    },
+    appLockState(request: AppLockStateRequest) {
+      if (!appLockRequestGuards.state(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.appLockState, [{ owner: { ...request.owner } }], isAppLockStatus);
+    },
+    setupAppLockPassword(request: SetupPasswordRequest) {
+      if (!appLockRequestGuards.setupPassword(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.setupAppLockPassword, [{ owner: { ...request.owner }, username: request.username, password: request.password,
+        confirmPassword: request.confirmPassword }], isSetupPasswordResponse);
+    },
+    unlockAppLock(request: UnlockPasswordRequest) {
+      if (!appLockRequestGuards.unlockPassword(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.unlockAppLock, [{ owner: { ...request.owner }, username: request.username, password: request.password }], isAttemptResponse);
+    },
+    confirmAppLockPassword(request: ConfirmPasswordRequest) {
+      if (!appLockRequestGuards.confirmPassword(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.confirmAppLockPassword, [{ owner: { ...request.owner }, password: request.password }], isAttemptResponse);
+    },
+    googleSignIn(request: GoogleSignInRequest) {
+      if (!appLockRequestGuards.google(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.googleSignIn, [{ owner: { ...request.owner }, purpose: request.purpose }], isGoogleSignInResponse);
+    },
+    cancelGoogleSignIn(request: CancelGoogleRequest) {
+      if (!appLockRequestGuards.cancelGoogle(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.cancelGoogleSignIn, [{ owner: { ...request.owner } }], isCancelGoogleResponse);
+    },
+    unlockAppLockOffline(request: UnlockOfflineRequest) {
+      if (!appLockRequestGuards.unlockOffline(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.unlockAppLockOffline, [{ owner: { ...request.owner } }], isUnlockOfflineResponse);
+    },
+    recoverAppLock(request: RecoverRequest) {
+      if (!appLockRequestGuards.recover(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.recoverAppLock, [{ owner: { ...request.owner }, code: request.code }], isAttemptResponse);
+    },
+    regenerateRecoveryCode(request: RegenerateRecoveryRequest) {
+      if (!appLockRequestGuards.regenerateRecovery(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.regenerateRecoveryCode, [{ owner: { ...request.owner } }], isRegenerateRecoveryResponse);
     },
     async tunnelState(request: TunnelStateRequest) {
       if (!isTunnelStateRequest(request)) return failure("invalid-request");

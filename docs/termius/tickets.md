@@ -50,6 +50,7 @@ UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) �
 | SST-036 | Crypto protocol / key lifecycle review | Later | P2 | L | 028 |
 | SST-037 | Team vault / ACL / revocation | Later | P2 | L | 035,036 |
 | SST-038 | Remaining evidence / Mosh / hardware capability spikes | Later | P2 | L | 028 |
+| SST-039 | Local app lock (password / Google) | Post-MVP | P1 | M | 006,016,028 |
 
 Dependency numbers ย่อหมายถึง `SST-` prefix งานบาง phase ทำคู่ขนานได้เมื่อ dependency พร้อม; phase ไม่ใช่คำสั่งให้เริ่มก่อน confirm
 
@@ -426,6 +427,14 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Evidence:** N04/N05/N-T06–08, original unanswered questions. **Outcome:** residual unknowns แยกเป็น bounded investigations.
 
 **Acceptance:** each investigation เลือก explicit artifact/device/scenario; report observation/inference/unknown พร้อม identity/source; Mosh bootstrap/network recovery and FIDO PIN/touch/cancel tested on authorized fixture/device; native decompilation ใช้ engine เมื่อพร้อมและไม่เปลี่ยน setup โดยไม่มี approved scope. **Validation:** focused evidence + capability matrix. **Tasks:** runtime UI evidence if requested; native/API tracing; Mosh/hardware ADRs.
+
+### SST-039 — Local app lock (password / Google)
+
+**Status:** `DONE` — T053; [evidence](../app-lock.md), [ADR 0004](../adr/0004-local-app-lock.md), [delivery](../agent-runs/sst-039-delivery.md).
+
+**Acceptance:** first launch requires choosing username + password (zod: username 3–64 without control characters, password ≥ 12, confirmation matches) or Google; a recovery code is shown once; every app start requires unlock with the chosen method before any other IPC works (enforced in main); wrong attempts back off; Google uses the system browser, loopback `127.0.0.1:55411/oauth/callback`, PKCE/state/nonce, verified ID token, bound account only, 7-day offline grace; recovery code permits re-setup and is replaced; Settings changes password, switches method and regenerates the code after re-authentication; nothing secret in SQLite, logs or renderer persistence.
+
+**Validation:** unit (schemas, verifiers, backoff, gate, OAuth with fake JWKS, loopback listener) and E2E (setup, relaunch, wrong/right password, recovery, fake Google provider), development and packaged.
 
 ## Definition of done ร่วม
 

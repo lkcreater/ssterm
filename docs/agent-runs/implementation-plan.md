@@ -973,3 +973,24 @@ SST-026/T032 DONE. [Tunnels UI](../tunnels.md#tunnel-rules-and-status-ui--sst-02
 ### Final SST-028 record — 2026-10-17
 
 [Release guide](../release/README.md), [notes](../release/0.1.0.md), [delivery](sst-028-delivery.md). Final source: typecheck PASS; unit 422/422; build PASS; development E2E 62/62; package PASS; packaged 63/63; release:local verified. Review: no critical/high; mediums fixed (explicit data folder, signature-bound grants documented, macOS 15 Gatekeeper path, manifest bound to the packaged commit). The MVP ticket range SST-001–028 is now implemented; open items are the human-operated checks (SST-027 T034, SST-028 T035, DS05/DS06) and credentialed signing.
+
+## SST-039 execution plan — 2026-10-17
+
+**Authorization:** after the plan discussion the user instructed “เริ่มงานตาม plan”. Decisions: local app lock; one method chosen at first launch; unlock at app start; recovery code; Google bound account with 7-day offline grace; defaults password ≥ 12, `127.0.0.1` redirect, existing users must set up after updating. Design: [ADR 0004](../adr/0004-local-app-lock.md). The Disconnect change was committed first (`e9c99ee`).
+
+| ID | Files | Validation |
+|---|---|---|
+| I1 contracts | `packages/contracts/src/app-lock.ts` (zod schemas, IPC types/guards), `zod` 4.6.7 | unit |
+| I2 store + verifiers | `packages/adapters/src/keychain.ts` (record store), `packages/services/src/app-lock.ts` | unit: scrypt, record, backoff, recovery, grace |
+| I3 Google | `packages/services/src/google-oauth.ts`, `packages/adapters/src/oauth-loopback.ts` | unit: PKCE/state/nonce, JWKS RS256 verify, loopback timeout/port busy/wrong state |
+| I4 main | `apps/desktop/src/main/{app-lock,boundary,index}.ts`, build-time client define | unit: IPC gate, channels |
+| I5 renderer | `components/app-lock/*`, `app-shell.tsx`, Settings section | typecheck/build, E2E |
+| I6 tests | `tests/e2e/app-lock.spec.ts`, fake OAuth server fixture, fixtures `SSTERM_TEST_APP_LOCK` | dev + packaged |
+
+**Rollback:** remove the gate and screens; the Keychain record is inert. No schema change.
+
+**SST-039 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+### Final SST-039 record — 2026-10-17
+
+[App lock](../app-lock.md), [delivery](sst-039-delivery.md). typecheck PASS; unit 431/431; build PASS; development E2E 64/64; package PASS (with fuses); packaged 65/65. Review: no critical; the Keychain-reset high fixed; the offline-grace high accepted per the user's choice and offered as a stricter option.

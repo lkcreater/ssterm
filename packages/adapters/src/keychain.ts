@@ -89,3 +89,36 @@ export async function clearTestNamespace(namespace: string): Promise<number> {
   for (const { account } of await findCredentialsAsync(namespace)) await new AsyncEntry(namespace, account).deleteCredential();
   return (await findCredentialsAsync(namespace)).length;
 }
+export type RecordRead = { status: 'present'; value: Buffer } | { status: 'missing' } | { status: 'unavailable' } | { status: 'error' };
+/** One small app-owned record (e.g. the app lock) in the secret namespace; it does not belong to the vault. */
+export interface RecordStore {
+  read(): Promise<RecordRead>;
+  /** `unknown`: the write may or may not have reached the store. */
+  write(value: Uint8Array): Promise<'confirmed' | 'unknown' | 'invalid'>;
+}
+export class KeychainRecordStore implements RecordStore {
+  constructor(private readonly namespace: string, private readonly account: 'app-lock/v1' = 'app-lock/v1') {
+    if (namespace !== PRODUCTION_SECRET_NAMESPACE && !testNamespace.test(namespace)) throw new Error('Unsupported secret namespace');
+  }
+  async read(): Promise<RecordRead> {
+    try {
+      const value = await new AsyncEntry(this.namespace, this.account).getSecret();
+      if (value === null) return { status: 'missing' };
+      const bytes = Buffer.from(value);
+      value.fill(0);
+      return { status: 'present', value: bytes };
+    } catch (error) {
+      const failure = classifyProviderError(error);
+      return failure === 'missing' ? { status: 'missing' } : failure === 'inaccessible' ? { status: 'unavailable' } : { status: 'error' };
+    }
+  }
+  async write(value: Uint8Array): Promise<'confirmed' | 'unknown' | 'invalid'> {
+    if (!(value instanceof Uint8Array)) return 'invalid';
+    try {
+      await new AsyncEntry(this.namespace, this.account).setSecret(value);
+      return 'confirmed';
+    } catch (error) {
+      return classifyProviderError(error) === 'invalid' ? 'invalid' : 'unknown';
+    }
+  }
+}

@@ -14,11 +14,13 @@ import type { MetadataRepository, SecretProvider } from "@ssterm/domain";
 import {
   CatalogModule,
   type KnownHostPolicy,
+  AppLockService,
   SecretService,
   TransientSecrets,
   TunnelService,
 } from "@ssterm/services";
 import { listenLocal } from "@ssterm/adapters/local-listener";
+import { FileRecordStore } from "@ssterm/adapters/record-file";
 import { WindowBoundary, sameDocument } from "./boundary";
 import { contentSecurityPolicy, rendererLocation } from "./security";
 import { openMetadata } from "./storage";
@@ -40,6 +42,10 @@ import { createCatalogController, observeCommits, registerCatalogHandlers, type 
 import { createIdentitiesController, registerIdentityHandlers, secretNamespace, type IdentitiesController } from "./identities";
 import { createSnippetsController, registerSnippetHandlers, type SnippetsController } from "./snippets";
 import { createTunnelController, registerTunnelHandlers, type TunnelController } from "./tunnels";
+import { appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers, type AppLockController } from "./app-lock";
+
+/** The Google OAuth client compiled in from SSTERM_GOOGLE_CLIENT_FILE at build time (null without one). */
+declare const __SSTERM_GOOGLE_CLIENT__: unknown;
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -99,6 +105,9 @@ let removeIdentityHandlers: (() => void) | undefined;
 let snippets: SnippetsController | undefined;
 // Local forwarding: the service (SST-025) and its owner-bound Start/Stop/status IPC (SST-026).
 let tunnels: TunnelService | undefined;
+// App lock (SST-039): every feature channel waits until it opens.
+let appLock: AppLockController | undefined;
+let removeAppLockHandlers: (() => void) | undefined;
 let tunnelControls: TunnelController | undefined;
 let removeTunnelHandlers: (() => void) | undefined;
 let removeSnippetHandlers: (() => void) | undefined;
@@ -376,6 +385,29 @@ function createWindow(): void {
   });
 }
 
+/** Loads the app-lock record (Keychain) and installs the IPC gate before any window exists. */
+async function initializeAppLock(): Promise<void> {
+  const google = googleConfiguration(process.env, typeof __SSTERM_GOOGLE_CLIENT__ === "undefined" ? null : __SSTERM_GOOGLE_CLIENT__);
+  let service: AppLockService | undefined;
+  if (appLockEnabled(process.env)) {
+    let store;
+    try {
+      const { KeychainRecordStore, PRODUCTION_SECRET_NAMESPACE } = await import("@ssterm/adapters/keychain");
+      const namespace = secretNamespace(process.env, PRODUCTION_SECRET_NAMESPACE);
+      if (namespace) store = new KeychainRecordStore(namespace);
+    } catch {
+      // No Keychain binding: the lock reports itself unavailable and stays closed.
+    }
+    // The marker lives in the profile, so deleting only the Keychain record cannot reset the lock to first-run setup.
+    const marker = new FileRecordStore(join(app.getPath("userData"), "app-lock.json"));
+    service = new AppLockService({ store, marker, googleAvailable: !!google });
+    await service.load();
+  }
+  appLock = createAppLockController({ service, google, openExternal: (url) => shell.openExternal(url) });
+  boundary.setAccessGate(() => appLock?.open() ?? false);
+  removeAppLockHandlers = registerAppLockHandlers({ ipc: ipcMain, boundary, controller: () => appLock });
+}
+
 // A locked registry reopens only while saved hosts can be resolved; a missing secure store fails per saved ref instead.
 const checkAccess = async () => storageHealth.status === "ready" && !!repository;
 
@@ -383,6 +415,7 @@ if (ownsInstance) {
   void app.whenReady().then(async () => {
     if (quitting) return;
     await initializeStorage();
+    await initializeAppLock();
     if (quitting) {
       closeStorage();
       return;
@@ -523,7 +556,8 @@ if (ownsInstance) {
     ipcMain.handle(channels.bootstrap, (event, ...args: unknown[]) => {
       try {
         const result = boundary.bootstrap(event, args);
-        if (result.ok) {
+        // While locked a window learns only its owner; feature state is registered after unlock (it bootstraps again).
+        if (result.ok && appLock?.open()) {
           credentials?.register(result.value.owner, (state) => {
             if (!event.sender.isDestroyed())
               event.sender.send(channels.credentialStateChanged, state);
@@ -619,6 +653,8 @@ app.on("before-quit", (event) => {
   removeIdentityHandlers?.();
   removeSnippetHandlers?.();
   removeTunnelHandlers?.();
+  appLock?.dispose();
+  removeAppLockHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();

@@ -742,6 +742,7 @@ export function AppShell() {
         onOpenChange={(open) => setOverlay(open ? "settings" : undefined)}
         settings={settings}
         terminals={sessions.length}
+        owner={owner}
       />
       <ShortcutsDialog
         open={overlay === "shortcuts"}

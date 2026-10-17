@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { AlertCircleIcon } from "lucide-react";
-import type { TerminalSettings } from "@ssterm/contracts";
+import type { Owner, TerminalSettings } from "@ssterm/contracts";
+import { SignInSettings } from "@/components/app-lock/sign-in-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
@@ -37,7 +38,9 @@ export function SettingsDialog({
   onOpenChange,
   settings: { settings, disabledReason, error, update },
   terminals,
+  owner,
 }: {
+  owner?: Owner;
   open: boolean;
   onOpenChange(open: boolean): void;
   settings: ReturnType<typeof useSettings>;
@@ -129,6 +132,7 @@ export function SettingsDialog({
             <dt>App theme</dt>
             <dd>Dark</dd>
           </dl>
+          {owner ? <SignInSettings owner={owner} /> : null}
         </FieldGroup>
       </DialogContent>
     </Dialog>
