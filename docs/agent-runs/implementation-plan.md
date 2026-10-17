@@ -994,3 +994,7 @@ SST-026/T032 DONE. [Tunnels UI](../tunnels.md#tunnel-rules-and-status-ui--sst-02
 ### Final SST-039 record — 2026-10-17
 
 [App lock](../app-lock.md), [delivery](sst-039-delivery.md). typecheck PASS; unit 431/431; build PASS; development E2E 64/64; package PASS (with fuses); packaged 65/65. Review: no critical; the Keychain-reset high fixed; the offline-grace high accepted per the user's choice and offered as a stricter option.
+
+## Later-scope authorization — SST-029 to SST-038 (2026-10-17)
+
+The user instructed “ทำงาน SST-029 - SST-038 ให้จบ” and chose (question round): **SST-029** macOS local terminal (node-pty) plus a declared Windows/Linux capability matrix, no untested builds; **SST-034** opt-in local logs, history and autocomplete with retention/export/delete, AI documented as a privacy spec only (nothing sent); **SST-035/037** a self-hosted sync server in this repository (Node + SQLite, Docker/local tests), end-to-end encrypted, then team ACL/revocation on top, with no hosting or deployment; **SST-038** Mosh through an owned Docker fixture and FIDO as investigation/ADR only (no hardware key here); loop per ticket: TEST → REVIEW → local commit → next, no push. Order by dependencies: 031, 030, 033, 032, 029, 034, 036, 038, 035, 037. Each ticket records its own plan section before code.
