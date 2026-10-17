@@ -263,7 +263,9 @@ test("service: connection cap, owner revocation and dispose close everything", a
   assert.equal(await listening(a.bindPort), false);
   assert.equal(h.sessions.size, 0);
   await until(() => sockets.every((socket) => socket.destroyed || socket.closed), "local sockets closed");
-  assert.ok((await h.service.start(h.ownerId, a.id)).ok);
+  // A revoked owner (a closed window generation) never starts again; a new generation does.
+  assert.deepEqual(await h.service.start(h.ownerId, a.id), { ok: false, code: "invalid-state" });
+  assert.ok((await h.service.start("window:1:2", a.id)).ok);
   await h.service.dispose();
   assert.equal(await listening(a.bindPort), false, "dispose (quit) leaves no listener");
   assert.deepEqual(await h.service.start(h.ownerId, a.id), { ok: false, code: "disposed" });
@@ -322,4 +324,26 @@ test("service: stop during the bind leaves nothing bound; a restart after failur
   const states = h.events.filter((event) => event.ruleId === rule.id).map((event) => event.state);
   assert.equal(states.at(-1), "running", `no stale failed after the restart: ${states.join(",")}`);
   assert.equal(await roundTrip(rule.bindPort, "again"), "again");
+});
+
+test("service: a start waiting on an old teardown opens nothing for an owner revoked meanwhile", async (t) => {
+  const echo = await echoServer(t);
+  const h = harness(t, echo.port);
+  const rule = h.rule(await freePort());
+  assert.ok((await h.service.start(h.ownerId, rule.id)).ok);
+  h.ready(h.sessionOf());
+  // Hold the old session's settle so its teardown is still draining when Start is pressed again.
+  let release!: () => void;
+  const gate = new Promise<void>((done) => { release = done; });
+  h.registry.settled = () => gate;
+  h.set(h.sessionOf(), "Failed", "network");
+  const restart = h.service.start(h.ownerId, rule.id);
+  const closing = h.service.closeOwner(h.ownerId);
+  release();
+  await closing;
+  assert.equal((await restart).ok, false);
+  assert.equal(await listening(rule.bindPort), false, "no orphaned listener");
+  assert.equal(h.sessions.size, 0, "no orphaned session");
+  assert.deepEqual(h.service.snapshot(h.ownerId), []);
+  assert.equal(h.service.active(rule.id), false);
 });

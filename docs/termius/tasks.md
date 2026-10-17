@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-026 / T032: `DONE`** — [Tunnel rules and status UI](../tunnels.md#tunnel-rules-and-status-ui--sst-026) ผ่าน independent TEST/REVIEW/DELIVER: unit 421/421, development E2E 59/59, packaged 56/56 (SST-025 committed `e132845`); SST-027 กำลังทำ; SST-028 และ DS05–DS06 ยัง `PAUSED`
+**SST-027: automated gate `DONE`** — [MVP gate](../mvp-gate.md): unit 422/422, development E2E 62/62, packaged 59/59, DS05 sweep 0 findings, budgets met, release-blocker audit ไม่พบ critical/high; T033 `DONE`; T034/DS05 ส่วน manual Thai IME/VoiceOver ยังรอผู้ใช้ทำ; SST-028 และ DS06 ยัง `PAUSED`
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -67,7 +67,7 @@
 
 ## M5 — MVP acceptance และ package
 
-- [ ] **T033 / SST-027:** integration/E2E requirement coverage F01–F06 และ failure/teardown matrix
+- [x] **T033 / SST-027:** integration/E2E requirement coverage F01–F06 และ failure/teardown matrix
 - [ ] **T034 / SST-027:** macOS Thai IME/accessibility/keyboard/performance walkthrough + release-blocker fixes
 - [ ] **T035 / SST-028:** local packaged artifact/clean fixture/upgrade/storage and native binding checks; รวม [deferred manual checks จาก SST-020](tickets.md#sst-028--macos-package--release-readiness) (⌘C/⌘A ผ่านเมนูจริง, VoiceOver, privacy prompt จาก Finder)
 - [ ] **T036 / SST-028:** checksums/release notes/known limitations/signing gate และ installation guide

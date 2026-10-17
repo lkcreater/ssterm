@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-026 / T032: `DONE`** — [Tunnel rules and status UI](../tunnels.md#tunnel-rules-and-status-ui--sst-026) ผ่าน independent TEST/REVIEW/DELIVER: unit 421/421, development E2E 59/59, packaged 56/56 (SST-025 committed `e132845`); SST-027 กำลังทำ; SST-028 และ DS05–DS06 ยัง `PAUSED`
+**SST-027: automated gate `DONE`** — [MVP gate](../mvp-gate.md): unit 422/422, development E2E 62/62, packaged 59/59, DS05 sweep 0 findings, budgets met, release-blocker audit ไม่พบ critical/high; T033 `DONE`; T034/DS05 ส่วน manual Thai IME/VoiceOver ยังรอผู้ใช้ทำ; SST-028 และ DS06 ยัง `PAUSED`
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-028 ยัง `PAUSED`
 

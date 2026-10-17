@@ -72,6 +72,8 @@ function ComboboxInput({
             size="icon-xs"
             variant="ghost"
             render={<ComboboxTrigger />}
+            // An icon-only trigger still needs a name for assistive technology (SST-027 sweep).
+            aria-label="Show options"
             data-slot="input-group-button"
             className="group-has-data-[slot=combobox-clear]/input-group:hidden data-pressed:bg-transparent"
             disabled={disabled}

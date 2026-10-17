@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-026
+# Execution record — M0 ถึง SST-027
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-026/T032 `DONE`; SST-025 committed `e132845`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-026-execution-plan--2026-10-17). SST-027 ต่อ; SST-028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-027 automated gate `DONE` (manual Thai IME pending); SST-026 committed `92e1901`. ดู [แผนล่าสุด](#sst-027-execution-plan--2026-10-17). SST-028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
 
 ## Authorization / acceptance
 
@@ -932,10 +932,20 @@ SST-025/T031 DONE. [Tunnels](../tunnels.md) and [delivery](sst-025-delivery.md).
 
 ## SST-026 execution plan — 2026-10-17
 
-**Authorization / gate:** “งานนี้เสร็จ ทำ SST-026, 027 ต่อได้เลย” authorizes **SST-026/T032** then **SST-027/T033–T035 scope of the MVP gate**; SST-028 and DS05–DS06 remain paused. Plan (recorded with the delivered result): catalog `create/update/delete-tunnel-rule` intents and `tunnelRules` projection; main running-rule guard at prepare and apply (`TunnelService.active`); owner-bound tunnel IPC (`tunnelState`/`onTunnelState`/`startTunnel`/`stopTunnel`) with start-as-unlock; Port forwarding page with five states, validation, destination explanation, explicit Save and restart, Stop and delete; F06 E2E with relaunch-without-autostart. No schema change. Rollback: revert the commit.
+**Authorization / gate:** “งานนี้เสร็จ ทำ SST-026, 027 ต่อได้เลย” authorizes **SST-026/T032** then **SST-027 (T033–T034, with its DS05 design gate)**; SST-028 and DS05–DS06 remain paused. Plan (recorded with the delivered result): catalog `create/update/delete-tunnel-rule` intents and `tunnelRules` projection; main running-rule guard at prepare and apply (`TunnelService.active`); owner-bound tunnel IPC (`tunnelState`/`onTunnelState`/`startTunnel`/`stopTunnel`) with start-as-unlock; Port forwarding page with five states, validation, destination explanation, explicit Save and restart, Stop and delete; F06 E2E with relaunch-without-autostart. No schema change. Rollback: revert the commit.
 
 **SST-026 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
 
 ### Final SST-026 record — 2026-10-17
 
 SST-026/T032 DONE. [Tunnels UI](../tunnels.md#tunnel-rules-and-status-ui--sst-026) and [delivery](sst-026-delivery.md). Final source: typecheck PASS; unit 421/421; build PASS; development E2E 59/59; package PASS; packaged 56/56. Review: no critical/high; two mediums and lows fixed; three limitations recorded.
+
+## SST-027 execution plan — 2026-10-17
+
+**Authorization / gate:** same instruction as SST-026. Scope: T033 traceability and failure/teardown matrix, T034 accessibility/keyboard/performance walkthrough and blocker fixes, and the ticket's DS05/T051 design-gate checks (interpreted as part of SST-027 because the ticket embeds them; DS06 and SST-028 stay paused). Plan: (1) explorer traceability of F01–F06 and the acceptance matrix to existing tests; (2) add tests for the automatable gaps — page-wide DS05 sweep (contrast, names, overflow, reduced motion, focus indicators, dialog focus return) at 960×640 and 1280×800, unwritable storage, keyboard-interactive on OpenSSH/PAM; (3) record SST-014 budgets from the final run; (4) independent release-blocker audit, fix findings; (5) report in `docs/mvp-gate.md`. Manual Thai IME/VoiceOver require a human and are recorded as deviations.
+
+**SST-027 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE (automated). Manual walkthrough PENDING (user).
+
+### Final SST-027 record — 2026-10-17
+
+[MVP gate](../mvp-gate.md) and [delivery](sst-027-delivery.md). Final source: typecheck PASS; unit 422/422; build PASS; development E2E 62/62; package PASS; packaged 59/59. DS05 sweep 0 findings (after naming the combobox trigger); budgets met; audit: no open critical/high, one medium (tunnel restart vs window close) fixed with a test. Stop after the local commit; SST-028 and DS06 remain paused.

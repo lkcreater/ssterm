@@ -77,6 +77,8 @@ export class TunnelService {
   readonly #tunnels = new Map<string, Tunnel>();
   readonly #observers = new Map<string, Set<(snapshot: TunnelSnapshot) => void>>();
   readonly #unsubscribe = new Map<string, () => void>();
+  /** Owners passed to `closeOwner`; a start that was waiting meanwhile must not open anything for them. */
+  readonly #revoked = new Set<string>();
   #disposed = false;
   constructor(private readonly options: {
     registry: Registry;
@@ -87,14 +89,17 @@ export class TunnelService {
   /** Starts a saved rule. Resolves `starting` once bound and connecting; progress arrives through `subscribe`. */
   async start(ownerId: string, ruleId: string): Promise<TunnelResult<TunnelSnapshot>> {
     if (this.#disposed) return { ok: false, code: "disposed" };
+    if (this.#revoked.has(ownerId)) return { ok: false, code: "invalid-state" };
     const key = this.#key(ownerId, ruleId);
     const existing = this.#tunnels.get(key);
     if (existing && existing.state !== "failed") return { ok: false, code: "already-active" };
     // A failed tunnel may still be releasing its port and session; restart only after that finished.
     if (existing?.stopping) await existing.stopping;
     if (this.#disposed) return { ok: false, code: "disposed" };
+    if (this.#revoked.has(ownerId)) return { ok: false, code: "invalid-state" };
+    // A concurrent start replaced it, or a concurrent stop removed it: this start no longer applies.
     const again = this.#tunnels.get(key);
-    if (again && again !== existing) return { ok: false, code: "already-active" };
+    if (again !== existing) return { ok: false, code: "already-active" };
     if ([...this.#tunnels.values()].filter((row) => row.state !== "failed").length >= MAX_TUNNELS)
       return { ok: false, code: "resource-limit" };
     const stored = this.options.repository.snapshot();
@@ -108,7 +113,7 @@ export class TunnelService {
       connection: (socket) => this.#accept(tunnel, socket),
       failed: () => void this.#teardown(tunnel, "failed", "bind-failed"),
     });
-    if (this.#tunnels.get(key) !== tunnel || tunnel.state !== "starting" || this.#disposed) {
+    if (this.#tunnels.get(key) !== tunnel || tunnel.state !== "starting" || this.#disposed || this.#revoked.has(ownerId)) {
       // Stopped or disposed while binding.
       if (bound.ok) await bound.listener.close();
       return { ok: false, code: this.#disposed ? "disposed" : "invalid-state" };
@@ -164,7 +169,8 @@ export class TunnelService {
   }
   /** Owner revocation: stop that owner's tunnels and forget them. */
   async closeOwner(ownerId: string): Promise<void> {
-    // A revoked window receives nothing more, not even the teardown's own state changes.
+    // A revoked window receives nothing more, not even the teardown's own state changes, and starts nothing new.
+    this.#revoked.add(ownerId);
     this.#observers.delete(ownerId);
     const owned = [...this.#tunnels.values()].filter((row) => row.ownerId === ownerId);
     await Promise.all(owned.map((row) => this.stop(ownerId, row.rule.id)));

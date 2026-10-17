@@ -69,6 +69,8 @@ export function createTunnelController(options: {
       const since = options.lock?.lockEpoch ?? 0;
       if (disposed || !registrations.has(sessionOwnerId(request.owner))) return failure("stale-owner");
       if (!(await unlocked(since))) return ok({ status: "failed", code: "locked" });
+      // The window may have closed while the unlock was pending.
+      if (disposed || !registrations.has(sessionOwnerId(request.owner))) return failure("stale-owner");
       const started = await options.service.start(sessionOwnerId(request.owner), request.ruleId);
       return ok(started.ok ? { status: "starting" } : { status: "failed", code: errorCode(started.code) });
     },
