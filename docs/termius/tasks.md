@@ -69,7 +69,7 @@
 
 - [ ] **T033 / SST-027:** integration/E2E requirement coverage F01–F06 และ failure/teardown matrix
 - [ ] **T034 / SST-027:** macOS Thai IME/accessibility/keyboard/performance walkthrough + release-blocker fixes
-- [ ] **T035 / SST-028:** local packaged artifact/clean fixture/upgrade/storage and native binding checks
+- [ ] **T035 / SST-028:** local packaged artifact/clean fixture/upgrade/storage and native binding checks; รวม [deferred manual checks จาก SST-020](tickets.md#sst-028--macos-package--release-readiness) (⌘C/⌘A ผ่านเมนูจริง, VoiceOver, privacy prompt จาก Finder)
 - [ ] **T036 / SST-028:** checksums/release notes/known limitations/signing gate และ installation guide
 
 ## Later — ยังไม่รวมใน MVP confirmation

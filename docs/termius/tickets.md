@@ -343,6 +343,12 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 
 **Design package gate — DS06/T052:** fonts/license/fallback ทำงาน offline ใน package; ใช้ supplied [icon-logo.png](../logo/icon-logo.png) ตาม [logo/icon handoff](../logo/README.md) เป็น source สำหรับ derived icons 16/32/64/128/256/512/1024 px และ macOS package format; ตรวจ alpha/edges/padding/legibility/Dock/Finder และ brand lockup ใน About หาก production exports/QA ยังไม่ครบให้ระบุ limitation และไม่อ้างว่า release branding ผ่าน
 
+**Deferred manual checks — จาก SST-020 (บันทึก 2026-10-17):** ทดสอบบน packaged app ที่ sign แล้วตอนปิด SST-028 เพราะต้องใช้สิทธิ์ระดับเครื่อง (Accessibility/Automation, clipboard จริง, TCC reset) หรือต้องมีคนกดหรือฟัง ไม่ใช่ E2E อัตโนมัติ บันทึกผลหรือ limitation ใน release record
+
+1. **⌘C/⌘A ผ่านเมนู macOS จริง:** ในหน้า Files ทั้ง pane “This Mac” และ remote ให้กดปุ่มจริงบนคีย์บอร์ด ⌘A ต้องเลือกทุกรายการใน pane ที่ focus อยู่ ไม่ใช่ทั้งหน้า ⌘C ต้องได้ full raw path คั่นด้วยบรรทัดใหม่ (รวมชื่อไทย/NFD/escaped) เมนู Edit → Copy/Select All ต้องได้ผลเดียวกัน ใน terminal pane ⌘C/⌘A ยังเป็นของ terminal และใน text field ยังเป็นการแก้ข้อความปกติ ให้ save clipboard ก่อนและ restore หลังทดสอบ
+2. **VoiceOver:** listbox ของแต่ละ pane ต้องประกาศชื่อ pane, รายการที่ active (ชื่อ, ชนิด folder/file/link, broken link, “contains hidden characters”, unreadable name), สถานะ selected และจำนวนรายการ ทุกคำสั่งในหน้า Files ใช้ได้ด้วย VoiceOver + คีย์บอร์ดอย่างเดียว ส่วน session header ต้องอ่าน target, PROD และสถานะได้
+3. **Privacy prompt ตอนเปิดครั้งแรกจาก Finder:** ใช้ `tccutil reset All dev.ssterm.desktop` แล้วเปิดแอปจาก Finder (ไม่ใช่จาก terminal ซึ่งจะได้สิทธิ์ของ terminal แทน) แล้วเปิด Desktop, Documents, Downloads, network volume และ removable volume ใน pane “This Mac” prompt ต้องแสดงคำอธิบายของ ssterm ถ้าผู้ใช้กด Deny ต้องแสดง “permission denied” โดยไม่ค้าง แล้วต้องกลับมาเปิดได้หลังอนุญาตใน System Settings ก่อนทดสอบให้แก้สิ่งที่พบไว้แล้ว (2026-10-17) ใน `artifacts/package/…/SSTerm.app` คือ `Info.plist` ไม่มี `NSDocumentsFolderUsageDescription`, `NSDesktopFolderUsageDescription`, `NSDownloadsFolderUsageDescription`, `NSNetworkVolumesUsageDescription`, `NSRemovableVolumesUsageDescription` แต่มีข้อความกล้อง/ไมค์/Bluetooth แบบ generic ที่ติดมาจาก Electron ทั้งที่แอปไม่ได้ใช้ และ signature เป็น ad-hoc ที่มี `Identifier=Electron` ทำให้ macOS ถามสิทธิ์ซ้ำทุก build
+
 ## Later — ต้องยืนยัน scope เพิ่ม
 
 ### SST-029 — Local PTY / additional platforms
