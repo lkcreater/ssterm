@@ -51,3 +51,4 @@ export {
   type KnownHostRevokePreview,
 } from "./known-hosts.ts";
 export { createSavedHostSshAdapter } from "./ssh-session.ts";
+export { createTransferEngine, type TransferFailure, type TransferResult, type TransferFileProvider, type TransferTarget, type TransferInput, type TransferJob } from "./transfers.ts";

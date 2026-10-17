@@ -314,7 +314,7 @@ export interface RemoteListing {
   skipped: number;
 }
 /** Server status text is never carried. `closed`: ssterm closed the session; `connection-lost`: the remote side did. */
-export type SftpFailure = 'not-found' | 'permission-denied' | 'failure' | 'invalid-path' | 'unsupported' | 'connection-lost' | 'resource-limit' | 'cancelled' | 'closed' | 'invalid-request';
+export type SftpFailure = 'not-found' | 'not-file' | 'permission-denied' | 'failure' | 'invalid-path' | 'unsupported' | 'connection-lost' | 'resource-limit' | 'cancelled' | 'closed' | 'invalid-request';
 export type SftpResult<T> = { ok: true; value: T } | { ok: false; code: SftpFailure };
 /**
  * Main-only file capability of one SFTP session generation. Paths are absolute POSIX, normalized lexically,

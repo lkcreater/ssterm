@@ -1,8 +1,8 @@
 # Task checklist
 
-**SST-020 / T026: `DONE`** — [SFTP local/remote browser UI](../sftp-browser.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 348/348, E2E 51/51, packaged 48/48; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–019 committed (`fb8b157` latest); SST-021–028 และ DS05–DS06 หยุดรอคำสั่ง (loop paused หลัง SST-020)
+**SST-021 / T027: `DONE`** — [Transfer jobs / progress / cancel](../transfers.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 374/374, development E2E 52/52 พร้อม final-code transfer rerun 1/1, packaged 49/49; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้อนุมัติเฉพาะ SST-021 (“ทำ SST-021 ต่อได้”); SST-022–028 และ DS05–DS06 ยัง `PAUSED` ไม่เริ่มงานถัดไป
 
-**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
+**สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004
 
 ## งานเตรียมการที่ทำแล้ว
 
@@ -58,7 +58,7 @@
 
 - [x] **T025 / SST-019:** SFTP capability/read/stat/list/write/handle ownership and errors
 - [x] **T026 / SST-020:** local/remote browser/path/hidden files/symlink navigation/selection
-- [ ] **T027 / SST-021:** bounded transfer queue/progress/cancel/disconnect and checksum fixture checks
+- [x] **T027 / SST-021:** bounded transfer queue/progress/cancel/disconnect and checksum fixture checks
 - [ ] **T028 / SST-022:** overwrite/skip/rename, temp/partial files, permissions/quota/path failure
 - [ ] **T029 / SST-023:** protected snippet persistence/editor/list/search
 - [ ] **T030 / SST-024:** Paste composer/explicit Run, target capture และ sent/error status
@@ -87,7 +87,7 @@
 
 ## Design system — งานย่อยเพิ่มตาม Signal Blue spec
 
-อ้างอิง [design-system.md](design-system.md) และ [design-system-implementation.md](design-system-implementation.md) อนุมัติเฉพาะ DS01/T047 ใน SST-001; DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติและต้องผ่าน dependencies ของ parent ticket เดิม
+อ้างอิง [design-system.md](design-system.md) และ [design-system-implementation.md](design-system-implementation.md) อนุมัติเฉพาะ DS01/T047 ใน SST-001; DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่งและต้องผ่าน dependencies ของ parent ticket เดิม
 
 - [x] **T047 / SST-001:** DS01 — design integration ADR: spec version, Tailwind compatibility, shadcn base/style/icons/registry, density defaults และ open contrast/ANSI/artwork decisions
 - [x] **T048 / SST-004:** DS02 — semantic token mappings, typography/fonts/Thai fallback, geometry/motion, app/terminal theme separation และ missing generated-component slots — [evidence](../desktop-shell.md)

@@ -64,3 +64,6 @@ export { registerLinkHandlers, validateExternalUrl } from "./links";
 export { WindowBoundary } from "./boundary";
 export { sessionOwnerId } from "./session-runtime";
 export { channels } from "@ssterm/contracts";
+
+export { createTransferController, registerTransferHandlers, transferChannels } from "./transfers";
+export { createLocalTransferFiles } from "@ssterm/adapters/local-transfers";

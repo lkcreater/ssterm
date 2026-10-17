@@ -121,6 +121,8 @@ const command = (event: KeyboardEvent, shift = false) =>
 /** Captured when an action is invoked (SST-021 transfers): the exact source, directory and raw names. */
 export interface FilePaneHandle {
   snapshot(): { source: FileSource; path: string; names: string[] } | null;
+  /** Refresh a captured destination only if the pane is still showing it. Never navigates. */
+  refresh(source: FileSource, path: string): void;
 }
 
 interface View {
@@ -178,6 +180,7 @@ export function FilePane({
   sourceRef.current = source;
   const typed = useRef({ text: "", at: 0 });
   const refocus = useRef(false);
+  const pendingRefresh = useRef<{ source: FileSource; path: string } | null>(null);
   const rows = useMemo(() => visibleRows(view.listing, showHidden, sort), [view.listing, showHidden, sort]);
   const settings = useRef({ showHidden, sort });
   settings.current = { showHidden, sort };
@@ -381,10 +384,31 @@ export function FilePane({
     handle,
     () => ({
       snapshot: () =>
-        source && view.listing ? { source, path: view.listing.path, names: snapshot(selection, rows) } : null,
+        source && view.listing && !view.loading && !view.error
+          ? { source, path: view.listing.path, names: snapshot(selection, rows) }
+          : null,
+      refresh: (captured, path) => {
+        if (!source || sourceKey(source) !== sourceKey(captured) ||
+          (source.kind === "remote" && captured.kind === "remote" && source.generation !== captured.generation) ||
+          view.error || view.path !== path) return;
+        // A completion racing an existing read requires another read after it settles.
+        if (view.loading) { pendingRefresh.current = { source: captured, path }; return; }
+        if (view.listing?.path !== path) return;
+        void navigate(path, { keep: true });
+      },
     }),
-    [source, view.listing, selection, rows],
+    [source, view.path, view.listing, view.loading, view.error, selection, rows],
   );
+
+  useEffect(() => {
+    const pending = pendingRefresh.current;
+    if (!pending || view.loading) return;
+    pendingRefresh.current = null;
+    if (!source || view.error || view.path !== pending.path || view.listing?.path !== pending.path ||
+      sourceKey(source) !== sourceKey(pending.source) ||
+      (source.kind === "remote" && pending.source.kind === "remote" && source.generation !== pending.source.generation)) return;
+    void navigate(pending.path, { keep: true });
+  }, [view.loading, view.path, view.error, source]);
 
   const path = view.path;
   const goUp = (focus?: boolean) => {

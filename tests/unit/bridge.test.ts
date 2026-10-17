@@ -69,12 +69,12 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "ackTerminal", "answerCredentials", "answerHostTrust", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "catalogState",
-    "chooseKeyFile", "closeSftp", "closeTerminal", "connectHost", "connectSftp", "credentialState", "deleteKey", "discardKeyImport",
-    "dismissSftp", "dismissTerminal", "forgetKeyPassphrase", "importKey", "listDirectory", "onCatalogState", "onCredentialState",
-    "onSftpState", "onTerminalOutput", "onTerminalState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping",
+    "ackTerminal", "answerCredentials", "answerHostTrust", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "cancelTransfer", "catalogState",
+    "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "connectHost", "connectSftp", "credentialState", "deleteKey", "discardKeyImport",
+    "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "importKey", "listDirectory", "onCatalogState", "onCredentialState",
+    "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping",
     "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "renameKey", "resizeTerminal",
-    "resolvePath", "retrySecrets", "revokeKnownHost", "setIdentityPassword", "settings", "sftpState", "statPath", "terminalState",
+    "resolvePath", "retrySecrets", "revokeKnownHost", "setIdentityPassword", "settings", "sftpState", "statPath", "terminalState", "transferState",
     "trustState", "updateSettings", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
@@ -571,4 +571,65 @@ test("SFTP state is owner/sequence fenced; SFTP and file commands are rebuilt an
     f.api.resolvePath({ owner, source, path: "a\0b" }),
   ]) assert.deepEqual(await invalid, failure("invalid-request"));
   assert.equal(f.calls.length, count);
+});
+
+test("transfer bridge captures rebuilt endpoints and validates commands and replies without file bytes", async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const request = { owner, source: { kind: "local" as const }, sourceDirectory: "/tmp/ไทย", names: ["รายงาน.txt"],
+    destination: { kind: "remote" as const, sessionId: "s-1", generation: 1 }, destinationDirectory: "/home/fixture" };
+  f.setReply({ ok: true, value: { accepted: true } });
+  assert.deepEqual(await f.api.enqueueTransfers(request), { ok: true, value: { accepted: true } });
+  const forwarded = f.calls.at(-1)!;
+  assert.deepEqual(forwarded, { channel: channels.enqueueTransfers, args: [request] });
+  const sent = forwarded.args[0] as typeof request;
+  for (const key of ["owner", "source", "destination", "names"] as const) assert.notEqual(sent[key], request[key], `${key} is rebuilt`);
+  request.names.push("later.txt");
+  assert.deepEqual(sent.names, ["รายงาน.txt"], "later selection changes do not alter the queued request");
+  assert.deepEqual(await f.api.cancelTransfer({ owner, jobId: "transfer-1" }), { ok: true, value: { accepted: true } });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.cancelTransfer, args: [{ owner, jobId: "transfer-1" }] });
+  assert.deepEqual(await f.api.clearFinishedTransfers({ owner }), { ok: true, value: { accepted: true } });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.clearFinishedTransfers, args: [{ owner }] });
+  const count = f.calls.length;
+  for (const invalid of [
+    f.api.enqueueTransfers({ ...request, names: ["../escape"] }),
+    f.api.enqueueTransfers({ ...request, names: ["a", "a"] }),
+    f.api.enqueueTransfers({ ...request, destination: { kind: "local" } }),
+    f.api.enqueueTransfers({ ...request, bytes: new Uint8Array([1]) } as never),
+    f.api.cancelTransfer({ owner, jobId: "" }),
+    f.api.cancelTransfer({ owner, jobId: "transfer-1", path: "/tmp/other" } as never),
+    f.api.clearFinishedTransfers({ owner, allWindows: true } as never),
+  ]) assert.deepEqual(await invalid, failure("invalid-request"));
+  assert.equal(f.calls.length, count);
+  f.setReply({ ok: true, value: { accepted: true, contents: "private file bytes" } });
+  assert.deepEqual(await f.api.enqueueTransfers(request), failure("unavailable"));
+  f.setReject();
+  assert.deepEqual(await f.api.cancelTransfer({ owner, jobId: "transfer-1" }), failure("unavailable"));
+});
+
+test("transfer subscriptions fence owners, malformed jobs, sequence snapshots, and disposal", async () => {
+  const f = fixture();
+  const owner = { windowId: 1, generation: 2 };
+  const state = (sequence: number, generation = 2) => ({ owner: { windowId: 1, generation }, sequence, jobs: [] });
+  const received: unknown[] = [];
+  f.api.onTransferState((value) => received.push(value));
+  f.emit(state(1));
+  assert.equal(received.length, 0, "events before bootstrap are ignored");
+  await f.api.bootstrap();
+  f.emit(state(1)); f.emit(state(1)); f.emit(state(2, 3));
+  f.emit({ ...state(2), jobs: [{ id: "bad", bytes: "server text" }] });
+  f.emit({ ...state(2), contents: new Uint8Array([1]) });
+  f.setReply({ ok: true, value: state(4) });
+  assert.deepEqual(await f.api.transferState({ owner }), { ok: true, value: state(4) });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.transferState, args: [{ owner }] });
+  f.emit(state(3)); f.emit(state(4)); f.emit(state(5));
+  assert.deepEqual(received, [state(1), state(5)]);
+  f.setReply({ ok: true, value: state(6, 3) });
+  assert.deepEqual(await f.api.transferState({ owner }), failure("stale-owner"));
+  f.setReply({ ok: true, value: { ...state(6), extra: "server text" } });
+  assert.deepEqual(await f.api.transferState({ owner }), failure("unavailable"));
+  f.dispose(); f.emit(state(9));
+  assert.equal(received.length, 2);
+  assert.equal(f.listeners.size, 0);
 });

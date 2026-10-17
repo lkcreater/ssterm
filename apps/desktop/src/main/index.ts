@@ -29,6 +29,8 @@ import { registerCredentialHandlers } from "./credential-runtime";
 import { closePrompt, createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
 import { createSftpController, registerSftpHandlers, type SftpController } from "./sftp";
 import { createLocalFiles } from "@ssterm/adapters/local-files";
+import { createLocalTransferFiles } from "@ssterm/adapters/local-transfers";
+import { createTransferController, registerTransferHandlers, withTransferPrompt, type TransferController } from "./transfers";
 import { applicationMenuTemplate } from "./menu";
 import { registerLinkHandlers } from "./links";
 import { registerSettingsHandlers } from "./settings";
@@ -70,6 +72,8 @@ let removeCredentialHandlers: (() => void) | undefined;
 let terminals: TerminalController | undefined;
 let removeTerminalHandlers: (() => void) | undefined;
 let sftp: SftpController | undefined;
+let transfers: TransferController | undefined;
+let removeTransferHandlers: (() => void) | undefined;
 let removeSftpHandlers: (() => void) | undefined;
 let removeLinkHandlers: (() => void) | undefined;
 let removeSettingsHandlers: (() => void) | undefined;
@@ -181,6 +185,7 @@ const boundary = new WindowBoundary(
     identities?.revokeOwner(owner);
     // Stop output frames before the owner's sessions start closing.
     terminals?.revokeOwner(owner);
+    transfers?.revokeOwner(owner);
     sftp?.revokeOwner(owner);
     desktopSessions?.revokeOwner(owner);
   },
@@ -211,6 +216,12 @@ function liveSessions(windows: BrowserWindow[]): TerminalSession[] {
     const state = owner && terminals?.terminalState(owner);
     return state && state.ok ? state.value.sessions : [];
   });
+}
+function pendingTransfers(windows: BrowserWindow[]): number {
+  return windows.reduce((count, window) => {
+    const owner = !window.isDestroyed() && boundary.ownerOf(window.webContents);
+    return count + (owner ? transfers?.pendingCount(owner) ?? 0 : 0);
+  }, 0);
 }
 /** Windows showing a close sheet; a Quit meanwhile brings that sheet forward instead of stacking another. */
 const closeSheets = new Set<BrowserWindow>();
@@ -317,7 +328,7 @@ function createWindow(): void {
       allowClose = false;
       return;
     }
-    const prompt = closePrompt(liveSessions([window]), "close");
+    const prompt = withTransferPrompt(closePrompt(liveSessions([window]), "close"), pendingTransfers([window]), "close");
     if (!prompt) return;
     event.preventDefault();
     if (closePrompting) return;
@@ -422,6 +433,8 @@ if (ownsInstance) {
       boundary,
       controller: () => sftp,
     });
+    transfers = createTransferController({ registry: desktopSessions.registry, local: createLocalTransferFiles() });
+    removeTransferHandlers = registerTransferHandlers({ ipc: ipcMain, boundary, controller: () => transfers });
     removeKnownHostHandlers = registerKnownHostHandlers({
       ipc: ipcMain,
       boundary,
@@ -481,6 +494,9 @@ if (ownsInstance) {
           sftp?.register(result.value.owner, (channel, value) => {
             if (!event.sender.isDestroyed()) event.sender.send(channel, value);
           });
+          transfers?.register(result.value.owner, (channel, value) => {
+            if (!event.sender.isDestroyed()) event.sender.send(channel, value);
+          });
           catalog?.register(result.value.owner, (state) => {
             if (!event.sender.isDestroyed())
               event.sender.send(channels.catalogStateChanged, state);
@@ -522,7 +538,7 @@ app.on("before-quit", (event) => {
     if (!sheet.isDestroyed()) bringToFront(sheet);
     return;
   }
-  const prompt = quitConfirmed ? undefined : closePrompt(liveSessions(BrowserWindow.getAllWindows()), "quit");
+  const prompt = quitConfirmed ? undefined : withTransferPrompt(closePrompt(liveSessions(BrowserWindow.getAllWindows()), "quit"), pendingTransfers(BrowserWindow.getAllWindows()), "quit");
   if (prompt) {
     quitPrompt = confirmDisconnect(BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0], prompt, "Quit")
       .then((confirmed) => {
@@ -538,6 +554,7 @@ app.on("before-quit", (event) => {
   credentials?.dispose();
   knownHosts?.dispose();
   terminals?.dispose();
+  transfers?.dispose();
   sftp?.dispose();
   catalog?.dispose();
   identities?.dispose();
@@ -545,6 +562,7 @@ app.on("before-quit", (event) => {
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
   removeTerminalHandlers?.();
+  removeTransferHandlers?.();
   removeSftpHandlers?.();
   removeLinkHandlers?.();
   removeSettingsHandlers?.();

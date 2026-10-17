@@ -1,6 +1,8 @@
 # SST-020 — SFTP local and remote browser
 
-**2026-10-17 · T026 · DONE through independent TEST/REVIEW/DELIVER; committed.** Authorized by the standing loop instruction after SST-019 commit `fb8b157`; the user then asked to stop after this ticket. Scope is browsing local and remote folders with navigation, hidden files, symlinks, selection and the SFTP session lifecycle. Transfers (SST-021) and conflicts/partial files (SST-022) are separate; no file content crosses IPC. [Execution plan](agent-runs/implementation-plan.md#sst-020-execution-plan--2026-10-17).
+**2026-10-17 · T026 · DONE through independent TEST/REVIEW/DELIVER; committed.** Authorized by the standing loop instruction after SST-019 commit `fb8b157`; the user then asked to stop after this ticket. Scope is browsing local and remote folders with navigation, hidden files, symlinks, selection and the SFTP session lifecycle. Transfer jobs are documented separately in [SST-021](transfers.md); conflict resolution/partial-file management remains SST-022; no file content crosses IPC. [Execution plan](agent-runs/implementation-plan.md#sst-020-execution-plan--2026-10-17).
+
+SST-021 adds transfer actions and a queue below these browsers; switching hosts cancels jobs bound to the old session, and close/quit prompts include pending transfers. The browser evidence below remains the historical SST-020 acceptance record.
 
 ## Files page
 

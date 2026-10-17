@@ -1,5 +1,7 @@
 import {
   channels,
+  isTransferState, isEnqueueTransfersRequest, isCancelTransferRequest,
+  type TransferState, type EnqueueTransfersRequest, type CancelTransferRequest,
   isCredentialState, isCredentialStateRequest, isAnswerCredentialsRequest,
   isCancelCredentialPromptRequest, isCredentialActionResponse,
   type CredentialState, type CredentialStateRequest, type AnswerCredentialsRequest,
@@ -78,6 +80,13 @@ export function createDesktopBridge(transport: BridgeTransport): {
   let terminalSequence = -1;
   let catalogSequence = -1;
   let sftpSequence = -1;
+  let transferSequence = -1;
+  const transferCallbacks = new Set<(state: TransferState) => void>();
+  const transferListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !isTransferState(value) || !sameOwner(value.owner) || value.sequence <= transferSequence) return;
+    transferSequence = value.sequence;
+    for (const callback of transferCallbacks) callback(value);
+  };
   const sameOwner = (value: Owner) => !!owner && value.windowId === owner.windowId && value.generation === owner.generation;
   const terminalCallbacks = new Set<(state: TerminalState) => void>();
   const terminalListener = (_event: unknown, value: unknown): void => {
@@ -192,6 +201,7 @@ export function createDesktopBridge(transport: BridgeTransport): {
           terminalSequence = -1;
           catalogSequence = -1;
           sftpSequence = -1;
+          transferSequence = -1;
         } else if (
           next.owner.windowId === owner.windowId &&
           next.owner.generation === owner.generation
@@ -384,6 +394,31 @@ export function createDesktopBridge(transport: BridgeTransport): {
     },
     onSftpState(callback: (state: SftpState) => void): () => void {
       return subscribe(channels.sftpStateChanged, sftpCallbacks, sftpListener, callback);
+    },
+    async transferState(request: TerminalStateRequest) {
+      if (!isTerminalStateRequest(request)) return failure("invalid-request");
+      const result = await invoke(channels.transferState, [{ owner: { ...request.owner } }], isTransferState);
+      if (!result.ok) return result;
+      if (!sameOwner(result.value.owner) || !sameOwner(request.owner)) return failure("stale-owner");
+      transferSequence = Math.max(transferSequence, result.value.sequence);
+      return result;
+    },
+    onTransferState(callback: (state: TransferState) => void): () => void {
+      return subscribe(channels.transferStateChanged, transferCallbacks, transferListener, callback);
+    },
+    enqueueTransfers(request: EnqueueTransfersRequest) {
+      if (!isEnqueueTransfersRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.enqueueTransfers, [{ owner: { ...request.owner }, source: source(request.source),
+        sourceDirectory: request.sourceDirectory, names: [...request.names], destination: source(request.destination),
+        destinationDirectory: request.destinationDirectory }], isTerminalActionResponse);
+    },
+    cancelTransfer(request: CancelTransferRequest) {
+      if (!isCancelTransferRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.cancelTransfer, [{ owner: { ...request.owner }, jobId: request.jobId }], isTerminalActionResponse);
+    },
+    clearFinishedTransfers(request: TerminalStateRequest) {
+      if (!isTerminalStateRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.clearFinishedTransfers, [{ owner: { ...request.owner } }], isTerminalActionResponse);
     },
     connectSftp(request: ConnectHostRequest) {
       if (!isConnectHostRequest(request)) return Promise.resolve(failure("invalid-request"));

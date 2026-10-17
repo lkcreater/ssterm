@@ -247,6 +247,12 @@ export function createSftpChannel(sftp: SFTPWrapper, home: string): SftpChannel 
       if (!target) return fail("invalid-request");
       const handle = await openHandle(signal, (callback) => sftp.open(target, "r", callback));
       if (!handle.ok) return handle;
+      // The pathname can change between preflight lstat and OPEN. Refuse handles to special files.
+      const checked = await call(signal, 0, (callback) => sftp.fstat(handle.value, callback), (error, attrs) => error ? fail<RemoteAttributes>(failureOf(error)) : ok(attributes(attrs)));
+      if (!checked.ok || checked.value.type !== "file") {
+        await closeHandle(handle.value);
+        return checked.ok ? fail("not-file") : checked;
+      }
       return ok(opened(handle.value, (close, isClosed): RemoteReader => ({
         read(position, length, signal) {
           if (isClosed()) return Promise.resolve(fail(ended ?? "closed"));

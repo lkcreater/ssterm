@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
-import { CircleIcon, LaptopIcon, RotateCcwIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import { ArrowDownToLineIcon, ArrowUpFromLineIcon, CircleIcon, LaptopIcon, RotateCcwIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
 import type { CatalogState, Owner, SftpSessionView } from "@ssterm/contracts";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,10 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Spinner } from "@/components/ui/spinner";
 import { SessionHeader } from "@/components/workspace/live-terminal";
 import { FilePane, type FilePaneHandle } from "@/components/sftp/file-pane";
+import { TransferQueue } from "@/components/sftp/transfer-queue";
 import type { SftpController } from "@/hooks/use-sftp";
+import { useTransfers } from "@/hooks/use-transfers";
+import { parentPath } from "@/lib/file-browser";
 import { endpointText } from "@/lib/catalog-filter";
 import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
 
@@ -55,17 +58,71 @@ export function FilesWorkspace({
     if (hidden && focused instanceof HTMLElement && root.current?.contains(focused)) focused.blur();
   }, [hidden]);
   const session = sftp.session;
+  const localPane = useRef<FilePaneHandle | null>(null);
+  const remotePane = useRef<FilePaneHandle | null>(null);
+  const attachLocal = useCallback((pane: FilePaneHandle | null) => {
+    localPane.current = pane;
+    if (typeof local === "function") {
+      const cleanup = local(pane);
+      if (cleanup) return () => { localPane.current = null; cleanup(); };
+      return;
+    }
+    if (local) local.current = pane;
+  }, [local]);
+  const attachRemote = useCallback((pane: FilePaneHandle | null) => {
+    remotePane.current = pane;
+    if (typeof remote === "function") {
+      const cleanup = remote(pane);
+      if (cleanup) return () => { remotePane.current = null; cleanup(); };
+      return;
+    }
+    if (remote) remote.current = pane;
+  }, [remote]);
+  const transfers = useTransfers(owner);
+  const completed = useRef(new Set<string>());
+  useEffect(() => {
+    completed.current.clear();
+  }, [owner.windowId, owner.generation]);
+  useEffect(() => {
+    const active = new Set(transfers.jobs.map((job) => job.id));
+    for (const id of completed.current) if (!active.has(id)) completed.current.delete(id);
+    for (const job of transfers.jobs) {
+      if (job.state !== "completed" || completed.current.has(job.id)) continue;
+      completed.current.add(job.id);
+      const destination = parentPath(job.destinationPath);
+      if (job.direction === "download") localPane.current?.refresh(LOCAL, destination);
+      else remotePane.current?.refresh({ kind: "remote", sessionId: job.sessionId, generation: job.generation }, destination);
+    }
+  }, [transfers.jobs]);
+  const transfer = (direction: "upload" | "download") => {
+    // Capture both panes synchronously at invocation. Later navigation never changes this request.
+    const from = (direction === "upload" ? localPane : remotePane).current?.snapshot();
+    const to = (direction === "upload" ? remotePane : localPane).current?.snapshot();
+    if (!from || !to) { transfers.notify("Wait until both folders have finished loading."); return; }
+    if (from.names.length === 0 || from.names.length > 100) {
+      transfers.notify("Select between 1 and 100 files to transfer."); return;
+    }
+    void transfers.enqueue({ owner, source: from.source, sourceDirectory: from.path, names: [...from.names], destination: to.source, destinationDirectory: to.path });
+  };
   // After the pane's Close, focus lands on the server picker that replaces it.
   const [pickerFocus, setPickerFocus] = useState(false);
   return (
     <div
       ref={root}
-      className="files-workspace"
+      className="files-workspace files-workspace-with-transfers"
       data-testid="files-workspace"
       data-hidden={hidden || undefined}
       inert={hidden}
       style={{ visibility: hidden ? "hidden" : undefined }}
     >
+      <div className="transfer-actions">
+        <Button size="sm" variant="outline" disabled={session?.phase !== "ready" || transfers.pending.has("enqueue")} onClick={() => transfer("upload")}>
+          <ArrowUpFromLineIcon data-icon="inline-start" aria-hidden="true" />Upload selected files
+        </Button>
+        <Button size="sm" variant="outline" disabled={session?.phase !== "ready" || transfers.pending.has("enqueue")} onClick={() => transfer("download")}>
+          <ArrowDownToLineIcon data-icon="inline-start" aria-hidden="true" />Download selected files
+        </Button>
+      </div>
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="50" minSize={220} style={{ overflow: "hidden" }}>
           <section className="files-pane" aria-label="Local files on This Mac" data-pane="local">
@@ -74,7 +131,7 @@ export function FilesWorkspace({
               <span className="type-label truncate">This Mac</span>
               <span className="type-caption text-muted-foreground">Local</span>
             </div>
-            <FilePane owner={owner} source={LOCAL} home={null} active={!hidden} label="This Mac" handle={local} />
+            <FilePane owner={owner} source={LOCAL} home={null} active={!hidden} label="This Mac" handle={attachLocal} />
           </section>
         </ResizablePanel>
         <ResizableHandle aria-label="Resize file panes" />
@@ -85,7 +142,7 @@ export function FilesWorkspace({
               owner={owner}
               session={session}
               active={!hidden}
-              handle={remote}
+              handle={attachRemote}
               onDismissed={() => {
                 setPickerFocus(true);
                 sftp.forget();
@@ -131,6 +188,7 @@ export function FilesWorkspace({
           )}
         </ResizablePanel>
       </ResizablePanelGroup>
+      <TransferQueue transfers={transfers} />
     </div>
   );
 }

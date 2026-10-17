@@ -1,8 +1,8 @@
 # Implementation plan
 
-**SST-020 / T026: `DONE`** — [SFTP local/remote browser UI](../sftp-browser.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 348/348, E2E 51/51, packaged 48/48; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–019 committed (`fb8b157` latest); SST-021–028 และ DS05–DS06 หยุดรอคำสั่ง (loop paused หลัง SST-020)
+**SST-021 / T027: `DONE`** — [Transfer jobs / progress / cancel](../transfers.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 374/374, development E2E 52/52 พร้อม final-code transfer rerun 1/1, packaged 49/49; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้อนุมัติเฉพาะ SST-021 (“ทำ SST-021 ต่อได้”); SST-022–028 และ DS05–DS06 ยัง `PAUSED` ไม่เริ่มงานถัดไป
 
-**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-012–028 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`
+**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-022–028 ยัง `PAUSED`
 
 ## Product baseline / scoped authorization
 
@@ -10,7 +10,7 @@
 
 **UI stack ที่ผู้ใช้เลือกแล้ว:** React + TypeScript บน Electron พร้อม shadcn/ui + Tailwind CSS exact UI versions/build tooling/DS01 อยู่ [ADR 0001](../adr/0001-mvp-platform-stack.md) พร้อม metadata resolution evidence; terminal/SSH/storage/Keychain ยังต้องผ่าน gates ที่ระบุ ไม่อ้าง runtime จาก resolution การอนุมัติ M0 ไม่รวม production bootstrap
 
-**Visual specification:** ใช้ [Design System v1.0 — Signal Blue](design-system.md): dark-first, deep navy + electric blue สำหรับ focus/action, operational status colors แยก, Inter + JetBrains Mono และ terminal-first layout แผนย่อย [DS01–DS06](design-system-implementation.md) อยู่ใน SST-001/004/018/027/028 ผ่าน tasks T047–T052 โดยDS01 เสร็จใน SST-001; DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04–DS06 ยังรออนุมัติ; light theme เป็น later proposal
+**Visual specification:** ใช้ [Design System v1.0 — Signal Blue](design-system.md): dark-first, deep navy + electric blue สำหรับ focus/action, operational status colors แยก, Inter + JetBrains Mono และ terminal-first layout แผนย่อย [DS01–DS06](design-system-implementation.md) อยู่ใน SST-001/004/018/027/028 ผ่าน tasks T047–T052 โดยDS01 เสร็จใน SST-001; DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; light theme เป็น later proposal
 
 Logo/icon ใช้ supplied SST-style artwork ใน [docs/logo](../logo/README.md) เป็น reference: `brand-logo.png` สำหรับ brand lockup, `icon-logo.png` สำหรับ derived app icons และ `design-logo.png` สำหรับ presentation; exports/alpha-edge QA/macOS packaging อยู่ DS06/T052 ยังไม่เริ่มทำ
 
@@ -111,7 +111,7 @@ Fixtures ต้องเป็น project-owned local lab data ไม่ใช�
 
 Current: SST-001/T001/T047 และ SST-002/T002/T003 `DONE`; [execution record](../agent-runs/implementation-plan.md#sst-003-execution-plan--2026-10-15) บันทึก scope/pipeline ถัดไป และ [backend report](../spikes/ssh-compatibility.md) เก็บ actual M0 runtime evidence
 
-Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 คำสั่งถัดไป supersedes stop condition สำหรับ SST-003 และ SST-004; SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004 ไม่ขออนุมัติซ้ำสำหรับ SST-003 ที่ได้รับอนุมัติแล้ว
+Baseline macOS arm64/local-first/account-free และ product MVP ข้างต้นเป็น scope design ไม่ใช่การอนุมัติ M1–M5 คำสั่งถัดไป supersedes stop condition สำหรับ SST-003 และ SST-004; SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004 ไม่ขออนุมัติซ้ำสำหรับ SST-003 ที่ได้รับอนุมัติแล้ว
 
 **2026-10-15 — earlier SST-004 confirmation:** “commit และทำงานถัดไปต่อ” อนุมัติ commit SST-003 (`603e600`) และ pipeline SST-004/T006/T007/T048/T049; supersedes earlier next-ticket boundary เฉพาะ SST-004 ไม่มี authorization ให้ commit SST-004, push หรือเริ่ม SST-005+ ดู [desktop evidence](../desktop-shell.md)
 

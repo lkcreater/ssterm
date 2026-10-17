@@ -34,6 +34,7 @@ interface Remote {
   holdSubsystem?: boolean;
   releaseSubsystem?: Reply;
   realpathStatus?: number;
+  fstatMode?: number;
 }
 function remote(): Remote {
   return {
@@ -107,6 +108,14 @@ function serve(sftp: SFTPWrapper, state: Remote) {
       const handle = `h${++next}`;
       handles.set(handle, { path });
       sftp.handle(id, Buffer.from(handle));
+    });
+  });
+  sftp.on("FSTAT", (id: number, handle: Buffer) => {
+    state.requests.push({ type: "FSTAT" });
+    reply("FSTAT", () => {
+      const data = state.files.get(handles.get(handle.toString())?.path ?? "");
+      if (data) sftp.attrs(id, { ...fileAttrs(data.length), mode: state.fstatMode ?? fileAttrs(data.length).mode });
+      else sftp.status(id, STATUS_CODE.FAILURE);
     });
   });
   sftp.on("READ", (id: number, handle: Buffer, offset: number, length: number) => {
@@ -395,6 +404,21 @@ test("reads return owned bytes, short reads and null at EOF; exclusive create wr
   must(await writer.close());
   assert.equal(code(await writer.write(0, bytes)), "closed");
   assert.deepEqual([...f.state.files.get(`${HOME}/new.bin`)!], [1, 2, 3, 4]);
+});
+
+test("post-open handle attributes reject replaced special files and wait for their close", async (t) => {
+  const f = await fixture(t);
+  const { sftp } = await f.open();
+  f.state.fstatMode = 0o010600;
+  f.state.hold.add("CLOSE");
+  const opened = sftp.openRead(`${HOME}/hello.txt`);
+  await until(() => f.state.held.length === 1);
+  assert.equal(await settled(opened, 20), "hung", "refusal must retain its permit until CLOSE settles");
+  assert.equal(f.state.requests.filter((r) => r.type === "READ").length, 0);
+  f.state.hold.clear(); f.state.held.shift()!();
+  assert.equal(code(await opened), "not-file");
+  f.state.fstatMode = 0o100644;
+  must(await must(await sftp.openRead(`${HOME}/hello.txt`)).close());
 });
 
 test("open handles are capped at 32 per session and a closed handle frees its slot", async (t) => {

@@ -1316,3 +1316,99 @@
     display: none;
   }
 }
+
+/* Transfers keep their captured targets and paths visible below the two independent browsers. */
+.files-workspace-with-transfers {
+  flex-direction: column;
+}
+.transfer-actions,
+.transfer-queue-header,
+.transfer-job-heading {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.transfer-actions {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.transfer-queue {
+  display: flex;
+  min-height: 0;
+  max-height: 42%;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+.transfer-queue-header {
+  flex-shrink: 0;
+  padding: 4px 10px;
+}
+.transfer-queue-header > button {
+  margin-left: auto;
+}
+.transfer-warning {
+  flex-shrink: 0;
+  padding: 0 10px 6px;
+}
+.transfer-queue > [role="alert"] {
+  margin: 0 8px 6px;
+  width: auto;
+}
+.transfer-list {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.transfer-empty {
+  padding: 0 10px 8px;
+}
+.transfer-job {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+}
+.transfer-job-heading > button[aria-disabled="true"] {
+  opacity: 0.5;
+}
+.transfer-paths {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 8px;
+}
+.transfer-paths dt {
+  color: var(--muted-foreground);
+}
+.transfer-paths dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.transfer-error {
+  color: var(--destructive);
+}
+@media (prefers-reduced-motion: reduce) {
+  .transfer-job [data-slot="progress-indicator"] {
+    transition: none;
+  }
+}
+.transfer-job[data-state="completed"] .transfer-job-heading > svg {
+  color: var(--connection-connected);
+}
+.transfer-job[data-state="failed"] .transfer-job-heading > svg {
+  color: var(--connection-error);
+}
+.transfer-job[data-state="running"] .transfer-job-heading > svg {
+  color: var(--primary);
+}
+.transfer-job[data-state="cancelling"] .transfer-job-heading > svg {
+  color: var(--connection-connecting);
+}

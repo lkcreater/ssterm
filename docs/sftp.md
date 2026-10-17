@@ -25,3 +25,6 @@ The independent tester confirmed on real OpenSSH that SFTP-first connects verify
 ## Boundaries and rollback
 
 There is no renderer access until SST-020. A FIFO lists as a symlink or `other` and opening it for reading blocks the server's single-threaded SFTP process, stalling every later operation on that session until it is closed; callers must `stat` (which follows links) and open only regular files. Overwrite, temporary files and rename belong to SST-022. A cancelled write may still reach the server. The adapter relies on ssh2 1.17 internals for read/write limits and channel state; an upgrade needs a re-check. Quit and close prompts list terminal sessions only. Rollback removes the session kind, the SFTP adapter and its tests; no data change.
+
+
+SST-021 adds [regular-file transfer jobs](transfers.md), local I/O and post-open remote FSTAT validation. Transfer callers preflight `lstat`, refuse selected symlinks/special files, and invalidate stalled remote generations. Close/quit prompts now include pending transfer/cleanup work; the SST-019 evidence above remains historical.

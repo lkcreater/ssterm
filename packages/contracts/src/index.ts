@@ -6,6 +6,8 @@ import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarge
 export * from "./terminals.ts";
 import type { SftpState, FilePathRequest, FileOutcome, DirectoryListing, FileAttributes } from "./files.ts";
 export * from "./files.ts";
+import type { TransferState, EnqueueTransfersRequest, CancelTransferRequest } from "./transfers.ts";
+export * from "./transfers.ts";
 import type { OpenLinkRequest, OpenLinkResponse } from "./links.ts";
 import type { CatalogState, CatalogStateRequest, PrepareCatalogChangeRequest, CatalogPrepareResponse, ApplyCatalogChangeRequest, CatalogApplyResponse, ConnectHostRequest, ConnectHostResponse } from "./catalog.ts";
 export * from "./catalog.ts";
@@ -96,6 +98,11 @@ export interface DesktopAPI {
   statPath(request: FilePathRequest): Promise<Result<FileOutcome<FileAttributes>>>;
   /** Canonical path of an absolute, `~` or home-relative path. */
   resolvePath(request: FilePathRequest): Promise<Result<FileOutcome<string>>>;
+  transferState(request: TerminalStateRequest): Promise<Result<TransferState>>;
+  onTransferState(callback: (state: TransferState) => void): () => void;
+  enqueueTransfers(request: EnqueueTransfersRequest): Promise<Result<TerminalActionResponse>>;
+  cancelTransfer(request: CancelTransferRequest): Promise<Result<TerminalActionResponse>>;
+  clearFinishedTransfers(request: TerminalStateRequest): Promise<Result<TerminalActionResponse>>;
   openLink(request: OpenLinkRequest): Promise<Result<OpenLinkResponse>>;
   catalogState(request: CatalogStateRequest): Promise<Result<CatalogState>>;
   onCatalogState(callback: (state: CatalogState) => void): () => void;
@@ -151,6 +158,11 @@ export const channels = Object.freeze({
   listDirectory: "ssterm:list-directory",
   statPath: "ssterm:stat-path",
   resolvePath: "ssterm:resolve-path",
+  transferState: "ssterm:transfer-state",
+  transferStateChanged: "ssterm:transfer-state-changed",
+  enqueueTransfers: "ssterm:enqueue-transfers",
+  cancelTransfer: "ssterm:cancel-transfer",
+  clearFinishedTransfers: "ssterm:clear-finished-transfers",
   openLink: "ssterm:open-link",
   catalogState: "ssterm:catalog-state",
   catalogStateChanged: "ssterm:catalog-state-changed",
