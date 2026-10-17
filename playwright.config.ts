@@ -53,6 +53,7 @@ export default defineConfig({
             "transfer-conflicts.spec.ts",
             "snippets.spec.ts",
             "snippet-run.spec.ts",
+            "tunnel.spec.ts",
           ],
         },
       ]
@@ -83,6 +84,7 @@ export default defineConfig({
             "transfer-conflicts.spec.ts",
             "snippets.spec.ts",
             "snippet-run.spec.ts",
+            "tunnel.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

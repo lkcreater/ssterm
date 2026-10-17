@@ -1,8 +1,8 @@
 # Implementation plan
 
-**SST-024 / T030: `DONE`** — [Snippet Paste / Run](../snippets.md#snippet-paste--run--sst-024) ผ่าน independent TEST/REVIEW/DELIVER: unit 410/410, development E2E 57/57, packaged 54/54; typecheck/build และ unsigned macOS arm64 package ผ่าน (SST-023 committed `50d421a`); SST-025–028 และ DS05–DS06 ยัง `PAUSED` รอคำสั่ง
+**SST-025 / T031: `DONE`** — [Local tunnel service](../tunnels.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 418/418, development E2E 57/58 (terminal-flow throughput ภายใต้โหลด, rerun 3/3 ผ่าน), packaged 55/55; ผู้ใช้สั่งทำ SST-026 และ SST-027 ต่อ; SST-028 และ DS05–DS06 ยัง `PAUSED`
 
-**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-025–028 ยัง `PAUSED`
+**สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-028 ยัง `PAUSED`
 
 ## Product baseline / scoped authorization
 

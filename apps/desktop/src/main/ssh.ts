@@ -52,7 +52,8 @@ export function createSavedHostSessions(options: {
 }
 
 export { openMetadata } from "@ssterm/adapters";
-export { CatalogModule, SecretService, TransientSecrets } from "@ssterm/services";
+export { CatalogModule, SecretService, TransientSecrets, TunnelService } from "@ssterm/services";
+export { listenLocal } from "@ssterm/adapters/local-listener";
 export { createCredentialsController } from "./credentials";
 export { registerCredentialHandlers } from "./credential-runtime";
 export { createTerminalController, registerTerminalHandlers, terminalChannels } from "./terminals";

@@ -1,5 +1,6 @@
 import ssh2, { type AnyAuthMethod, type ClientChannel, type ParsedKey, type TerminalModes } from "ssh2";
-import type { HostKeyIdentity, SftpChannel, TerminalChannel, TerminalEnd } from "@ssterm/domain";
+import type { HostKeyIdentity, SftpChannel, TerminalChannel, TerminalEnd, TunnelChannel } from "@ssterm/domain";
+import { createTunnelChannel } from "./tunnel.ts";
 import { decodeHostPublicKey } from "./host-key.ts";
 import { channelGone, createSftpChannel, remotePath } from "./sftp.ts";
 
@@ -117,9 +118,9 @@ export function createSshConnection(options: {
   signal: AbortSignal;
   verifyHost(publicKey: Uint8Array, initial: boolean): Promise<boolean>;
   authenticate(): Promise<SshCredential | undefined>;
-  /** `shell` (default) yields a TerminalChannel, `sftp` an SftpChannel. */
-  open?: "shell" | "sftp";
-  ready(channel: TerminalChannel | SftpChannel): boolean;
+  /** `shell` (default) yields a TerminalChannel, `sftp` an SftpChannel, `tunnel` a TunnelChannel. */
+  open?: "shell" | "sftp" | "tunnel";
+  ready(channel: TerminalChannel | SftpChannel | TunnelChannel): boolean;
   failed(code: SshFailure): void;
   /** Defaults and validation: `terminalBounds`. */
   terminal?: TerminalBounds;
@@ -135,6 +136,7 @@ export function createSshConnection(options: {
   let credential: SshCredential | undefined;
   let terminal: ReturnType<typeof createTerminal> | undefined;
   let sftp: ReturnType<typeof createSftpChannel> | undefined;
+  let tunnel: ReturnType<typeof createTunnelChannel> | undefined;
   let terminalClosed: (() => void) | undefined;
   let resolveDrain!: () => void;
   const drained = new Promise<void>((resolve) => { resolveDrain = resolve; });
@@ -150,6 +152,7 @@ export function createSshConnection(options: {
       clearCredential();
       terminal?.dispose();
       sftp?.dispose();
+      tunnel?.dispose();
       client.destroy();
       // ssh2 emits no close if connect has never allocated a socket.
       if (!started) resolveDrain();
@@ -228,6 +231,7 @@ export function createSshConnection(options: {
   client.on("error", (error: unknown) => {
     clearCredential();
     sftp?.lost();
+    tunnel?.lost();
     // A reset after the remote exit still ends with that exit, as on close (G1).
     const exit = ready ? terminal?.exited() : undefined;
     if (!exit) fail(failure(error)); else if (live()) options.ended(exit);
@@ -236,6 +240,7 @@ export function createSshConnection(options: {
     clearCredential();
     // ssh2 emits the client close before it fails the channels' outstanding requests.
     sftp?.lost();
+    tunnel?.lost();
     // A paused readable may defer its channel close event until data is consumed.
     // The socket close is the authoritative fence for all its SSH channels.
     terminalClosed?.();
@@ -250,6 +255,14 @@ export function createSshConnection(options: {
     clearCredential();
     if (!live()) return;
     if (options.open === "sftp") { openSftp(); return; }
+    if (options.open === "tunnel") {
+      // No channel is opened up front: each accepted local connection opens its own direct-tcpip channel.
+      const opened = createTunnelChannel(client as unknown as Parameters<typeof createTunnelChannel>[0], drained);
+      tunnel = opened;
+      ready = true;
+      if (!options.ready(opened)) opened.dispose();
+      return;
+    }
     try {
       client.shell({ term: "xterm-256color", cols: 80, rows: 24, modes: IUTF8_MODES }, (error, channel) => {
         if (error) { fail("channel-open-failed"); return; }

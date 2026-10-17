@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-024
+# Execution record — M0 ถึง SST-025
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-024/T030 `DONE`; SST-023 committed `50d421a`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-024-execution-plan--2026-10-17). SST-025–028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-025/T031 `DONE`; SST-024 committed `94bf3ae`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-025-execution-plan--2026-10-17). ผู้ใช้สั่งทำ SST-026 และ SST-027 ต่อ; SST-028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
 
 ## Authorization / acceptance
 
@@ -899,3 +899,33 @@ SST-023/T029 DONE. [Snippets](../snippets.md) and [delivery](sst-023-delivery.md
 ### Final SST-024 record — 2026-10-17
 
 SST-024/T030 DONE. [Snippet Paste / Run](../snippets.md#snippet-paste--run--sst-024) and [delivery](sst-024-delivery.md). Final source: typecheck PASS; unit 410/410; build PASS; development E2E 57/57; unsigned macOS arm64 package PASS; packaged 54/54. Review: no critical/high; the medium (double send) and five lows/nits fixed; overlay coverage and the private-map E2E gate recorded as limitations. Stop after the local commit; SST-025–028 and DS05–DS06 remain paused until a new instruction.
+
+## SST-025 execution plan — 2026-10-17
+
+**Authorization / gate:** after SST-024 (committed `94bf3ae`) the user instructed “เริ่ม SST-025 ได้”; this authorizes **SST-025 / T031 only**. SST-026–028 and DS05–DS06 remain paused. ANALYZE (read-only explorer over the spike tunnel, fixture, TunnelRule storage, session kinds, transport, composition and runtime-test patterns) is complete; DESIGN is recorded here before coding. Baseline: 410 unit / 57 development E2E / 54 packaged.
+
+**Acceptance:** [SST-025](../termius/tickets.md#sst-025--local-tunnel-service), [T031](../termius/tasks.md): valid bind/destination config; loopback default; running only after local bind and SSH Ready; typed bind/port errors; stop/cancel/lock/quit close the listener and every active socket; a failed start returns all resources; saving a rule never starts it. Validation: HTTP over the tunnel on the owned fixture, port collision, connection loss, listener absent after stop. The rule editor, status UI and IPC are SST-026.
+
+**Settled design:**
+- *Session kind `tunnel`:* each running tunnel owns its own SSH connection in the shared `SessionRegistry` (trust policy, credentials/prompts, keepalive, lock, owner revocation, 32-session cap and generation fencing unchanged). The transport's `open: "tunnel"` branch yields a main-only `TunnelChannel` (`packages/adapters/src/tunnel.ts`) wrapping `forwardOut`: bounded (16 opening, 64 open streams), every stream destroyed on dispose or transport loss; a refused open is `refused`, never server text. Fence: `registry.tunnel(owner, id, generation)`.
+- *Listener adapter* (`packages/adapters/src/local-listener.ts`): exclusive bind to the rule's `127.0.0.1`/`::1` (schema already allows nothing else); `EADDRINUSE` → `address-in-use`, `EACCES` → `permission-denied`, `EADDRNOTAVAIL` → `address-unavailable`, other/timeout → `bind-failed`; close destroys tracked sockets and resolves when the server closed.
+- *TunnelService* (`packages/services/src/tunnels.ts`), per owner and rule: `start` reads the rule from storage (config captured), refuses a rule already active, binds first (a collision fails before any SSH work), then connects the session; state `starting` → `running` on Ready; `failed` with a typed code on bind error, session failure, loss or lock; `stop` → `stopping` → listener closed, sockets destroyed, session closed → `stopped` (removed). Sockets arriving before `running` or beyond 64 per tunnel are closed. Counters only (active/total/failed connections); no addresses or payload logged. `closeOwner` and `dispose` stop everything. No autostart path exists; nothing persists running state.
+- *Main:* compose the service with the saved-host registry and the listener adapter; owner revocation and quit dispose it before the session drain. No renderer IPC in this ticket. Export for runtime tests via `out/main/ssh.js`.
+
+| ID | Files | Validation |
+|---|---|---|
+| I1 adapters | `packages/adapters/src/{tunnel,local-listener,ssh}.ts`, package export, domain `TunnelSession/TunnelChannel` | unit: listener errors/close, channel bounds/dispose |
+| I2 registry kind + service | `packages/services/src/{sessions,ssh-session,tunnels,index}.ts` | unit with real loopback listener + fake/in-process ssh2 server: start/running/stop, collision, refused destination, loss, lock, dispose, socket cap |
+| I3 main | `apps/desktop/src/main/{index,ssh}.ts` | typecheck/build |
+| I4 runtime E2E | new `tests/fixtures/tunnel/ssh.cjs`, `tests/e2e/tunnel.spec.ts`, terminal fixture exposes repository/hostId, playwright config (dev + packaged) | Docker OpenSSH: no listener after save; HTTP 200 body; collision; refused destination; stop with open socket; lock; dispose; transport loss → listener absent |
+| T/R/L | independent reviewer; `docs/tunnels.md`, tickets/tasks, AGENTS, delivery | full suites incl. package/packaged; local commit only |
+
+**Rollback:** no schema or IPC change; revert the commit. Nothing persists tunnel state.
+
+**SST-025 ledger (plan creation):** ANALYZE DONE · DESIGN DONE · PLAN RECORDED · IMPLEMENT PENDING · TEST PENDING · REVIEW PENDING · DELIVER PENDING.
+
+**SST-025 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+### Final SST-025 record — 2026-10-17
+
+SST-025/T031 DONE. [Tunnels](../tunnels.md) and [delivery](sst-025-delivery.md). Final source: typecheck PASS; unit 418/418; build PASS; development E2E 57/58 (terminal-flow throughput budget missed under full-suite load, 3/3 in isolation; untouched path); package PASS; packaged 55/55. The user then instructed “งานนี้เสร็จ ทำ SST-026, 027 ต่อได้เลย”: commit SST-025 locally, then SST-026 and SST-027 in order; SST-028 and DS05–DS06 stay paused.

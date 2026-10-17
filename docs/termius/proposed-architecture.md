@@ -1,8 +1,8 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**SST-024 / T030: `DONE`** — [Snippet Paste / Run](../snippets.md#snippet-paste--run--sst-024) ผ่าน independent TEST/REVIEW/DELIVER: unit 410/410, development E2E 57/57, packaged 54/54; typecheck/build และ unsigned macOS arm64 package ผ่าน (SST-023 committed `50d421a`); SST-025–028 และ DS05–DS06 ยัง `PAUSED` รอคำสั่ง
+**SST-025 / T031: `DONE`** — [Local tunnel service](../tunnels.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 418/418, development E2E 57/58 (terminal-flow throughput ภายใต้โหลด, rerun 3/3 ผ่าน), packaged 55/55; ผู้ใช้สั่งทำ SST-026 และ SST-027 ต่อ; SST-028 และ DS05–DS06 ยัง `PAUSED`
 
-**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-001–024 ส่งมอบแล้ว; SST-025–028 หยุดรอคำสั่ง รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
+**ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-001–025 ส่งมอบแล้ว; SST-026–027 กำลังทำ; SST-028 หยุดรอคำสั่ง รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
 ## Baseline / stack decision
 

@@ -9,12 +9,17 @@ import {
   type TerminalChannel,
   type TerminalEnd,
   type TerminalStream,
+  type TunnelChannel,
+  type TunnelSession,
 } from "@ssterm/domain";
 import { TransientSecrets, type TransientSecret } from "./transient.ts";
 
-/** A terminal session owns a shell channel; an SFTP session owns the sftp subsystem on its own connection. */
-export type SessionKind = "terminal" | "sftp";
-export type SessionChannel = TerminalChannel | SftpChannel;
+/**
+ * A terminal session owns a shell channel; an SFTP session owns the sftp subsystem on its own connection;
+ * a tunnel session owns a connection whose direct-tcpip channels its tunnel opens per local connection.
+ */
+export type SessionKind = "terminal" | "sftp" | "tunnel";
+export type SessionChannel = TerminalChannel | SftpChannel | TunnelChannel;
 export type SessionState =
   | "Idle"
   | "Connecting"
@@ -385,7 +390,7 @@ export class SessionRegistry {
   connect(ownerId: string, hostId: string, kind: SessionKind = "terminal"): SessionResult<SessionSnapshot> {
     if (this.#disposed) return failure("disposed");
     if (this.#locked) return failure("locked");
-    if (!validName(ownerId) || !validName(hostId) || (kind !== "terminal" && kind !== "sftp"))
+    if (!validName(ownerId) || !validName(hostId) || (kind !== "terminal" && kind !== "sftp" && kind !== "tunnel"))
       return failure("invalid-request");
     if (this.#records.size >= this.#limits.sessions)
       return failure("resource-limit");
@@ -419,8 +424,9 @@ export class SessionRegistry {
       return () => {};
     let count = 0;
     for (const observers of this.#observers.values()) count += observers.size;
-    // Each window subscribes up to four times (terminals, SFTP, credentials, known hosts): 64 windows.
-    if (count >= 256) return () => {};
+    // Per window: terminals, SFTP, transfers, credentials and known hosts; the tunnel service once per owner with tunnels.
+    // Six each leaves room for 64 windows.
+    if (count >= 384) return () => {};
     const observers = this.#observers.get(ownerId) ?? new Set();
     observers.add(callback);
     this.#observers.set(ownerId, observers);
@@ -643,6 +649,10 @@ export class SessionRegistry {
   sftp(ownerId: string, id: string, generation: number): SftpSession | undefined {
     return this.#channel(ownerId, id, generation, "sftp") as SftpChannel | undefined;
   }
+  /** The identical fence for a tunnel session. */
+  tunnel(ownerId: string, id: string, generation: number): TunnelSession | undefined {
+    return this.#channel(ownerId, id, generation, "tunnel") as TunnelChannel | undefined;
+  }
   #channel(ownerId: string, id: string, generation: number, kind: SessionKind): SessionChannel | undefined {
     const current = this.#owned(ownerId, id);
     return current?.kind === kind && current.generation === generation && current.state === "Ready" && this.#live(current)
@@ -750,7 +760,9 @@ export class SessionRegistry {
             }
             if (!this.#own(current, channel)) return false;
             // The kind's fence later returns this object as that kind's capability.
-            if (typeof (kind === "sftp" ? (channel as SftpChannel).list : (channel as TerminalChannel).open) !== "function") {
+            const probe = kind === "sftp" ? (channel as SftpChannel).list
+              : kind === "tunnel" ? (channel as TunnelChannel).forward : (channel as TerminalChannel).open;
+            if (typeof probe !== "function") {
               this.#fail(current, "invalid-request");
               return false;
             }

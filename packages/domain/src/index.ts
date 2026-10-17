@@ -358,6 +358,21 @@ export interface SftpChannel extends SftpSession {
   dispose(): void;
   readonly drained: Promise<void>;
 }
+/** `refused`: the server would not open the destination (no server text is kept). */
+export type TunnelForward =
+  | { ok: true; stream: import('node:stream').Duplex }
+  | { ok: false; code: 'refused' | 'closed' | 'resource-limit' };
+/** Main-only local-forwarding capability of one tunnel session generation. Never throws. */
+export interface TunnelSession {
+  /** Opens one `direct-tcpip` channel; the destination is resolved by the SSH server. */
+  forward(origin: { address: string; port: number }, destination: { host: string; port: number }): Promise<TunnelForward>;
+}
+/** Lifecycle owner's view. Only the session registry holds this; consumers receive `TunnelSession`. */
+export interface TunnelChannel extends TunnelSession {
+  /** Destroys every forwarded stream and refuses further opens. Idempotent. */
+  dispose(): void;
+  readonly drained: Promise<void>;
+}
 export interface BackupManifest {
   format: 'ssterm-metadata-backup-v1';
   schemaVersion: number;

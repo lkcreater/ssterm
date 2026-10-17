@@ -166,6 +166,11 @@ async function startTerminalFixture(production, options) {
     };
     return {
       controller,
+      // The owned catalog and the PROD host, for fixtures that add their own rows (e.g. tunnel rules).
+      repository,
+      hostId,
+      runtime,
+      ownerId,
       connect() { current = value(registry.connect(ownerId, hostId)); return status(); },
       reconnect() { current = value(registry.reconnect(ownerId, current.id)); return status(); },
       async close() { value(await registry.close(ownerId, current.id)); return status(); },

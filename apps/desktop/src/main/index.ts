@@ -16,11 +16,13 @@ import {
   type KnownHostPolicy,
   SecretService,
   TransientSecrets,
+  TunnelService,
 } from "@ssterm/services";
+import { listenLocal } from "@ssterm/adapters/local-listener";
 import { WindowBoundary, sameDocument } from "./boundary";
 import { contentSecurityPolicy, rendererLocation } from "./security";
 import { openMetadata } from "./storage";
-import { createDesktopSessions } from "./session-runtime";
+import { createDesktopSessions, sessionOwnerId } from "./session-runtime";
 import { createSavedHostSessions } from "./ssh";
 import { createKnownHostsController } from "./known-hosts";
 import { registerKnownHostHandlers } from "./known-host-runtime";
@@ -83,6 +85,8 @@ let removeCatalogHandlers: (() => void) | undefined;
 let identities: IdentitiesController | undefined;
 let removeIdentityHandlers: (() => void) | undefined;
 let snippets: SnippetsController | undefined;
+// Local forwarding (SST-025): main-only until the rule UI and IPC (SST-026).
+let tunnels: TunnelService | undefined;
 let removeSnippetHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
@@ -190,6 +194,8 @@ const boundary = new WindowBoundary(
     terminals?.revokeOwner(owner);
     transfers?.revokeOwner(owner);
     sftp?.revokeOwner(owner);
+    // Listeners and sockets close before the owner's sessions are revoked.
+    void tunnels?.closeOwner(sessionOwnerId(owner)).catch(() => undefined);
     desktopSessions?.revokeOwner(owner);
   },
 );
@@ -388,6 +394,7 @@ if (ownsInstance) {
       });
       // Renderers drop decrypted snippet editors when the lock epoch they see increases.
       savedHostSessions.onLock(() => catalog?.publishAll());
+      tunnels = new TunnelService({ registry: savedHostSessions.registry, repository, listen: listenLocal });
       snippets = createSnippetsController({
         repository,
         secrets: () => secrets,
@@ -590,8 +597,13 @@ app.on("before-quit", (event) => {
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();
-  // Invalidation/destruction starts synchronously; optional engine drain is bounded.
-  void Promise.resolve(desktopSessions?.shutdown()).finally(() => {
+  // Tunnel listeners and sockets are destroyed synchronously inside dispose(); session invalidation also starts
+  // synchronously. Both drains are bounded.
+  const tunnelsClosed = Promise.race([
+    Promise.resolve(tunnels?.dispose()).catch(() => undefined),
+    new Promise<void>((done) => setTimeout(done, 2_000)),
+  ]);
+  void Promise.all([tunnelsClosed, Promise.resolve(desktopSessions?.shutdown())]).finally(() => {
     closeStorage();
     shutdownComplete = true;
     app.quit();
