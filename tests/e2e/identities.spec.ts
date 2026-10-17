@@ -188,9 +188,8 @@ async function remoteEcho(page: Page, pane: Locator, tag: string) {
   await expect(pane.locator(".xterm-rows")).toContainText(`${tag}-42`);
 }
 async function disconnect(pane: Locator) {
+  // Disconnect ends the session and removes its pane.
   await pane.getByRole("button", { name: "Disconnect", exact: true }).click();
-  await expect(pane.getByText("Session closed", { exact: true })).toBeVisible();
-  await pane.getByRole("button", { name: "Close pane", exact: true }).click();
   await expect(pane).toHaveCount(0);
 }
 

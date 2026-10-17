@@ -305,9 +305,11 @@ test("lifecycle commands are generation fenced, sessions are independent and a l
   try {
     await h.operate("connect");
     await h.ready(first, 1);
-    await h.click(first, "Disconnect");
-    await h.outcome(first, "Session closed");
+    // A remote end keeps the pane and its history (Disconnect would remove it).
+    await h.run(first, "exit 0");
+    await h.outcome(first, "Remote process exited with status 0");
     await h.settled("Closed/-");
+    await expect(first.locator(".xterm-cursor"), "an ended pane shows no live cursor").toBeHidden();
 
     // Two Reconnects for the same generation start exactly one new generation.
     const ended = await h.target();
@@ -330,14 +332,15 @@ test("lifecycle commands are generation fenced, sessions are independent and a l
     await expect(h.screen(second)).toContainText("SECOND-7");
     await h.click(first, "Reconnect");
     await h.ready(first, 3);
+    // Disconnect clears the other session and its pane; this one keeps working.
     await h.click(second, "Disconnect");
-    await h.outcome(second, "Session closed");
+    await expect(second).toHaveCount(0);
     await h.run(first, 'echo "FIRST-$((4+5))"');
     await expect(h.screen(first)).toContainText("FIRST-9");
 
     // Lock: every live pane closes; Reconnect is the explicit unlock.
-    await h.click(second, "Reconnect");
-    await h.ready(second, 2);
+    await h.operate("connectSecond");
+    await h.ready(second, 1);
     await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("lock-screen"); });
     await h.outcome(first, locked);
     await h.outcome(second, locked);
@@ -345,7 +348,7 @@ test("lifecycle commands are generation fenced, sessions are independent and a l
     await h.click(first, "Reconnect");
     await h.ready(first, 4);
     await h.click(second, "Reconnect");
-    await h.ready(second, 3);
+    await h.ready(second, 2);
     await h.run(second, 'echo "UNLOCKED-$((5+6))"');
     await expect(h.screen(second)).toContainText("UNLOCKED-11");
 
@@ -367,10 +370,8 @@ test("repeated connect, disconnect and close pane leaves no record, socket or se
       await h.operate("connect");
       await h.ready(pane, 1);
       if (round === 1) expect(await sockets(), "a live session holds a counted socket").toBeGreaterThan(baseline);
+      // Disconnect closes the session and removes the pane in one step.
       await h.click(pane, "Disconnect");
-      await h.outcome(pane, "Session closed");
-      // Close pane right away: dismiss waits for the closing generation's teardown.
-      await h.click(pane, "Close pane");
       await expect(page.locator(".live-terminal-pane"), `round ${round} leaves no pane`).toHaveCount(0);
     }
     expect(await h.operate<unknown[]>("sessions"), "the registry forgot every record").toEqual([]);

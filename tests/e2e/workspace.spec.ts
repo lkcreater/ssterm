@@ -383,14 +383,11 @@ test("closing: Cmd+W asks only for a Ready pane; closing the window and quitting
     await expect(w.tabs).toHaveCount(1);
     await expect(b).toBeVisible();
 
-    // An ended pane closes without asking.
+    // Disconnect is explicit: it ends the session and removes the pane without asking.
     await b.getByRole("button", { name: "Disconnect", exact: true }).click();
-    await expect(b.getByText("Session closed", { exact: true })).toBeVisible();
-    await expect.poll(w.shells).toBe(0);
-    await b.locator(".xterm-helper-textarea").focus();
-    await page.keyboard.press("Meta+w");
     await expect(b).toHaveCount(0);
     await expect(confirm).toHaveCount(0);
+    await expect.poll(w.shells).toBe(0);
     expect(await w.windows()).toBe(1);
 
     // Window close and quit with a Ready session ask with a sheet; Cancel keeps everything running.

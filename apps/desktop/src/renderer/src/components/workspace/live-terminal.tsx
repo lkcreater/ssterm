@@ -133,6 +133,7 @@ export function LiveTerminal({
   hidden = false,
   style,
   actions,
+  onDisconnect,
 }: {
   owner: Owner;
   session: TerminalSession;
@@ -143,6 +144,8 @@ export function LiveTerminal({
   style?: CSSProperties;
   /** Extra header controls, such as the pane menu. */
   actions?: ReactNode;
+  /** Disconnect ends the session and removes the pane (the workspace owns the layout). */
+  onDisconnect?(): void;
 }) {
   const { sessionId, generation, phase, target } = session;
   const ready = phase === "ready";
@@ -536,6 +539,8 @@ export function LiveTerminal({
   const act = (action: LifecycleAction, detail = 0) => {
     const bridge = window.ssterm;
     if (!bridge || busy || (action !== "reconnect" && detail > 1)) return;
+    // Disconnecting a connected session clears it: no stale prompt is left behind.
+    if (action === "close" && ready && onDisconnect) return onDisconnect();
     setBusy(true);
     if (action === "reconnect") focusAfter.current = generation;
     const fail = (text: string) => {

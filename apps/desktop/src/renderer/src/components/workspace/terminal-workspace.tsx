@@ -204,6 +204,11 @@ export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession
         splitting.current = false;
       }
     },
+    /** Disconnect is explicit: the session ends and its pane is removed at once, without a confirmation. */
+    disconnect(sessionId: string) {
+      const session = sessions.find((row) => row.sessionId === sessionId);
+      if (session) close([session]);
+    },
     /** Asks first only when a connected session would end; anything else closes at once. */
     requestClose(target: CloseTarget) {
       const row = "tabId" in target ? workspace.tabs.find((candidate) => candidate.id === target.tabId) : undefined;
@@ -445,6 +450,7 @@ export function TerminalWorkspace({
                 active={inActiveTab && session.sessionId === tab?.active}
                 hidden={!visible}
                 style={style}
+                onDisconnect={() => controller.disconnect(session.sessionId)}
                 actions={
                   entry ? (
                     <PaneMenu

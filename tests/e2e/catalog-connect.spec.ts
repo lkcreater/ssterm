@@ -137,8 +137,9 @@ test("a server created in the UI connects through production main: trust, passwo
     await expect(pane.locator(".xterm-helper-textarea")).toBeFocused();
     expect(await shells()).toBe(1);
 
+    // Disconnect clears the session: the pane goes and the shell is reaped.
     await pane.getByRole("button", { name: "Disconnect", exact: true }).click();
-    await expect(pane.getByText("Session closed", { exact: true })).toBeVisible();
+    await expect(pane).toHaveCount(0);
     await expect.poll(shells, { message: "Disconnect reaped the shell", timeout: 10_000 }).toBe(0);
     expect(desktop.errors).toEqual([]);
     expect(desktop.externalRequests).toEqual([]);

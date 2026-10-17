@@ -834,6 +834,13 @@
 .paste-marker {
   color: var(--muted-foreground);
 }
+/* An ended session keeps its history but must not look live: no cursor, history slightly receded. */
+.live-terminal-pane:is([data-phase="closed"], [data-phase="failed"]) .xterm-cursor {
+  visibility: hidden;
+}
+.live-terminal-pane:is([data-phase="closed"], [data-phase="failed"]) .live-terminal {
+  opacity: 0.72;
+}
 /* Port forwarding rules: state is an icon plus text, colored per Signal Blue operational states. */
 .tunnel-list {
   display: flex;
