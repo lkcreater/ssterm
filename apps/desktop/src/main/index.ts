@@ -36,6 +36,7 @@ import { registerLinkHandlers } from "./links";
 import { registerSettingsHandlers } from "./settings";
 import { createCatalogController, observeCommits, registerCatalogHandlers, type CatalogController } from "./catalog-controller";
 import { createIdentitiesController, registerIdentityHandlers, secretNamespace, type IdentitiesController } from "./identities";
+import { createSnippetsController, registerSnippetHandlers, type SnippetsController } from "./snippets";
 
 // Tests opt into an existing task-owned temporary directory before Electron starts.
 const testUserData = process.env.SSTERM_TEST_USER_DATA;
@@ -81,6 +82,8 @@ let catalog: CatalogController | undefined;
 let removeCatalogHandlers: (() => void) | undefined;
 let identities: IdentitiesController | undefined;
 let removeIdentityHandlers: (() => void) | undefined;
+let snippets: SnippetsController | undefined;
+let removeSnippetHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -381,6 +384,15 @@ if (ownsInstance) {
         catalog: new CatalogModule({ repository }),
         secretStore: () => !!secrets,
         cleanupQueued: () => identities?.cleanupQueued(),
+        lockEpoch: () => savedHostSessions.registry.lockEpoch,
+      });
+      // Renderers drop decrypted snippet editors when the lock epoch they see increases.
+      savedHostSessions.onLock(() => catalog?.publishAll());
+      snippets = createSnippetsController({
+        repository,
+        secrets: () => secrets,
+        lock: savedHostSessions.registry,
+        checkAccess,
       });
       identities = createIdentitiesController({
         repository,
@@ -449,6 +461,11 @@ if (ownsInstance) {
       ipc: ipcMain,
       boundary,
       controller: () => identities,
+    });
+    removeSnippetHandlers = registerSnippetHandlers({
+      ipc: ipcMain,
+      boundary,
+      controller: () => snippets,
     });
     removeSettingsHandlers = registerSettingsHandlers({
       ipc: ipcMain,
@@ -558,6 +575,7 @@ app.on("before-quit", (event) => {
   sftp?.dispose();
   catalog?.dispose();
   identities?.dispose();
+  snippets?.dispose();
   knownHostPolicy?.dispose();
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
@@ -568,6 +586,7 @@ app.on("before-quit", (event) => {
   removeSettingsHandlers?.();
   removeCatalogHandlers?.();
   removeIdentityHandlers?.();
+  removeSnippetHandlers?.();
   ipcMain.removeHandler(channels.bootstrap);
   ipcMain.removeHandler(channels.ping);
   transientSecrets.purgeAll();

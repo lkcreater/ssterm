@@ -81,6 +81,7 @@ import {
 } from "@/components/catalog/hosts-page";
 import { GroupEditor, HostEditor } from "@/components/catalog/editors";
 import { IdentitiesPage } from "@/components/identities/identities-page";
+import { SnippetsPage } from "@/components/snippets/snippets-page";
 import {
   DeleteGroupDialog,
   DeleteHostDialog,
@@ -94,7 +95,6 @@ import { endpointText } from "@/lib/catalog-filter";
 import iconLogo from "@/assets/icon-logo.png";
 
 const unavailable = [
-  { label: "Snippets", icon: LayersIcon },
   { label: "Port forwarding", icon: WorkflowIcon },
 ] as const;
 
@@ -149,7 +149,7 @@ const storageProblems: Record<
   },
 };
 
-type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities";
+type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities" | "snippets";
 type CatalogDialog =
   | { kind: "host"; id?: string; groupId?: string | null }
   | { kind: "group"; id?: string; parentId?: string | null }
@@ -161,6 +161,7 @@ const titles: Record<Page, string> = {
   files: "Files",
   "known-hosts": "Known hosts",
   identities: "Identities",
+  snippets: "Snippets",
 };
 const phaseStates = {
   connecting: "connecting",
@@ -301,6 +302,7 @@ export function AppShell() {
   const active = controller.activeSession;
   const terminalsShown = page === "terminals" && !!owner && sessions.length > 0;
   const filesShown = page === "files" && !!owner;
+  const snippetsShown = page === "snippets" && !!owner && !!state && ready;
   const remote = sftp.session;
   const statusSession = terminalsShown ? active : filesShown ? remote : undefined;
   const statusTarget = statusSession?.target;
@@ -477,6 +479,17 @@ export function AppShell() {
                           <span>Identities</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={page === "snippets"}
+                          aria-current={page === "snippets" ? "page" : undefined}
+                          onClick={() => setPage("snippets")}
+                          disabled={!ready}
+                        >
+                          <LayersIcon />
+                          <span>Snippets</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
                       {unavailable.map(({ label, icon: Icon }) => (
                         <SidebarMenuItem key={label}>
                           <SidebarMenuButton disabled>
@@ -532,7 +545,17 @@ export function AppShell() {
               {owner ? (
                 <FilesWorkspace owner={owner} sftp={sftp} catalog={state} hidden={!filesShown} />
               ) : null}
-              {terminalsShown || filesShown ? null : (
+              {owner && state && ready ? (
+                // Kept mounted so an unsaved draft survives switching pages; a lock still drops it.
+                <div
+                  className="workspace-page"
+                  inert={!snippetsShown}
+                  style={{ display: snippetsShown ? undefined : "none" }}
+                >
+                  <SnippetsPage owner={owner} catalog={catalog} state={state} />
+                </div>
+              ) : null}
+              {terminalsShown || filesShown || snippetsShown ? null : (
                 <div className="workspace-page">
                   {page === "known-hosts" ? (
                     <KnownHostsWorkspace
@@ -561,7 +584,7 @@ export function AppShell() {
                     </div>
                   ) : page === "identities" && owner && state && ready ? (
                     <IdentitiesPage owner={owner} catalog={catalog} state={state} />
-                  ) : page !== "identities" && state && ready ? (
+                  ) : page !== "identities" && page !== "snippets" && state && ready ? (
                     <HostsPage
                       catalog={catalog}
                       state={state}

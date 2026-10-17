@@ -358,6 +358,51 @@ test('tampered stored ciphertext is reported corrupt and overwrite is refused wi
   assert.deepEqual(await s.service.saveSnippet({ id, label: 'Tamper', body: bytes('replacement'), expectedRevision: 1 }), { status: 'corrupt' });
   assert.deepEqual(Buffer.from(snapshot(s.repo).snippets[0]!.bodyEnvelope), tampered);
 });
+test('snippet tags are written as one revision-fenced set with the body; delete keeps the vault key and removes memberships', async t => {
+  const s = await store(t);
+  await s.service.initializeContentKey();
+  const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
+  const before = snapshot(s.repo);
+  value(s.repo.commit({ expectedCatalogRevision: before.catalogRevision, changes: [a, b, c].map((id, i) => ({ type: 'create-tag' as const, id, data: { label: `tag-${i}` } })) }));
+  const id = randomUUID();
+  const multiline = 'set -e\r\nexport ชื่อ="ทดสอบ 🚀"\n\tcd /srv && ls\n\n';
+  const created = await s.service.saveSnippet({ id, label: 'Deploy ไทย', body: bytes(multiline), tagIds: [a, b] });
+  assert.equal(created.status, 'saved');
+  const tagsOf = () => snapshot(s.repo).snippetTags.filter(row => row.snippetId === id).map(row => row.tagId).sort();
+  assert.deepEqual(tagsOf(), [a, b].sort());
+  assert.equal(snapshot(s.repo).snippets.find(row => row.id === id)?.revision, 1);
+  // Replace the set: one tag removed, one added, body changed; one revision step.
+  const updated = await s.service.saveSnippet({ id, label: 'Deploy ไทย', body: bytes(`${multiline}echo done`), expectedRevision: 1, tagIds: [b, c] });
+  assert.equal(updated.status, 'saved');
+  assert.deepEqual(tagsOf(), [b, c].sort());
+  assert.equal(snapshot(s.repo).snippets.find(row => row.id === id)?.revision, 2);
+  const opened = await s.service.openSnippet(id);
+  assert.equal((opened as { body: { use: (f: (b: Uint8Array) => string) => string } }).body.use(b => new TextDecoder('utf-8', { fatal: true }).decode(b)), `${multiline}echo done`);
+  // A stale revision changes neither the body nor the tags.
+  const envelope = Buffer.from(snapshot(s.repo).snippets[0]!.bodyEnvelope);
+  assert.deepEqual(await s.service.saveSnippet({ id, label: 'Stale', body: bytes('x'), expectedRevision: 1, tagIds: [] }), { status: 'failed', code: 'conflict' });
+  assert.deepEqual(tagsOf(), [b, c].sort());
+  assert.deepEqual(Buffer.from(snapshot(s.repo).snippets[0]!.bodyEnvelope), envelope);
+  // An unknown tag refuses the whole save; duplicates are invalid.
+  assert.equal((await s.service.saveSnippet({ id, label: 'x', body: bytes('x'), expectedRevision: 2, tagIds: [randomUUID()] })).status, 'failed');
+  assert.deepEqual(await s.service.saveSnippet({ id, label: 'x', body: bytes('x'), expectedRevision: 2, tagIds: [b, b] }), { status: 'failed', code: 'invalid' });
+  assert.equal(snapshot(s.repo).snippets[0]!.revision, 2);
+  // The plaintext never reaches the database or its WAL.
+  for (const file of [s.path, `${s.path}-wal`].filter(existsSync)) {
+    const raw = readFileSync(file);
+    assert.ok(!raw.includes(Buffer.from('ทดสอบ 🚀')) && !raw.includes(Buffer.from('cd /srv')), file);
+  }
+  // Delete: stale refused, current removes row and memberships, key untouched.
+  const keyRef = snapshot(s.repo).vault.contentKeyRef;
+  assert.equal((await s.service.deleteSnippet(id, 1)).ok, false);
+  assert.equal((await s.service.deleteSnippet(id, 2)).ok, true);
+  const after = snapshot(s.repo);
+  assert.equal(after.snippets.length, 0);
+  assert.equal(after.snippetTags.length, 0);
+  assert.equal(after.tags.length, 3);
+  assert.equal(after.vault.contentKeyRef, keyRef);
+  assert.equal(s.provider.items.size, 1);
+});
 test('first content-key initialization recovers a crash by lookup and retires an ambiguous missing attempt before one new key', async t => {
   const crashed = await store(t);
   crashed.provider.inject({ op: 'write', apply: true, crash: true });

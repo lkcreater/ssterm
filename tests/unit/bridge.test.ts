@@ -70,11 +70,11 @@ test("bridge exposes only narrow methods and forwards a rebuilt, validated ping"
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
     "ackTerminal", "answerCredentials", "answerHostTrust", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "cancelTransfer", "catalogState",
-    "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "connectHost", "connectSftp", "credentialState", "deleteKey", "discardKeyImport",
+    "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "connectHost", "connectSftp", "credentialState", "deleteKey", "deleteSnippet", "discardKeyImport",
     "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "importKey", "listDirectory", "onCatalogState", "onCredentialState",
-    "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping",
+    "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onWindowState", "openLink", "openSnippet", "openTerminal", "ping",
     "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "renameKey", "resizeTerminal",
-    "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "setIdentityPassword", "settings", "sftpState", "statPath", "terminalState", "transferState",
+    "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "saveSnippet", "setIdentityPassword", "settings", "sftpState", "statPath", "terminalState", "transferState",
     "trustState", "updateSettings", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
@@ -423,7 +423,7 @@ test("catalog and connect commands are rebuilt, validated both ways and catalog 
   const hostId = "0b7c7f3e-6a54-4c52-9a6e-3c1f1f9b2d10";
   const token = "5f0f5c1e-2b7a-4d3c-8e9f-0a1b2c3d4e5f";
   const state = (sequence: number, generation = 2) => ({ owner: { windowId: 1, generation }, sequence, availability: "ready", revision: 3,
-    truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [], secrets: { availability: "ready", cleanupPending: false } });
+    truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [], snippets: [], secrets: { availability: "ready", cleanupPending: false }, lockEpoch: 0 });
   f.setReply({ ok: true, value: state(4) });
   assert.deepEqual(await f.api.catalogState({ owner }), { ok: true, value: state(4) });
   assert.deepEqual(f.calls.at(-1), { channel: channels.catalogState, args: [{ owner }] });

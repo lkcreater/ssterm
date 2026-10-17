@@ -476,6 +476,36 @@
   background: var(--card);
   align-self: start;
 }
+/* The editor fills the detail column; the body keeps every character, so it scrolls instead of wrapping. */
+.snippet-editor {
+  align-self: stretch;
+  min-height: 0;
+  overflow: auto;
+}
+.snippet-body {
+  field-sizing: fixed;
+  width: 100%;
+  min-height: 12rem;
+  max-height: 60vh;
+  resize: vertical;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--foreground);
+  font: 13px / 20px var(--font-mono);
+  white-space: pre;
+  tab-size: 4;
+  outline: none;
+}
+.snippet-body:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 50%, transparent);
+}
+.snippet-body[aria-invalid="true"] {
+  border-color: var(--destructive);
+}
 .catalog-facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

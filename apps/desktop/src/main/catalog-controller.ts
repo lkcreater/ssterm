@@ -21,8 +21,8 @@ interface Registration {
   send(state: CatalogState): void;
 }
 const unavailable: Body = {
-  availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [],
-  secrets: { availability: "unavailable", cleanupPending: false },
+  availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [], snippets: [],
+  secrets: { availability: "unavailable", cleanupPending: false }, lockEpoch: 0,
 };
 const rootDefaults: CatalogEffective = {
   port: 22, portSource: { kind: "default" }, authSelection: "none", identityId: null, authSource: { kind: "default" },
@@ -49,16 +49,23 @@ const cleaning = (op: SecretOperation) => op.state === "cleanup";
 const stalled = (op: SecretOperation, now: number) => cleaning(op) && !(now - Date.parse(op.updatedAt) < CLEANUP_STALL_MS);
 
 /** Builds the renderer projection. Only the fields named here cross IPC; secret references and operation ids never do. */
-function project(snapshot: MetadataSnapshot, secretStore: boolean, now: number): Body {
+function project(snapshot: MetadataSnapshot, secretStore: boolean, now: number, lockEpoch: number): Body {
   const views = queryCatalogHosts(snapshot, { scope: { kind: "all" } });
   const defaults = resolveGroupDefaults(snapshot);
-  if (!views.ok || !defaults.ok) return unavailable;
+  if (!views.ok || !defaults.ok) return { ...unavailable, lockEpoch };
   // `staged` is an in-flight write (startup reconciliation resolves one left by a crash); only a stalled one needs Retry.
   const pending = new Set(snapshot.secretOperations
     .filter((op) => op.action !== "delete" && (op.state === "reconcile" || op.state === "needs-input")).map((op) => op.ownerId));
   // Only main's import creates keys; any other algorithm could not be shown faithfully.
   const keys = snapshot.keys.filter((key) => isKeyAlgorithm(key.algorithm));
-  const counts = [views.value.length, snapshot.groups.length, snapshot.tags.length, snapshot.identities.length, keys.length];
+  const counts = [views.value.length, snapshot.groups.length, snapshot.tags.length, snapshot.identities.length, keys.length, snapshot.snippets.length];
+  const tagLabels = new Map(snapshot.tags.map((tag) => [tag.id, tag.label.normalize("NFC").toLowerCase()]));
+  const snippetTags = new Map<string, string[]>();
+  for (const row of snapshot.snippetTags) snippetTags.set(row.snippetId, [...(snippetTags.get(row.snippetId) ?? []), row.tagId]);
+  const byTagLabel = (a: string, b: string) => {
+    const x = tagLabels.get(a) ?? "", y = tagLabels.get(b) ?? "";
+    return x < y ? -1 : x > y ? 1 : a < b ? -1 : a > b ? 1 : 0;
+  };
   return {
     availability: "ready",
     revision: snapshot.catalogRevision,
@@ -86,6 +93,12 @@ function project(snapshot: MetadataSnapshot, secretStore: boolean, now: number):
       availability: secretStore ? "ready" : "unavailable",
       cleanupPending: snapshot.secretOperations.some((op) => stalled(op, now)),
     },
+    // Labels and memberships only: bodies, envelopes and key references stay in main.
+    snippets: byLabel(snapshot.snippets.map((snippet) => ({
+      id: snippet.id, revision: snippet.revision, label: snippet.label,
+      tagIds: (snippetTags.get(snippet.id) ?? []).sort(byTagLabel),
+    }))).slice(0, MAX_CATALOG_ITEMS),
+    lockEpoch,
   };
 }
 
@@ -165,6 +178,8 @@ export function createCatalogController(options: {
   cleanupQueued?: () => void;
   /** Test clock for `CLEANUP_STALL_MS`. */
   now?: () => number;
+  /** The workspace lock counter; absent: never locked. */
+  lockEpoch?: () => number;
 }) {
   const registrations = new Map<string, Registration>();
   const previews = new Map<string, string>();
@@ -173,15 +188,15 @@ export function createCatalogController(options: {
   const body = (): Body => {
     try {
       const snapshot = options.repository.snapshot();
-      if (!snapshot.ok) return unavailable;
+      if (!snapshot.ok) return { ...unavailable, lockEpoch: options.lockEpoch?.() ?? 0 };
       const now = options.now?.() ?? Date.now();
       // Nothing commits when a deletion stalls, so republish once it would count as stalled.
       if (!recheck && !disposed && snapshot.value.secretOperations.some((op) => cleaning(op) && !stalled(op, now))) {
         recheck = setTimeout(() => { recheck = undefined; if (!disposed) publishAll(); }, CLEANUP_STALL_MS);
         recheck.unref?.();
       }
-      return project(snapshot.value, options.secretStore?.() === true, now);
-    } catch { return unavailable; }
+      return project(snapshot.value, options.secretStore?.() === true, now, options.lockEpoch?.() ?? 0);
+    } catch { return { ...unavailable, lockEpoch: options.lockEpoch?.() ?? 0 }; }
   };
   const state = (registration: Registration, value: Body): Result<CatalogState> => {
     const result = { owner: { ...registration.owner }, sequence: registration.sequence, ...value };

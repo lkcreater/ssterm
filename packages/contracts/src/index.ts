@@ -19,6 +19,8 @@ import type {
 } from "./identities.ts";
 export * from "./identities.ts";
 export * from "./links.ts";
+import type { OpenSnippetRequest, OpenSnippetResponse, SaveSnippetRequest, SaveSnippetResponse, DeleteSnippetRequest, DeleteSnippetResponse } from "./snippets.ts";
+export * from "./snippets.ts";
 import type { TerminalSettings, SettingsRequest, UpdateSettingsRequest } from "./settings.ts";
 export * from "./settings.ts";
 /** Serializable values crossing the isolated preload boundary. */
@@ -119,6 +121,9 @@ export interface DesktopAPI {
   forgetKeyPassphrase(request: ForgetKeyPassphraseRequest): Promise<Result<ForgetKeyPassphraseResponse>>;
   deleteKey(request: DeleteKeyRequest): Promise<Result<DeleteKeyResponse>>;
   retrySecrets(request: RetrySecretsRequest): Promise<Result<RetrySecretsResponse>>;
+  openSnippet(request: OpenSnippetRequest): Promise<Result<OpenSnippetResponse>>;
+  saveSnippet(request: SaveSnippetRequest): Promise<Result<SaveSnippetResponse>>;
+  deleteSnippet(request: DeleteSnippetRequest): Promise<Result<DeleteSnippetResponse>>;
   settings(request: SettingsRequest): Promise<Result<TerminalSettings>>;
   updateSettings(request: UpdateSettingsRequest): Promise<Result<TerminalSettings>>;
   ping(
@@ -181,6 +186,9 @@ export const channels = Object.freeze({
   forgetKeyPassphrase: "ssterm:forget-key-passphrase",
   deleteKey: "ssterm:delete-key",
   retrySecrets: "ssterm:retry-secrets",
+  openSnippet: "ssterm:open-snippet",
+  saveSnippet: "ssterm:save-snippet",
+  deleteSnippet: "ssterm:delete-snippet",
   settings: "ssterm:settings",
   updateSettings: "ssterm:update-settings",
 });

@@ -69,6 +69,14 @@ export interface CatalogKey {
   passphraseSaved: boolean;
   pending: boolean;
 }
+/** Metadata only: the body, its ciphertext and the key reference never cross IPC. */
+export interface CatalogSnippet {
+  id: string;
+  revision: number;
+  label: string;
+  /** Sorted by tag label. */
+  tagIds: string[];
+}
 export interface CatalogSecrets {
   availability: "ready" | "unavailable";
   /** A removed Keychain item still awaits deletion. */
@@ -85,7 +93,10 @@ export interface CatalogState {
   tags: CatalogTag[];
   identities: CatalogIdentity[];
   keys: CatalogKey[];
+  snippets: CatalogSnippet[];
   secrets: CatalogSecrets;
+  /** Counts workspace locks; an increase means decrypted editor content must be dropped. */
+  lockEpoch: number;
 }
 
 export interface CatalogHostData {
@@ -256,11 +267,14 @@ function isCatalogKey(v: unknown): v is CatalogKey {
     typeof v.publicKey === "string" && v.publicKey.length <= 16_384 && v.publicKey.startsWith(`${v.algorithm} `) &&
     /^[a-z0-9-]+ [A-Za-z0-9+/]+={0,2}$/u.test(v.publicKey) && typeof v.passphraseSaved === "boolean" && typeof v.pending === "boolean";
 }
+function isCatalogSnippet(v: unknown): v is CatalogSnippet {
+  return exactObject(v, ["id", "revision", "label", "tagIds"]) && isCatalogId(v.id) && positive(v.revision) && label(v.label) && ids(v.tagIds);
+}
 export function isCatalogState(v: unknown): v is CatalogState {
-  return exactObject(v, ["owner", "sequence", "availability", "revision", "truncated", "hosts", "groups", "tags", "identities", "keys", "secrets"]) &&
+  return exactObject(v, ["owner", "sequence", "availability", "revision", "truncated", "hosts", "groups", "tags", "identities", "keys", "snippets", "secrets", "lockEpoch"]) &&
     isOwner(v.owner) && isCounter(v.sequence) && (v.availability === "ready" || v.availability === "unavailable") &&
     isCounter(v.revision) && typeof v.truncated === "boolean" && list(v.hosts, isCatalogHost) && list(v.groups, isCatalogGroup) &&
-    list(v.tags, isCatalogTag) && list(v.identities, isCatalogIdentity) && list(v.keys, isCatalogKey) &&
+    list(v.tags, isCatalogTag) && list(v.identities, isCatalogIdentity) && list(v.keys, isCatalogKey) && list(v.snippets, isCatalogSnippet) && isCounter(v.lockEpoch) &&
     exactObject(v.secrets, ["availability", "cleanupPending"]) && (v.secrets.availability === "ready" || v.secrets.availability === "unavailable") &&
     typeof v.secrets.cleanupPending === "boolean";
 }

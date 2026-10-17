@@ -27,8 +27,11 @@ export interface Desktop {
   profile: string;
   /** The Keychain namespace this launch's main uses; teardown empties it. */
   secretNamespace: string;
-  /** Idempotent; safe after the app already exited. */
-  close(): Promise<void>;
+  /**
+   * Idempotent; safe after the app already exited. `keepSecrets` leaves the namespace for a relaunch that passes the
+   * same `secretNamespace`; that relaunch's own close empties it.
+   */
+  close(options?: { keepSecrets?: boolean }): Promise<void>;
 }
 
 const TEST_NAMESPACE = /^dev\.ssterm\.test\.[0-9a-f-]{36}$/u;
@@ -49,7 +52,7 @@ export async function emptyTestNamespace(app: ElectronApplication, namespace: st
 /**
  * Launches the desktop app on an existing temporary profile; relaunching on the same profile reopens its data.
  * Each launch gets a fresh `dev.ssterm.test.<uuid>` Keychain namespace unless one is given (an invalid value
- * exercises the fail-closed gate). `close()` always empties it, so saved secrets never survive a relaunch.
+ * exercises the fail-closed gate). `close()` empties it unless asked to keep it for a same-namespace relaunch.
  */
 export async function launchDesktop(
   profile: string,
@@ -84,11 +87,11 @@ export async function launchDesktop(
   });
   const alive = () => child.exitCode === null && child.signalCode === null;
   let closing: Promise<void> | undefined;
-  const close = () =>
+  const close = (closeOptions: { keepSecrets?: boolean } = {}) =>
     (closing ??= (async () => {
       if (!alive()) return;
       // Empty this launch's namespace through the shipped secrets entry while main still runs, then close.
-      const leftovers = await emptyTestNamespace(app, secretNamespace);
+      const leftovers = closeOptions.keepSecrets ? 0 : await emptyTestNamespace(app, secretNamespace);
       // Quitting with connected sessions asks first; answer "Quit" so the sheet never blocks teardown.
       await app.evaluate(({ dialog }) => {
         dialog.showMessageBox = (async () => ({ response: 1, checkboxChecked: false })) as typeof dialog.showMessageBox;

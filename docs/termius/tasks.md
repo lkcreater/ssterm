@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-022 / T028: `DONE`** — [Transfer conflicts / partial files / errors](../transfer-conflicts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 397/397, development E2E 54/54, packaged 51/51; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้อนุมัติเฉพาะ SST-022 (“ทำ SST-022 ให้เสร็จ”); SST-023–028 และ DS05–DS06 ยัง `PAUSED` ไม่เริ่มงานถัดไป
+**SST-023 / T029: `DONE`** — [Snippet persistence / CRUD](../snippets.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 406/406, development E2E 56/56, packaged 53/53; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้สั่ง “ทำเสร็จ เริ่มงานถัดไปได้เลย” จึงเริ่ม SST-024 ต่อ; SST-025–028 และ DS05–DS06 ยัง `PAUSED`
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -60,7 +60,7 @@
 - [x] **T026 / SST-020:** local/remote browser/path/hidden files/symlink navigation/selection
 - [x] **T027 / SST-021:** bounded transfer queue/progress/cancel/disconnect and checksum fixture checks
 - [x] **T028 / SST-022:** overwrite/skip/rename, temp/partial files, permissions/quota/path failure
-- [ ] **T029 / SST-023:** protected snippet persistence/editor/list/search
+- [x] **T029 / SST-023:** protected snippet persistence/editor/list/search
 - [ ] **T030 / SST-024:** Paste composer/explicit Run, target capture และ sent/error status
 - [ ] **T031 / SST-025:** local tunnel adapter/registry/bind conflicts/stop/resource cleanup
 - [ ] **T032 / SST-026:** tunnel rule CRUD/validation/start-stop-state and restart policy

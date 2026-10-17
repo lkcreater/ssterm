@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-022
+# Execution record — M0 ถึง SST-023
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-022/T028 `DONE`; SST-021 committed `61ada3a`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-022-execution-plan--2026-10-17). ผู้ใช้อนุมัติเฉพาะ SST-022; SST-023–028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-023/T029 `DONE`; SST-022 committed `70d8919`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-023-execution-plan--2026-10-17). ผู้ใช้สั่ง “ทำเสร็จ เริ่มงานถัดไปได้เลย” → SST-024; SST-025–028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
 
 ## Authorization / acceptance
 
@@ -837,3 +837,36 @@ A preflight destination conflict becomes `conflict`, releases the worker and hol
 SST-022/T028 DONE through independent TEST/REVIEW/DELIVER after the user instructed “ทำ SST-022 ให้เสร็จ”. [Conflict evidence](../transfer-conflicts.md) and [delivery](sst-022-delivery.md). Final source: typecheck PASS; unit 397/397; build PASS; development E2E 54/54; unsigned macOS arm64 package PASS; packaged 51/51; `git diff --check` PASS. No lint script exists. A first packaged run had 2 failures outside the SST-022 area (terminal resize and identities specs) because foreign keystrokes reached the focused terminal window during the run; the full packaged rerun passed 51/51 without source changes. Review: no unresolved findings or critical/high concerns.
 
 The instruction covered SST-022 only. Stop after its local commit; SST-023–028 and DS05–DS06 remain paused.
+
+## SST-023 execution plan — 2026-10-17
+
+**Authorization / gate:** after SST-022 committed `70d8919` the user instructed “ทำ SST-023 ต่อ”; this authorizes **SST-023 / T029 only**. SST-024–028 and DS05–DS06 remain paused. ANALYZE (one read-only explorer over storage, protection, lock, IPC, renderer and E2E patterns) is complete; DESIGN is settled below and recorded before application coding. Baseline from SST-022: 397 unit / 54 development E2E / 51 packaged; typecheck/build and unsigned macOS arm64 packaging passed.
+
+**Acceptance / scope:** [SST-023](../termius/tickets.md#sst-023--snippet-persistence--crud), [T029](../termius/tasks.md): create/edit/delete/search snippets with restart persistence; bodies are mandatory authenticated ciphertext (SST-006 `aes-256-gcm-v1`, vault content key in the Keychain); multiline/Unicode preserved byte-exact; saving or editing never executes or dispatches anything; invalid input gets field feedback; an empty body saves as an encrypted empty envelope. Paste/Run (SST-024), startup/multi-host snippets and body search are out of scope.
+
+**Existing behavior found:** schema v1 already has `snippet`, `snippet_tag`, `local_vault.contentKeyRef`; `SecretService.saveSnippet/openSnippet/initializeContentKey` exist and are unit-tested but nothing in main calls them, so the production vault never initializes its content key. There is no snippet IPC, projection, page or E2E spec. The E2E fixture empties the Keychain namespace on every close, so a restart-persistence test needs a same-namespace relaunch.
+
+**Settled design:**
+- *Service:* `SecretService.saveSnippet` gains optional `tagIds` and emits revision-fenced `set-snippet-tag` diffs in the same commit (new snippet: expected revision 1). New serialized `deleteSnippet(id, expectedRevision)` commits `delete-snippet` (memberships go with it; the vault key is retained). No key regeneration: a missing/denied key stays an error.
+- *Main controller* `apps/desktop/src/main/snippets.ts`: `openSnippet`, `saveSnippet`, `deleteSnippet` behind `boundary.authorizeOwner`, exact-key guards and the identity-style lock rule (the explicit action is the unlock; an action that predates a later lock never proceeds). First save on a vault without a key calls `initializeContentKey()` once, then saves. Main validates the label (`validateCatalogLabel`), UTF-8 well-formedness and the 1 MiB `MAX_BODY`, and existing tag ids; field problems return `{status:"invalid", field, code}`. Plaintext crosses IPC only as the explicit editor body (open response / save request); it is never logged, cached in main, or put in catalog state.
+- *Contracts:* new `packages/contracts/src/snippets.ts` (requests/responses/guards, three channels). `CatalogState` gains metadata-only `snippets: {id, revision, label, tagIds}[]` and `lockEpoch` (lock counter) so the renderer drops an open editor's plaintext and unsaved draft after a lock; the catalog controller republishes on lock through a new `onLock` hook in `createDesktopSessions`.
+- *Renderer:* a Snippets sidebar page (replaces the disabled item): searchable list (label and tag labels only; bodies are never searched), editor with label, monospace multiline body (no wrapping changes to content), existing/new tag toggles via the catalog `create-tag` intent, Save/Discard/Delete with confirmation, explicit unsaved-change guard, key-unavailable/corrupt/locked messages. No Paste/Run controls.
+
+| ID / stage | Depends | Owner / files | Validation |
+|---|---|---|---|
+| SST023-I1 service | plan | `packages/services/src/secrets.ts`, `tests/unit/secrets.test.ts` | tags diff, delete, conflict, empty/multiline/Unicode round trip |
+| SST023-I2 contracts + bridge | plan | `packages/contracts/src/{snippets,catalog,index}.ts`, `apps/desktop/src/preload/bridge.ts`, `tests/unit/bridge.test.ts`, new `tests/unit/snippets-boundary.test.ts` | exact-key guards, bounds, no secret fields in state |
+| SST023-I3 main | I1, I2 | `apps/desktop/src/main/{snippets,catalog-controller,session-runtime,index}.ts` | sender/owner, lock epoch, key init once, field errors, storage check (no plaintext in DB/WAL) |
+| SST023-I4 renderer | I2 | `components/snippets/*`, `components/app-shell.tsx`, `lib/snippet-filter.ts`, CSS if needed, `tests/unit/snippet-filter.test.ts` | typecheck/build; keyboard/focus, Thai, 960×640 |
+| SST023-I5 E2E | I3, I4 | new `tests/e2e/snippets.spec.ts`, `tests/e2e/fixtures.ts` (keep-namespace relaunch), `tests/e2e/desktop.spec.ts` allowlist | create/edit/delete/search, multiline Thai round trip after relaunch, DB/WAL plaintext absence, lock purges editor, empty body |
+| T / R / L | I1–I5 | independent tester and reviewer; root docs (`docs/snippets.md`, tickets/tasks, AGENTS, delivery record) | `npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e`, `npm run package:mac`, `npm run test:packaged`, `git diff --check`; local commit only |
+
+**Rollback / limitations:** no schema migration (schema v1 already holds snippets). The first save creates the vault content key in the Keychain; once a vault holds a key or snippets, SST-006's migration refusal for protected vaults applies to any future schema change. Reverting the code leaves saved snippet rows and the Keychain key untouched (unreadable by the reverted app but not deleted). A lost Keychain key makes existing bodies unrecoverable by design; no regeneration or plaintext fallback.
+
+**SST-023 ledger (plan creation):** ANALYZE DONE · DESIGN DONE · PLAN RECORDED · IMPLEMENT PENDING · TEST PENDING · REVIEW PENDING · DELIVER PENDING.
+
+**SST-023 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+### Final SST-023 record — 2026-10-17
+
+SST-023/T029 DONE. [Snippets](../snippets.md) and [delivery](sst-023-delivery.md). Final source: typecheck PASS; unit 406/406; build PASS; development E2E 56/56; unsigned macOS arm64 package PASS; packaged 53/53. Review: no critical/high; the medium (commit after a lock during save/delete) and five lows/nits fixed with a regression test; remaining items recorded as limitations. The user then instructed “ทำเสร็จ เริ่มงานถัดไปได้เลย”: commit SST-023 locally and start **SST-024 only**; SST-025–028 and DS05–DS06 stay paused.

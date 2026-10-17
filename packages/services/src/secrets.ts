@@ -45,7 +45,7 @@ export type SnippetSaveResult = {
   status: 'corrupt' | 'unsupported';
 } | {
   status: 'failed';
-  code: StorageErrorCode | 'invalid';
+  code: StorageErrorCode | 'invalid' | 'fenced';
 };
 export type SnippetOpenResult = {
   status: 'open';
@@ -466,15 +466,25 @@ export class SecretService {
       key
     };
   }
-  /** Encrypts with the vault key; an existing body must authenticate before it may be overwritten. */
+  /**
+   * Encrypts with the vault key; an existing body must authenticate before it may be overwritten.
+   * `tagIds`, when given, is the complete membership set, written in the same revision-fenced commit.
+   */
   saveSnippet(request: {
     id: Id;
     label: string;
     body: Uint8Array;
     expectedRevision?: number;
+    tagIds?: readonly Id[];
+    /** Checked synchronously right before the commit; false (e.g. a workspace lock meanwhile) writes nothing. */
+    fence?: () => boolean;
   }): Promise<SnippetSaveResult> {
     return this.serial(async () => {
       if (!(request.body instanceof Uint8Array) || request.body.length > MAX_BODY) return {
+        status: 'failed',
+        code: 'invalid'
+      };
+      if (request.tagIds !== undefined && (!Array.isArray(request.tagIds) || new Set(request.tagIds).size !== request.tagIds.length)) return {
         status: 'failed',
         code: 'invalid'
       };
@@ -506,7 +516,7 @@ export class SecretService {
           keyRef: s.vault.contentKeyRef!,
           protectionFormat: PROTECTION_FORMAT
         };
-        const saved = this.commit([existing ? {
+        const changes: MetadataChange[] = [existing ? {
           type: 'update-snippet',
           id: request.id,
           expectedRevision: request.expectedRevision ?? -1,
@@ -515,7 +525,19 @@ export class SecretService {
           type: 'create-snippet',
           id: request.id,
           data
-        }]);
+        }];
+        if (request.tagIds !== undefined) {
+          const expectedSnippetRevision = existing ? request.expectedRevision ?? -1 : 1;
+          const before = new Set(s.snippetTags.filter(row => row.snippetId === request.id).map(row => row.tagId));
+          const after = new Set(request.tagIds);
+          for (const tagId of after) if (!before.has(tagId)) changes.push({ type: 'set-snippet-tag', snippetId: request.id, tagId, present: true, expectedSnippetRevision });
+          for (const tagId of before) if (!after.has(tagId)) changes.push({ type: 'set-snippet-tag', snippetId: request.id, tagId, present: false, expectedSnippetRevision });
+        }
+        if (request.fence && !request.fence()) return {
+          status: 'failed',
+          code: 'fenced'
+        };
+        const saved = this.commit(changes);
         return saved.ok ? {
           status: 'saved',
           snapshot: saved.value
@@ -532,6 +554,14 @@ export class SecretService {
         key.fill(0);
       }
     });
+  }
+  /** Metadata-only and key-independent: the row and its memberships go; the shared vault key stays. */
+  deleteSnippet(id: Id, expectedRevision: number, fence?: () => boolean): Promise<StoreResult<MetadataSnapshot> | { ok: false; error: { code: 'fenced' } }> {
+    return this.serial(async () => fence && !fence() ? { ok: false as const, error: { code: 'fenced' as const } } : this.commit([{
+      type: 'delete-snippet',
+      id,
+      expectedRevision
+    }]));
   }
   openSnippet(id: Id, ttlMs = DEFAULT_TRANSIENT_MS): Promise<SnippetOpenResult> {
     return this.serial(async () => {

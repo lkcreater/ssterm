@@ -1,10 +1,10 @@
 # Tickets สำหรับ ssterm
 
-**SST-022 / T028: `DONE`** — [Transfer conflicts / partial files / errors](../transfer-conflicts.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 397/397, development E2E 54/54, packaged 51/51; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้อนุมัติเฉพาะ SST-022 (“ทำ SST-022 ให้เสร็จ”); SST-023–028 และ DS05–DS06 ยัง `PAUSED` ไม่เริ่มงานถัดไป
+**SST-023 / T029: `DONE`** — [Snippet persistence / CRUD](../snippets.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 406/406, development E2E 56/56, packaged 53/53; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้สั่ง “ทำเสร็จ เริ่มงานถัดไปได้เลย” จึงเริ่ม SST-024 ต่อ; SST-025–028 และ DS05–DS06 ยัง `PAUSED`
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–022 ส่งมอบแล้ว; SST-023–028 หยุดรอคำสั่ง และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–023 ส่งมอบแล้ว; SST-024 กำลังทำ; SST-025–028 หยุดรอคำสั่ง และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-023–028 คือ `PAUSED` (รอคำสั่งให้ทำต่อ) (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-025–028 คือ `PAUSED` (รอคำสั่งให้ทำต่อ) (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง
 
@@ -294,6 +294,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Validation:** conflict/cancel/permission fixtures + file integrity check. **Tasks:** conflict resolver; temp/partial naming; retry/error UX.
 
 ### SST-023 — Snippet persistence / CRUD
+
+**Status:** `DONE` — T029; [evidence](../snippets.md) และ [delivery](../agent-runs/sst-023-delivery.md), independent TEST/REVIEW passed. Bodies sealed with the vault key; search on names/tags only; no Paste/Run (SST-024).
 
 **Outcome:** labeled reusable script เก็บใน local vault. **Evidence:** S04/W07.
 

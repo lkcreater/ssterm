@@ -141,7 +141,7 @@ test("catalog contracts: shared validators, exact intent subset, caps and reques
   const keyRow = { id: id(), revision: 1, label: "K", algorithm: "ssh-ed25519", fingerprint: `SHA256:${"a".repeat(43)}`,
     publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA==", passphraseSaved: false, pending: false };
   const base = { owner, sequence: 0, availability: "ready", revision: 1, truncated: false, hosts: [row], groups: [], tags: [],
-    identities: [identityRow], keys: [keyRow], secrets: secretStatus };
+    identities: [identityRow], keys: [keyRow], snippets: [{ id: id(), revision: 1, label: "Deploy", tagIds: [] }], secrets: secretStatus, lockEpoch: 0 };
   assert.ok(isCatalogState(base));
   for (const broken of [
     { ...base, hosts: Array(MAX_CATALOG_ITEMS + 1).fill(row) },
@@ -157,6 +157,11 @@ test("catalog contracts: shared validators, exact intent subset, caps and reques
     { ...base, keys: [{ ...keyRow, fingerprint: "MD5:aa" }] },
     { ...base, secrets: { availability: "ready" } },
     { ...base, secrets: undefined },
+    { ...base, snippets: [{ id: id(), revision: 1, label: "Deploy", tagIds: [], body: "echo" }] },
+    { ...base, snippets: [{ id: id(), revision: 1, label: "Deploy", tagIds: [], bodyEnvelope: "x" }] },
+    { ...base, snippets: [{ id: id(), revision: 0, label: "Deploy", tagIds: [] }] },
+    { ...base, lockEpoch: -1 },
+    { ...base, lockEpoch: undefined },
     { ...base, extra: true },
   ]) assert.equal(isCatalogState(broken), false);
 });
@@ -335,8 +340,8 @@ test("an unreadable repository yields an unavailable state and no previews; trun
     const controller = createCatalogController({ repository: { snapshot }, catalog: { prepare: () => assert.fail(), apply: () => assert.fail(), discard() {} } });
     controller.register(owner, () => {});
     assert.deepEqual(value(controller.catalogState(owner)),
-      { owner, sequence: 0, availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [],
-        secrets: { availability: "unavailable", cleanupPending: false } });
+      { owner, sequence: 0, availability: "unavailable", revision: 0, truncated: false, hosts: [], groups: [], tags: [], identities: [], keys: [], snippets: [],
+        secrets: { availability: "unavailable", cleanupPending: false }, lockEpoch: 0 });
     assert.deepEqual(controller.prepareCatalogChange({ owner, intent: { type: "create-tag", data: { label: "x" } } }), failure("unavailable"));
   }
   const s = await fixture(t);

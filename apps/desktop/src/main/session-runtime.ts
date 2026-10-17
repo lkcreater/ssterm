@@ -30,9 +30,14 @@ export function createDesktopSessions(options: {
       start: (context) => context.failed("subsystem-unavailable"),
     },
   });
+  const lockListeners = new Set<() => void>();
   const lock = (): void => {
     // Registry fences every attempt and purges transient values synchronously.
     void Promise.resolve(registry.lock()).catch(() => undefined);
+    // Observers run after the registry is already locked, so they see the new lock epoch.
+    for (const listener of [...lockListeners]) {
+      try { listener(); } catch { /* An observer cannot interrupt the lock. */ }
+    }
   };
   options.power.on("lock-screen", lock);
   options.power.on("suspend", lock);
@@ -40,6 +45,11 @@ export function createDesktopSessions(options: {
 
   return {
     registry,
+    /** Called after every lock (screen lock or suspend) has fenced the registry. */
+    onLock(listener: () => void): () => void {
+      lockListeners.add(listener);
+      return () => { lockListeners.delete(listener); };
+    },
     revokeOwner(owner: Owner): void {
       const ownerId = sessionOwnerId(owner);
       void registry.closeOwner(ownerId).then(
@@ -56,6 +66,7 @@ export function createDesktopSessions(options: {
       if (shutdown) return shutdown;
       options.power.removeListener("lock-screen", lock);
       options.power.removeListener("suspend", lock);
+      lockListeners.clear();
       shutdown = Promise.resolve(registry.dispose()).then(
         () => undefined,
         () => undefined,

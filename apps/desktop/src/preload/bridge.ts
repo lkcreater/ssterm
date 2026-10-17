@@ -24,6 +24,9 @@ import {
   isRetrySecretsResponse,
   type SetIdentityPasswordRequest, type ChooseKeyFileRequest, type ImportKeyRequest, type DiscardKeyImportRequest,
   type RenameKeyRequest, type ForgetKeyPassphraseRequest, type DeleteKeyRequest, type RetrySecretsRequest,
+  isOpenSnippetRequest, isOpenSnippetResponse, isSaveSnippetRequest, isSaveSnippetResponse, isDeleteSnippetRequest,
+  isDeleteSnippetResponse,
+  type OpenSnippetRequest, type SaveSnippetRequest, type DeleteSnippetRequest,
   isTrustState,
   isTrustStateRequest,
   isAnswerHostTrustRequest,
@@ -523,6 +526,21 @@ export function createDesktopBridge(transport: BridgeTransport): {
     retrySecrets(request: RetrySecretsRequest) {
       if (!isRetrySecretsRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.retrySecrets, [{ owner: { ...request.owner } }], isRetrySecretsResponse);
+    },
+    openSnippet(request: OpenSnippetRequest) {
+      if (!isOpenSnippetRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.openSnippet, [{ owner: { ...request.owner }, snippetId: request.snippetId,
+        expectedRevision: request.expectedRevision }], isOpenSnippetResponse);
+    },
+    saveSnippet(request: SaveSnippetRequest) {
+      if (!isSaveSnippetRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.saveSnippet, [{ owner: { ...request.owner }, snippetId: request.snippetId,
+        expectedRevision: request.expectedRevision, label: request.label, body: request.body, tagIds: [...request.tagIds] }], isSaveSnippetResponse);
+    },
+    deleteSnippet(request: DeleteSnippetRequest) {
+      if (!isDeleteSnippetRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.deleteSnippet, [{ owner: { ...request.owner }, snippetId: request.snippetId,
+        expectedRevision: request.expectedRevision }], isDeleteSnippetResponse);
     },
     settings(request: SettingsRequest) {
       if (!isSettingsRequest(request)) return Promise.resolve(failure("invalid-request"));
