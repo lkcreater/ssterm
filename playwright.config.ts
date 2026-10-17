@@ -56,6 +56,8 @@ export default defineConfig({
             "tunnel.spec.ts",
             "tunnels-ui.spec.ts",
             "release-gate.spec.ts",
+            "package-artifact.spec.ts",
+            "upgrade.spec.ts",
           ],
         },
       ]

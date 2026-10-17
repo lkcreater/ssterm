@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-027
+# Execution record — M0 ถึง SST-028
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-027 automated gate `DONE` (manual Thai IME pending); SST-026 committed `92e1901`. ดู [แผนล่าสุด](#sst-027-execution-plan--2026-10-17). SST-028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-028 automated release readiness `DONE` (manual checks, Developer ID pending); SST-027 committed `ee0f026`. ดู [แผนล่าสุด](#sst-028-execution-plan--2026-10-17). Remaining และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
 
 ## Authorization / acceptance
 
@@ -949,3 +949,27 @@ SST-026/T032 DONE. [Tunnels UI](../tunnels.md#tunnel-rules-and-status-ui--sst-02
 ### Final SST-027 record — 2026-10-17
 
 [MVP gate](../mvp-gate.md) and [delivery](sst-027-delivery.md). Final source: typecheck PASS; unit 422/422; build PASS; development E2E 62/62; package PASS; packaged 59/59. DS05 sweep 0 findings (after naming the combobox trigger); budgets met; audit: no open critical/high, one medium (tunnel restart vs window close) fixed with a test. Stop after the local commit; SST-028 and DS06 remain paused.
+
+## SST-028 execution plan — 2026-10-17
+
+**Authorization / gate:** the user instructed “เริ่ม SST-028 ได้”; this authorizes **SST-028 / T035–T036 with its embedded DS06/T052 package gate**. No external credentials, publishing, upload, push or notarization are authorized; signing with a real identity is a separate future gate. Baseline: 422 unit / 62 development E2E / 59 packaged.
+
+**Acceptance:** [SST-028](../termius/tickets.md#sst-028--macos-package--release-readiness): packaged artifact works on macOS arm64 from a clean profile; secret/storage identifiers stable across upgrades; native bindings load packaged; install/upgrade/uninstall data semantics documented; checksums, version, release notes; unsigned limitation stated. DS06: offline fonts/licences/fallback in the package; derived icon sizes 16–1024 and `.icns` from `docs/logo/icon-logo.png` with alpha/edge/padding/legibility QA; About branding or a stated limitation.
+
+**Plan:**
+- `scripts/make-icons.mjs`: derive the iconset with `sips`/`iconutil` into ignored `artifacts/icons/`; a dependency-free PNG reader reports alpha corners, content bounds and padding; small sizes are reviewed visually and recorded.
+- `scripts/package-desktop.mjs`: app icon; `appVersion`/`buildVersion`; Info.plist usage descriptions for Desktop/Documents/Downloads/network/removable volumes and removal of Electron's unused camera/microphone/Bluetooth strings; exclude `ssh2/util/pagent.exe`; generated `THIRD_PARTY_NOTICES.txt` (runtime npm closure, renderer bundles and fonts) as an extra resource; ad-hoc re-sign with the stable identifier `dev.ssterm.desktop` and strict verification.
+- Main: About panel (name, version, copyright, notices pointer).
+- `scripts/release-local.mjs` + `npm run release:local`: zip (`ditto`), SHA-256, manifest (version, commit, Electron, unsigned) under ignored `artifacts/release/`.
+- Tests: packaged-only `package-artifact.spec.ts` (plist, icon, signature identity, no pagent/test fixtures, fonts and notices in the bundle, native keyring unpacked); `upgrade.spec.ts` (a profile created by the development build reopens in the packaged build with catalog, Keychain-held password and encrypted snippet intact; identifiers asserted).
+- Docs: `docs/release/README.md` (install, first launch of an unsigned app, upgrade, uninstall, data locations, checksums), `docs/release/0.1.0.md` (notes and known limitations), status updates.
+
+**Rollback:** packaging/scripts/docs and an About call; revert the commit. No data change.
+
+**SST-028 ledger (plan creation):** ANALYZE DONE · DESIGN DONE · PLAN RECORDED · IMPLEMENT PENDING · TEST PENDING · REVIEW PENDING · DELIVER PENDING.
+
+**SST-028 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE (automated). Manual checks, Developer ID signing and notarization PENDING.
+
+### Final SST-028 record — 2026-10-17
+
+[Release guide](../release/README.md), [notes](../release/0.1.0.md), [delivery](sst-028-delivery.md). Final source: typecheck PASS; unit 422/422; build PASS; development E2E 62/62; package PASS; packaged 63/63; release:local verified. Review: no critical/high; mediums fixed (explicit data folder, signature-bound grants documented, macOS 15 Gatekeeper path, manifest bound to the packaged commit). The MVP ticket range SST-001–028 is now implemented; open items are the human-operated checks (SST-027 T034, SST-028 T035, DS05/DS06) and credentialed signing.

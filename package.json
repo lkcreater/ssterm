@@ -19,7 +19,8 @@
     "runtime:prepare": "node -e \"require('electron')\"",
     "package:mac": "npm run build && node scripts/package-desktop.mjs",
     "test:e2e": "playwright test",
-    "test:packaged": "node scripts/test-packaged.mjs"
+    "test:packaged": "node scripts/test-packaged.mjs",
+    "release:local": "node scripts/release-local.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

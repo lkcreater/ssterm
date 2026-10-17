@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import { contentSecurityPolicy } from "./src/main/security";
+import { moduleManifest } from "./module-manifest";
 
 export default defineConfig({
   root: fileURLToPath(new URL("./src/renderer", import.meta.url)),
@@ -12,6 +13,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    moduleManifest("renderer"),
     {
       name: "ssterm-production-csp",
       apply: "build",

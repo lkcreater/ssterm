@@ -1,10 +1,10 @@
 # Tickets สำหรับ ssterm
 
-**SST-027: automated gate `DONE`** — [MVP gate](../mvp-gate.md): unit 422/422, development E2E 62/62, packaged 59/59, DS05 sweep 0 findings, budgets met, release-blocker audit ไม่พบ critical/high; T033 `DONE`; T034/DS05 ส่วน manual Thai IME/VoiceOver ยังรอผู้ใช้ทำ; SST-028 และ DS06 ยัง `PAUSED`
+**SST-028: automated release readiness `DONE`** — [release guide](../release/README.md): unit 422/422, development E2E 62/62, packaged 63/63; ad-hoc signed `dev.ssterm.desktop`, zip/SHA-256/manifest, notices, derived icon; T036 `DONE`; T035 manual checks และ DS06/T052 (16 px icon, Dock/Finder) ยังค้าง; Developer ID/notarization ต้องมี credentials (แยก gate); SST-027 manual Thai IME/VoiceOver ยังรอผู้ใช้
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–026 ส่งมอบแล้ว; SST-027 automated gate ส่งมอบแล้ว (manual IME รอผู้ใช้); SST-028 หยุดรอคำสั่ง และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) และ SST-029–038 เป็น later scope
 
-Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-028 คือ `PAUSED` (รอคำสั่งให้ทำต่อ) (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
+Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-028 manual/signing ยังค้าง (รอคำสั่งให้ทำต่อ) (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
 UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) และ [design implementation plan](design-system-implementation.md) เป็น reference เพิ่ม งาน DS01–DS06/T047–T052 อยู่ใน tickets เดิม ไม่เปลี่ยน later scope; อนุมัติเฉพาะ DS01 ใน SST-001 ส่วน DS02–DS03 อยู่ใน SST-004 ที่อนุมัติแล้ว; DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง
 
@@ -348,6 +348,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Design gate — DS05/T051:** ผ่าน [design-system.md §11](design-system.md#11-release-quality-checklist) สำหรับ dark MVP: contrast เป้าหมาย 4.5:1 normal text/3:1 essential graphics, focus/selection/status/PROD differentiation, reduced motion, window resize/scaling, dialogs focus-return และ Thai/IME เก็บ rendered screenshots/state matrix; structural border ที่ contrast ต่ำต้องไม่เป็น sole essential control indicator
 
 ### SST-028 — macOS package / release readiness
+
+**Status:** automated release readiness `DONE` — T036 done; T035 and DS06/T052 partial (manual checks, 16 px icon, Dock/Finder pending); Developer ID signing/notarization not done (no credentials). [Release guide](../release/README.md), [delivery](../agent-runs/sst-028-delivery.md).
 
 **Outcome:** reviewable local packaged MVP. **Evidence:** target platform + independent packaging ADR.
 

@@ -54,9 +54,20 @@ if (testUserData) {
     throw new Error("Test userData must be an existing temporary directory");
   }
   app.setPath("userData", actual);
+} else {
+  // Fixed data folder (~/Library/Application Support/ssterm), independent of the bundle's display name, so storage
+  // and the single-instance lock never move if productName changes or the disk is case-sensitive.
+  app.setPath("userData", join(app.getPath("appData"), "ssterm"));
 }
 
 app.setName("ssterm");
+// The native About panel shows the derived app icon; the brand lockup is not shown there (DS06 limitation).
+app.setAboutPanelOptions({
+  applicationName: "ssterm",
+  applicationVersion: app.getVersion(),
+  copyright: "Copyright © 2026 ssterm contributors",
+  credits: "Local-first SSH workspace. Third-party notices: SSTerm.app/Contents/Resources/THIRD_PARTY_NOTICES.txt",
+});
 app.enableSandbox();
 // Acquire ownership before opening storage. Test profiles use distinct userData.
 const ownsInstance = app.requestSingleInstanceLock();

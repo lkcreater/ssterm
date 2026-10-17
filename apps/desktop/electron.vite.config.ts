@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "electron-vite";
 import renderer from "./vite.config";
+import { moduleManifest } from "./module-manifest";
 
 const contracts = fileURLToPath(
   new URL("../../packages/contracts/src/index.ts", import.meta.url),
@@ -8,6 +9,7 @@ const contracts = fileURLToPath(
 
 export default defineConfig({
   main: {
+    plugins: [moduleManifest("main")],
     resolve: { alias: { "@ssterm/contracts": contracts } },
     build: {
       externalizeDeps: {
@@ -46,6 +48,7 @@ export default defineConfig({
     },
   },
   preload: {
+    plugins: [moduleManifest("preload")],
     resolve: { alias: { "@ssterm/contracts": contracts } },
     build: {
       externalizeDeps: { exclude: ["@ssterm/contracts"] },
