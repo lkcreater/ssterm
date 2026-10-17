@@ -1,16 +1,35 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "electron-vite";
 import renderer from "./vite.config";
 import { moduleManifest } from "./module-manifest";
 
+/**
+ * The Google OAuth client (ADR 0004) for this build. Read from the shell environment, or from the gitignored
+ * `.env.local` at the repository root (see `.env.example`): either SSTERM_GOOGLE_CLIENT_ID + SSTERM_GOOGLE_CLIENT_SECRET,
+ * or SSTERM_GOOGLE_CLIENT_FILE pointing at the downloaded "Desktop app" client JSON. Nothing set: Google is disabled.
+ */
 function googleClient(): { clientId: string; clientSecret: string } | null {
-  const file = process.env.SSTERM_GOOGLE_CLIENT_FILE;
-  if (!file) return null;
-  const parsed = JSON.parse(readFileSync(file, "utf8")) as { installed?: { client_id?: string; client_secret?: string } };
-  const installed = parsed.installed;
-  if (!installed?.client_id || !installed.client_secret) throw new Error("SSTERM_GOOGLE_CLIENT_FILE must be an installed-app client JSON");
-  return { clientId: installed.client_id, clientSecret: installed.client_secret };
+  const local = fileURLToPath(new URL("../../.env.local", import.meta.url));
+  // Values already exported in the shell win over the file.
+  if (existsSync(local)) process.loadEnvFile(local);
+  const id = process.env.SSTERM_GOOGLE_CLIENT_ID?.trim();
+  const secret = process.env.SSTERM_GOOGLE_CLIENT_SECRET?.trim();
+  const file = process.env.SSTERM_GOOGLE_CLIENT_FILE?.trim();
+  let client: { clientId: string; clientSecret: string } | null = null;
+  if (id || secret) {
+    if (!id || !secret) throw new Error("Set both SSTERM_GOOGLE_CLIENT_ID and SSTERM_GOOGLE_CLIENT_SECRET (or neither).");
+    client = { clientId: id, clientSecret: secret };
+  } else if (file) {
+    const parsed = JSON.parse(readFileSync(file.replace(/^~(?=\/)/u, homedir()), "utf8")) as { installed?: { client_id?: string; client_secret?: string } };
+    const installed = parsed.installed;
+    if (!installed?.client_id || !installed.client_secret) throw new Error("SSTERM_GOOGLE_CLIENT_FILE must be a Desktop app (installed) client JSON.");
+    client = { clientId: installed.client_id, clientSecret: installed.client_secret };
+  }
+  if (client && !/^[\w.-]+\.apps\.googleusercontent\.com$/u.test(client.clientId))
+    throw new Error("SSTERM_GOOGLE_CLIENT_ID must end with .apps.googleusercontent.com.");
+  return client;
 }
 
 const contracts = fileURLToPath(

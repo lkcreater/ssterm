@@ -12,13 +12,18 @@
 
 ## Build with Google
 
-Download the OAuth client JSON of type **Desktop app** from Google Cloud Console (its redirect `http://localhost` covers any loopback port) and build with:
+1. In Google Cloud Console create an OAuth client of type **Desktop app** (no redirect URI to add; ssterm uses `http://127.0.0.1:55411/oauth/callback`).
+2. Fill in the gitignored `.env.local` at the repository root (created from `.env.example`, mode 0600):
 
-```sh
-SSTERM_GOOGLE_CLIENT_FILE=~/Downloads/client_secret_….json npm run package:mac
-```
+   ```sh
+   SSTERM_GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+   SSTERM_GOOGLE_CLIENT_SECRET=xxxxxxxx
+   # or instead: SSTERM_GOOGLE_CLIENT_FILE=~/Downloads/client_secret_….json
+   ```
 
-The client ID and secret are compiled into the main bundle (Google treats installed-app secrets as non-confidential). Never commit the file; `client_secret_*.json` is ignored. Without the variable the Google option is shown disabled.
+3. `npm run dev` or `npm run package:mac` reads it at build time (values exported in the shell take precedence). An ID without a secret fails the build; with nothing set the Google option is shown disabled.
+
+The client ID and secret are compiled into the main bundle (Google treats installed-app secrets as non-confidential). Never commit them: `.env.local`, `.env*.local` and `client_secret_*.json` are ignored.
 
 ## Tests
 

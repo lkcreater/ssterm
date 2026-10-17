@@ -9,7 +9,8 @@ From the repository root (verified commands; see [AGENTS.md](../../AGENTS.md)):
 ```sh
 npm ci --ignore-scripts
 npm run runtime:prepare
-npm run package:mac      # build, derived icon, notices, Info.plist, ad-hoc signature → artifacts/package/
+npm run package:mac      # build, derived icon, notices, Info.plist, fuses, ad-hoc signature → artifacts/package/
+                         # Google sign-in: fill .env.local first (see docs/app-lock.md)
 npm run release:local    # zip, SHA256SUMS, release-manifest.json → artifacts/release/ (refuses a package built
                          # from another commit or a dirty tree; `node scripts/release-local.mjs --allow-dirty` = trial)
 npm run test:packaged    # packaged E2E incl. artifact review and upgrade fixture
