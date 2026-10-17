@@ -1,8 +1,8 @@
 # Tickets สำหรับ ssterm
 
-**SST-023 / T029: `DONE`** — [Snippet persistence / CRUD](../snippets.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 406/406, development E2E 56/56, packaged 53/53; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้สั่ง “ทำเสร็จ เริ่มงานถัดไปได้เลย” จึงเริ่ม SST-024 ต่อ; SST-025–028 และ DS05–DS06 ยัง `PAUSED`
+**SST-024 / T030: `DONE`** — [Snippet Paste / Run](../snippets.md#snippet-paste--run--sst-024) ผ่าน independent TEST/REVIEW/DELIVER: unit 410/410, development E2E 57/57, packaged 54/54; typecheck/build และ unsigned macOS arm64 package ผ่าน (SST-023 committed `50d421a`); SST-025–028 และ DS05–DS06 ยัง `PAUSED` รอคำสั่ง
 
-**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–023 ส่งมอบแล้ว; SST-024 กำลังทำ; SST-025–028 หยุดรอคำสั่ง และ SST-029–038 เป็น later scope
+**ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–024 ส่งมอบแล้ว; SST-025–028 หยุดรอคำสั่ง และ SST-029–038 เป็น later scope
 
 Priority: P0 = foundation/critical correctness, P1 = MVP feature, P2 = later. Effort: S/M/L เป็น relative complexity ไม่ใช่ commitment สถานะ SST-025–028 คือ `PAUSED` (รอคำสั่งให้ทำต่อ) (ทำต่อตามลำดับ dependency); later คือ `DEFERRED` Evidence aliases ดู [analysis](system-analysis.md), implementation decisions ดู [architecture](proposed-architecture.md)
 
@@ -304,6 +304,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Validation:** round-trip multiline/Unicode + sensitive-content storage check. **Tasks:** repository; editor/list; encryption integration.
 
 ### SST-024 — Snippet Paste / Run on active session
+
+**Status:** `DONE` — T030; [evidence](../snippets.md#snippet-paste--run--sst-024) และ [delivery](../agent-runs/sst-024-delivery.md), independent TEST/REVIEW passed. Paste → target-bound composer (zero bytes); Run captures the active Ready session at the click; sent ≠ success.
 
 **Outcome:** explicit target-safe command dispatch. **Evidence:** W07; Paste implementation choice Proposed.
 

@@ -201,6 +201,11 @@ async function startTerminalFixture(production, options) {
       frames(generation) {
         return { ...receipt(`${current.id}:${generation}`) };
       },
+      /** Write receipts for every session, keyed by label order: current (first host) then second. */
+      writes() {
+        const of = (session) => session ? { ...receipt(`${session.id}:${registry.snapshot(ownerId, session.id)[0]?.generation ?? 0}`) }.writes : 0;
+        return { current: of(current), second: of(second) };
+      },
       mark(generation) {
         const entry = receipt(`${current.id}:${generation}`);
         Object.assign(entry, { maxUnacked: entry.bytes - entry.ackedBytes, firstFrameAt: null, lastFrameAt: null, lastAckAt: null });

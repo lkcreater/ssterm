@@ -37,6 +37,9 @@ test("workspace shortcuts on a US layout", () => {
   assert.deepEqual(workspaceShortcut(key("s", "KeyS", { metaKey: true, ctrlKey: true })), { kind: "toggle-sidebar" });
   assert.deepEqual(workspaceShortcut(key(",", "Comma", cmd)), { kind: "settings" });
   assert.deepEqual(workspaceShortcut(key("/", "Slash", cmd)), { kind: "shortcuts" });
+  assert.deepEqual(workspaceShortcut(key("S", "KeyS", shiftCmd)), { kind: "snippets" });
+  assert.deepEqual(workspaceShortcut(key("ห", "KeyS", shiftCmd)), { kind: "snippets" }, "Thai Kedmanee uses the physical key");
+  assert.equal(workspaceShortcut(key("s", "KeyS", cmd)), null, "plain Cmd+S is not a workspace shortcut");
 });
 
 test("Ctrl and Option combinations without Cmd stay terminal input", () => {

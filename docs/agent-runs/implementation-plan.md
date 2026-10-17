@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-023
+# Execution record — M0 ถึง SST-024
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-023/T029 `DONE`; SST-022 committed `70d8919`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-023-execution-plan--2026-10-17). ผู้ใช้สั่ง “ทำเสร็จ เริ่มงานถัดไปได้เลย” → SST-024; SST-025–028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-024/T030 `DONE`; SST-023 committed `50d421a`. Independent TEST/REVIEW/DELIVER ผ่านตาม [แผนล่าสุด](#sst-024-execution-plan--2026-10-17). SST-025–028 และ DS05–DS06 ยังหยุดรอคำสั่ง ส่วนก่อนหน้านี้เป็นบันทึกประวัติ
 
 ## Authorization / acceptance
 
@@ -870,3 +870,32 @@ The instruction covered SST-022 only. Stop after its local commit; SST-023–028
 ### Final SST-023 record — 2026-10-17
 
 SST-023/T029 DONE. [Snippets](../snippets.md) and [delivery](sst-023-delivery.md). Final source: typecheck PASS; unit 406/406; build PASS; development E2E 56/56; unsigned macOS arm64 package PASS; packaged 53/53. Review: no critical/high; the medium (commit after a lock during save/delete) and five lows/nits fixed with a regression test; remaining items recorded as limitations. The user then instructed “ทำเสร็จ เริ่มงานถัดไปได้เลย”: commit SST-023 locally and start **SST-024 only**; SST-025–028 and DS05–DS06 stay paused.
+
+## SST-024 execution plan — 2026-10-17
+
+**Authorization / gate:** after SST-023 (committed `50d421a`) the user instructed “ทำเสร็จ เริ่มงานถัดไปได้เลย”; this authorizes **SST-024 / T030 only**. SST-025–028 and DS05–DS06 remain paused. ANALYZE (one read-only explorer over the terminal write path, paste safety, active-pane tracking, composer showcase, E2E harnesses) is complete; DESIGN below is recorded before coding. Baseline: 406 unit / 56 development E2E / 53 packaged.
+
+**Acceptance:** [SST-024](../termius/tickets.md#sst-024--snippet-paste--run-on-active-session), [T030](../termius/tasks.md): Paste opens an editable pending-input composer and sends no terminal byte until the user decides; Run is explicit and goes to the active Ready session captured when invoked; no active session is an error; multiline/line endings specified; “sent” never claims remote success. Validation: no bytes on Paste until submission; Run's captured target survives a focus switch during the decrypt.
+
+**Settled design:**
+- *No new main IPC.* Bodies come from SST-023 `openSnippet` (decrypt per explicit action); bytes go through the existing `writeTerminal` fence (owner, session, generation, Ready).
+- *Pane input handle:* each `LiveTerminal` registers `{generation, accepting, bracketed, deliver(bytes)}` in a workspace registry. `deliver` enqueues into the pane's existing ordered input queue (shared with typing, same pause rules) and resolves `sent` only after main accepted the write, `refused` otherwise.
+- *Bytes:* pure `lib/snippet-dispatch.ts`. Text is sanitized like clipboard paste (C0 except HT/LF/CR, DEL, C1, bidi removed); CRLF/LF become CR; the text is wrapped in bracketed-paste markers when the pane's mode is on. **Insert** sends the text without Enter; **Run** removes one trailing line break and appends exactly one CR. Empty → nothing sent; over 256 KiB → refused. Run asks for confirmation (Cancel focused, target and line count shown) when the target is PROD, when characters were removed, or when multiline text would run line by line (bracketed mode off).
+- *UI:* a Snippets panel overlay in the terminal workspace (no PTY resize), opened from the pane menu (“Snippets…”, focuses that pane) or ⇧⌘S; Esc closes. It shows the live active target (state, label, PROD, endpoint), a name/tag search, and per-snippet **Paste** and **Run**. Paste captures the target into a composer that names it; its Insert/Run send only to that captured session/generation. Run from the list captures the active session at click; the decrypt that follows cannot redirect it. Feedback says “Sent … ssterm does not know whether the command succeeded.” A lock (catalog `lockEpoch`) clears the composer.
+
+| ID | Files | Validation |
+|---|---|---|
+| I1 dispatch rules | new `apps/desktop/src/renderer/src/lib/snippet-dispatch.ts`, `tests/unit/snippet-dispatch.test.ts` | line endings, brackets, Run Enter, empty/limit/confirm |
+| I2 pane handle + panel | `components/workspace/{live-terminal,terminal-workspace,snippet-panel}.tsx`, `lib/workspace-shortcuts.ts`, `components/workspace/shortcuts-dialog.tsx`, `components/app-shell.tsx`, CSS, shortcut unit test | typecheck/build; focus/Esc; 960×640 |
+| I3 E2E | new `tests/e2e/snippet-run.spec.ts` (Docker OpenSSH fixture, main-recorded writes), playwright config | zero writes on Paste/compose; Insert/Run bytes via `read` hex; captured target during focus switch; PROD confirm; empty/no-session errors; lock clears composer |
+| T/R/L | independent tester/reviewer; `docs/snippets.md`, tickets/tasks, AGENTS, delivery record | full suite incl. package/packaged; local commit only |
+
+**Rollback:** renderer-only plus tests; revert the commit. No data or IPC change.
+
+**SST-024 ledger (plan creation):** ANALYZE DONE · DESIGN DONE · PLAN RECORDED · IMPLEMENT PENDING · TEST PENDING · REVIEW PENDING · DELIVER PENDING.
+
+**SST-024 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+### Final SST-024 record — 2026-10-17
+
+SST-024/T030 DONE. [Snippet Paste / Run](../snippets.md#snippet-paste--run--sst-024) and [delivery](sst-024-delivery.md). Final source: typecheck PASS; unit 410/410; build PASS; development E2E 57/57; unsigned macOS arm64 package PASS; packaged 54/54. Review: no critical/high; the medium (double send) and five lows/nits fixed; overlay coverage and the private-map E2E gate recorded as limitations. Stop after the local commit; SST-025–028 and DS05–DS06 remain paused until a new instruction.

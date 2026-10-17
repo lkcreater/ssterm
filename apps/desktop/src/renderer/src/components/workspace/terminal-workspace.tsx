@@ -15,6 +15,7 @@ import {
   ChevronRightIcon,
   Columns2Icon,
   EllipsisIcon,
+  LayersIcon,
   FolderOpenIcon,
   Maximize2Icon,
   MergeIcon,
@@ -22,7 +23,7 @@ import {
   Rows2Icon,
   XIcon,
 } from "lucide-react";
-import type { ErrorCode, Owner, TerminalSession, TerminalSettings } from "@ssterm/contracts";
+import type { CatalogState, ErrorCode, Owner, TerminalSession, TerminalSettings } from "@ssterm/contracts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +41,8 @@ import {
 import { toast } from "@/components/ui/toast";
 import { CloseConfirm, type CloseRequest } from "@/components/workspace/close-confirm";
 import { LiveTerminal, type PaneSettings } from "@/components/workspace/live-terminal";
+import { SnippetPanel } from "@/components/workspace/snippet-panel";
+import { TerminalInputsContext, type TerminalInputs } from "@/components/workspace/terminal-inputs";
 import { paneScrollback, type PaneScrollback } from "@/lib/terminal-theme";
 import {
   activeTab,
@@ -267,10 +270,13 @@ export function TerminalWorkspace({
   onCommand,
   onShowTerminals,
   onOpenSftp,
+  catalog,
 }: {
   owner: Owner;
   controller: WorkspaceController;
   settings: TerminalSettings;
+  /** Snippet labels and the lock epoch; absent while the catalog is unavailable (no snippet panel). */
+  catalog?: CatalogState;
   /** Another page is shown; terminals keep streaming underneath. */
   hidden: boolean;
   onCommand?(command: WorkspaceCommand): void;
@@ -281,6 +287,15 @@ export function TerminalWorkspace({
 }) {
   const { workspace, dispatch, sessions, activeTab: tab } = controller;
   const layer = useRef<HTMLDivElement>(null);
+  const inputs = useRef<TerminalInputs>(new Map()).current;
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const showSnippets = snippetsOpen && !hidden && !!catalog && sessions.length > 0;
+  // Leaving the terminals (or losing the catalog) closes the panel; returning never reopens it and steals focus.
+  if (snippetsOpen && !showSnippets) setSnippetsOpen(false);
+  const closeSnippets = () => {
+    setSnippetsOpen(false);
+    controller.focusActive();
+  };
   const reduced = useSyncExternalStore(subscribeMotion, prefersReducedMotion);
   const [savedScrollback, setScrollback] = useState<PaneScrollback>(() => ({
     setting: settings.terminalScrollback,
@@ -339,6 +354,14 @@ export function TerminalWorkspace({
         if (!repeat) dispatch({ type: "toggle-mode" });
         controller.focusActive();
         return true;
+      case "snippets":
+        if (hidden || !catalog || sessions.length === 0) return false;
+        // Opens the panel, or returns to its search; closing is explicit (Esc or Close) so a draft is never lost to a chord.
+        if (!repeat) {
+          if (snippetsOpen) document.querySelector<HTMLElement>(".snippet-panel input[type=search]")?.focus();
+          else setSnippetsOpen(true);
+        }
+        return true;
       case "focus-pane": {
         if (hidden || !tab) return false;
         const next = neighbor(paneRects(tab.root), tab.active, shortcut.direction);
@@ -372,74 +395,87 @@ export function TerminalWorkspace({
   }, []);
 
   return (
-    <div
-      className="terminal-workspace"
-      data-hidden={hidden || undefined}
-      inert={hidden}
-      style={{ position: "absolute", inset: 0, visibility: hidden ? "hidden" : undefined }}
-      onFocus={(event) => {
-        const id = (event.target as Element).closest?.("section[data-session-id]")?.getAttribute("data-session-id");
-        if (id) dispatch({ type: "focus-pane", sessionId: id });
-      }}
-    >
-      <div ref={layer} className="terminal-layer relative min-h-0 flex-1">
-        {focusMode && tab ? (
-          <div
-            role="group"
-            aria-label="Focused pane"
-            className="absolute inset-x-0 top-0 z-20 flex h-8 items-center gap-1 rounded-t-lg border border-border bg-card px-1"
-          >
-            <Button size="icon-sm" variant="ghost" aria-label="Previous pane" onClick={() => dispatch({ type: "cycle-pane", step: -1 })}>
-              <ChevronLeftIcon aria-hidden="true" />
-            </Button>
-            <span className="type-caption" aria-live="polite">
-              Pane {order.indexOf(tab.active) + 1} of {order.length}
-            </span>
-            <Button size="icon-sm" variant="ghost" aria-label="Next pane" onClick={() => dispatch({ type: "cycle-pane", step: 1 })}>
-              <ChevronRightIcon aria-hidden="true" />
-            </Button>
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => dispatch({ type: "toggle-mode", tabId: tab.id })}>
-              <Columns2Icon data-icon="inline-start" aria-hidden="true" />
-              Show all panes
-            </Button>
-          </div>
-        ) : null}
-        {sessions.map((session) => {
-          const entry = layouts.get(session.sessionId);
-          const inActiveTab = !!entry && entry.tab.id === tab?.id;
-          const visible = !hidden && inActiveTab && (!focusMode || session.sessionId === tab?.active);
-          const style =
-            focusMode && inActiveTab && session.sessionId === tab?.active
-              ? placement(full, FOCUS_HEADER)
-              : placement(entry?.rect ?? full);
-          return (
-            <LiveTerminal
-              key={session.sessionId}
-              owner={owner}
-              session={session}
-              settings={paneSettings(session.sessionId)}
-              active={inActiveTab && session.sessionId === tab?.active}
-              hidden={!visible}
-              style={style}
-              actions={
-                entry ? <PaneMenu controller={controller} session={session} home={entry.tab} onOpenSftp={onOpenSftp} /> : null
-              }
-            />
-          );
-        })}
-        {tab && !hidden && !focusMode
-          ? separators(tab.root).map((split) => (
-              <Divider key={`${tab.id}:${split.path}`} split={split} tabId={tab.id} layer={layer} dispatch={dispatch} />
-            ))
-          : null}
+    <TerminalInputsContext.Provider value={inputs}>
+      <div
+        className="terminal-workspace"
+        data-hidden={hidden || undefined}
+        inert={hidden}
+        style={{ position: "absolute", inset: 0, visibility: hidden ? "hidden" : undefined }}
+        onFocus={(event) => {
+          const id = (event.target as Element).closest?.("section[data-session-id]")?.getAttribute("data-session-id");
+          if (id) dispatch({ type: "focus-pane", sessionId: id });
+        }}
+      >
+        <div ref={layer} className="terminal-layer relative min-h-0 flex-1">
+          {focusMode && tab ? (
+            <div
+              role="group"
+              aria-label="Focused pane"
+              className="absolute inset-x-0 top-0 z-20 flex h-8 items-center gap-1 rounded-t-lg border border-border bg-card px-1"
+            >
+              <Button size="icon-sm" variant="ghost" aria-label="Previous pane" onClick={() => dispatch({ type: "cycle-pane", step: -1 })}>
+                <ChevronLeftIcon aria-hidden="true" />
+              </Button>
+              <span className="type-caption" aria-live="polite">
+                Pane {order.indexOf(tab.active) + 1} of {order.length}
+              </span>
+              <Button size="icon-sm" variant="ghost" aria-label="Next pane" onClick={() => dispatch({ type: "cycle-pane", step: 1 })}>
+                <ChevronRightIcon aria-hidden="true" />
+              </Button>
+              <Button size="sm" variant="ghost" className="ml-auto" onClick={() => dispatch({ type: "toggle-mode", tabId: tab.id })}>
+                <Columns2Icon data-icon="inline-start" aria-hidden="true" />
+                Show all panes
+              </Button>
+            </div>
+          ) : null}
+          {sessions.map((session) => {
+            const entry = layouts.get(session.sessionId);
+            const inActiveTab = !!entry && entry.tab.id === tab?.id;
+            const visible = !hidden && inActiveTab && (!focusMode || session.sessionId === tab?.active);
+            const style =
+              focusMode && inActiveTab && session.sessionId === tab?.active
+                ? placement(full, FOCUS_HEADER)
+                : placement(entry?.rect ?? full);
+            return (
+              <LiveTerminal
+                key={session.sessionId}
+                owner={owner}
+                session={session}
+                settings={paneSettings(session.sessionId)}
+                active={inActiveTab && session.sessionId === tab?.active}
+                hidden={!visible}
+                style={style}
+                actions={
+                  entry ? (
+                    <PaneMenu
+                      controller={controller}
+                      session={session}
+                      home={entry.tab}
+                      onOpenSftp={onOpenSftp}
+                      onSnippets={catalog ? () => setSnippetsOpen(true) : undefined}
+                    />
+                  ) : null
+                }
+              />
+            );
+          })}
+          {tab && !hidden && !focusMode
+            ? separators(tab.root).map((split) => (
+                <Divider key={`${tab.id}:${split.path}`} split={split} tabId={tab.id} layer={layer} dispatch={dispatch} />
+              ))
+            : null}
+          {showSnippets ? (
+            <SnippetPanel owner={owner} state={catalog} active={controller.activeSession} sessions={sessions} onClose={closeSnippets} />
+          ) : null}
+        </div>
+        <CloseConfirm
+          request={controller.closeRequest}
+          onCancel={controller.cancelClose}
+          onConfirm={controller.confirmClose}
+          confirmFocus={activeTextarea}
+        />
       </div>
-      <CloseConfirm
-        request={controller.closeRequest}
-        onCancel={controller.cancelClose}
-        onConfirm={controller.confirmClose}
-        confirmFocus={activeTextarea}
-      />
-    </div>
+    </TerminalInputsContext.Provider>
   );
 }
 
@@ -507,11 +543,14 @@ function PaneMenu({
   session,
   home,
   onOpenSftp,
+  onSnippets,
 }: {
   controller: WorkspaceController;
   session: TerminalSession;
   home: Tab;
   onOpenSftp?(hostId: string): void;
+  /** Opens the snippet panel for this pane (made active first). */
+  onSnippets?(): void;
 }) {
   const { workspace, dispatch, sessions } = controller;
   const { sessionId } = session;
@@ -568,6 +607,16 @@ function PaneMenu({
                 <AppWindowIcon /> Move to new tab
               </DropdownMenuItem>
             </>
+          ) : null}
+          {onSnippets ? (
+            <DropdownMenuItem
+              onClick={() => {
+                dispatch({ type: "focus-pane", sessionId });
+                onSnippets();
+              }}
+            >
+              <LayersIcon /> Snippets… <DropdownMenuShortcut>⇧⌘S</DropdownMenuShortcut>
+            </DropdownMenuItem>
           ) : null}
           {onOpenSftp ? (
             <DropdownMenuItem onClick={() => onOpenSftp(session.hostId)}>

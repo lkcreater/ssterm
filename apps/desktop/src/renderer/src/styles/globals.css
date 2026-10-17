@@ -834,6 +834,60 @@
 .paste-marker {
   color: var(--muted-foreground);
 }
+/* Floats over the terminal layer so opening it never resizes a PTY. */
+.snippet-panel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 30;
+  display: flex;
+  width: min(400px, calc(100% - 16px));
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+.snippet-panel-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.snippet-panel-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.snippet-panel-row:hover {
+  background: var(--muted);
+}
+.snippet-panel-composer {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.snippet-panel-feedback {
+  display: flex;
+  gap: 6px;
+  min-height: 20px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.snippet-panel-feedback[data-tone="problem"] svg {
+  margin-top: 2px;
+  color: var(--connection-error);
+}
 .snippet-composer {
   display: flex;
   flex-direction: column;

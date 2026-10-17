@@ -10,7 +10,8 @@ export type WorkspaceShortcut =
   | { kind: "cycle-tab"; step: 1 | -1 }
   | { kind: "toggle-sidebar" }
   | { kind: "settings" }
-  | { kind: "shortcuts" };
+  | { kind: "shortcuts" }
+  | { kind: "snippets" };
 
 interface KeyLike {
   type: string;
@@ -71,6 +72,7 @@ export function workspaceShortcut(event: KeyLike): WorkspaceShortcut | null {
     case "shift": {
       if (event.code === "Enter" || event.code === "NumpadEnter") return { kind: "toggle-mode" };
       if (letter(event) === "d") return { kind: "split", direction: "column" };
+      if (letter(event) === "s") return { kind: "snippets" };
       const mark = symbol(event);
       if (mark === "]") return { kind: "cycle-tab", step: 1 };
       if (mark === "[") return { kind: "cycle-tab", step: -1 };

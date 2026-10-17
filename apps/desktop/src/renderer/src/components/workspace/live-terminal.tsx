@@ -1,4 +1,5 @@
 import {
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -62,6 +63,7 @@ import {
 import { endpointText } from "@/lib/catalog-filter";
 import { copyText } from "@/lib/clipboard";
 import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
+import { TerminalInputsContext, type TerminalInputHandle } from "@/components/workspace/terminal-inputs";
 import {
   terminalSearchDecorations,
   terminalStyle,
@@ -148,6 +150,7 @@ export function LiveTerminal({
   const { windowId, generation: ownerGeneration } = owner;
   const pane = useRef<HTMLElement>(null);
   const host = useRef<HTMLDivElement>(null);
+  const inputs = useContext(TerminalInputsContext);
   const controls = useRef<Controls | null>(null);
   // Read when the xterm is created; later changes go through apply().
   const initial = useRef(settings);
@@ -278,12 +281,16 @@ export function LiveTerminal({
 
     // Input is sent strictly in order. After any refused write nothing later is sent until the
     // user resumes, so the remote only ever sees a prefix of what was typed.
-    const queue: Uint8Array[] = [];
+    // `settle` reports one delivered chunk (snippets); typing has none.
+    const queue: { bytes: Uint8Array; generation: number; settle?: (sent: boolean) => void }[] = [];
     let queued = 0;
     let sending = false;
     let paused = false;
     const discard = () => {
-      for (const chunk of queue) chunk.fill(0);
+      for (const chunk of queue) {
+        chunk.bytes.fill(0);
+        chunk.settle?.(false);
+      }
       queue.length = 0;
       queued = 0;
     };
@@ -299,27 +306,52 @@ export function LiveTerminal({
       if (sending) return;
       sending = true;
       while (queue.length > 0 && !cancelled && !paused) {
-        const bytes = queue.shift()!;
+        const { bytes, generation, settle } = queue.shift()!;
         queued -= bytes.byteLength;
+        // Queued for a generation that has since been replaced: never sent to the new one.
+        if (generation !== current) {
+          bytes.fill(0);
+          settle?.(false);
+          continue;
+        }
         const request = { ...identity(), bytes };
         const result = await bridge.writeTerminal(request).catch(() => undefined);
         bytes.fill(0);
+        settle?.(!!result?.ok);
         // A refusal for a generation that has since been replaced must not pause the new one.
         if (!result?.ok && request.generation === current) pause();
       }
       sending = false;
     };
-    const send = (input: Uint8Array) => {
+    const send = (input: Uint8Array, settle?: (sent: boolean) => void) => {
       if (cancelled || paused || !live || queued + input.byteLength > MAX_QUEUED_INPUT) {
         input.fill(0);
+        settle?.(false);
         if (!cancelled && !paused && live) pause();
         return;
       }
-      for (let at = 0; at < input.byteLength; at += MAX_TERMINAL_WRITE)
-        queue.push(input.subarray(at, at + MAX_TERMINAL_WRITE));
+      for (let at = 0; at < input.byteLength; at += MAX_TERMINAL_WRITE) {
+        const last = at + MAX_TERMINAL_WRITE >= input.byteLength;
+        queue.push({ bytes: input.subarray(at, at + MAX_TERMINAL_WRITE), generation: current, settle: last ? settle : undefined });
+      }
       queued += input.byteLength;
       void pump();
     };
+    const handle: TerminalInputHandle = {
+      get generation() { return current; },
+      accepting: () => !cancelled && live && !paused,
+      bracketed: () => term.modes.bracketedPasteMode,
+      deliver: (bytes, generation) => new Promise((done) => {
+        const copy = Uint8Array.from(bytes);
+        // One write: callers keep snippets within MAX_TERMINAL_WRITE, so main takes or refuses it whole.
+        if (generation !== current || copy.byteLength > MAX_TERMINAL_WRITE || cancelled || !live || paused) {
+          copy.fill(0);
+          return done("refused");
+        }
+        send(copy, (sent) => done(sent ? "sent" : "refused"));
+      }),
+    };
+    inputs?.set(sessionId, handle);
     const encoder = new TextEncoder();
     term.onData((data) => send(encoder.encode(data)));
     term.onBinary((data) => send(Uint8Array.from(data, (char) => char.charCodeAt(0) & 0xff)));
@@ -399,6 +431,7 @@ export function LiveTerminal({
     };
     return () => {
       cancelled = true;
+      if (inputs?.get(sessionId) === handle) inputs.delete(sessionId);
       if (controls.current?.term === term) controls.current = null;
       stopOutput();
       observer?.disconnect();

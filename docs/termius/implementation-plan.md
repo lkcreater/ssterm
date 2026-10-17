@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-023 / T029: `DONE`** — [Snippet persistence / CRUD](../snippets.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 406/406, development E2E 56/56, packaged 53/53; typecheck/build และ unsigned macOS arm64 package ผ่าน ผู้ใช้สั่ง “ทำเสร็จ เริ่มงานถัดไปได้เลย” จึงเริ่ม SST-024 ต่อ; SST-025–028 และ DS05–DS06 ยัง `PAUSED`
+**SST-024 / T030: `DONE`** — [Snippet Paste / Run](../snippets.md#snippet-paste--run--sst-024) ผ่าน independent TEST/REVIEW/DELIVER: unit 410/410, development E2E 57/57, packaged 54/54; typecheck/build และ unsigned macOS arm64 package ผ่าน (SST-023 committed `50d421a`); SST-025–028 และ DS05–DS06 ยัง `PAUSED` รอคำสั่ง
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-025–028 ยัง `PAUSED`
 

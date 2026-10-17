@@ -540,6 +540,7 @@ export function AppShell() {
                   onShowTerminals={showTerminals}
                   onCommand={onCommand}
                   onOpenSftp={openSftp}
+                  catalog={ready ? state : undefined}
                 />
               ) : null}
               {owner ? (

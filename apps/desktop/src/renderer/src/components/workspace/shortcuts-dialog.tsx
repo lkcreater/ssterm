@@ -28,6 +28,7 @@ const groups: { title: string; rows: [keys: string, action: string][] }[] = [
       ["⌘F", "Find in terminal"],
       ["⌘C", "Copy selection"],
       ["⌘V", "Paste"],
+      ["⇧⌘S", "Snippets: Paste or Run on the active terminal"],
       ["⌘-click", "Open link"],
     ],
   },
