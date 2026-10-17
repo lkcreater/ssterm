@@ -4,6 +4,8 @@ import type { TrustState, TrustStateRequest, AnswerHostTrustRequest, PrepareKnow
 export * from "./known-hosts.ts";
 import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarget, WriteTerminalRequest, ResizeTerminalRequest, AckTerminalRequest, TerminalActionResponse } from "./terminals.ts";
 export * from "./terminals.ts";
+import type { SftpState, FilePathRequest, FileOutcome, DirectoryListing, FileAttributes } from "./files.ts";
+export * from "./files.ts";
 import type { OpenLinkRequest, OpenLinkResponse } from "./links.ts";
 import type { CatalogState, CatalogStateRequest, PrepareCatalogChangeRequest, CatalogPrepareResponse, ApplyCatalogChangeRequest, CatalogApplyResponse, ConnectHostRequest, ConnectHostResponse } from "./catalog.ts";
 export * from "./catalog.ts";
@@ -83,6 +85,17 @@ export interface DesktopAPI {
   closeTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
   reconnectTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
   dismissTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
+  sftpState(request: TerminalStateRequest): Promise<Result<SftpState>>;
+  onSftpState(callback: (state: SftpState) => void): () => void;
+  connectSftp(request: ConnectHostRequest): Promise<Result<ConnectHostResponse>>;
+  closeSftp(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
+  reconnectSftp(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
+  dismissSftp(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
+  listDirectory(request: FilePathRequest): Promise<Result<FileOutcome<DirectoryListing>>>;
+  /** Follows symlinks. */
+  statPath(request: FilePathRequest): Promise<Result<FileOutcome<FileAttributes>>>;
+  /** Canonical path of an absolute, `~` or home-relative path. */
+  resolvePath(request: FilePathRequest): Promise<Result<FileOutcome<string>>>;
   openLink(request: OpenLinkRequest): Promise<Result<OpenLinkResponse>>;
   catalogState(request: CatalogStateRequest): Promise<Result<CatalogState>>;
   onCatalogState(callback: (state: CatalogState) => void): () => void;
@@ -129,6 +142,15 @@ export const channels = Object.freeze({
   closeTerminal: "ssterm:close-terminal",
   reconnectTerminal: "ssterm:reconnect-terminal",
   dismissTerminal: "ssterm:dismiss-terminal",
+  sftpState: "ssterm:sftp-state",
+  sftpStateChanged: "ssterm:sftp-state-changed",
+  connectSftp: "ssterm:connect-sftp",
+  closeSftp: "ssterm:close-sftp",
+  reconnectSftp: "ssterm:reconnect-sftp",
+  dismissSftp: "ssterm:dismiss-sftp",
+  listDirectory: "ssterm:list-directory",
+  statPath: "ssterm:stat-path",
+  resolvePath: "ssterm:resolve-path",
   openLink: "ssterm:open-link",
   catalogState: "ssterm:catalog-state",
   catalogStateChanged: "ssterm:catalog-state-changed",

@@ -56,6 +56,8 @@ export { CatalogModule, SecretService, TransientSecrets } from "@ssterm/services
 export { createCredentialsController } from "./credentials";
 export { registerCredentialHandlers } from "./credential-runtime";
 export { createTerminalController, registerTerminalHandlers, terminalChannels } from "./terminals";
+export { createSftpController, registerSftpHandlers, sftpChannels } from "./sftp";
+export { createLocalFiles } from "@ssterm/adapters/local-files";
 export { createCatalogController, registerCatalogHandlers, catalogChannels, observeCommits } from "./catalog-controller";
 export { createIdentitiesController, registerIdentityHandlers, identityChannels, secretNamespace } from "./identities";
 export { registerLinkHandlers, validateExternalUrl } from "./links";

@@ -46,9 +46,14 @@ export function remotePath(path: unknown): string | undefined {
   return Buffer.byteLength(normalized) <= SFTP_MAX_PATH_BYTES ? normalized : undefined;
 }
 
+/** A listed name that is safe to show and send back: not empty, no '/' or NUL, at most 1,024 UTF-8 bytes. */
+export const listableName = (name: unknown): name is string =>
+  typeof name === "string" && name !== "" && !name.includes("/") && !name.includes("\0") && Buffer.byteLength(name) <= SFTP_MAX_NAME_BYTES;
+
 const TYPES = new Map<number, RemoteAttributes["type"]>([[0o100000, "file"], [0o040000, "directory"], [0o120000, "symlink"]]);
 const integer = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
-function attributes(attrs: { mode?: unknown; size?: unknown; mtime?: unknown } | undefined): RemoteAttributes {
+/** Mode, size and mtime (seconds) as SFTP reports them, or as lstat does locally. */
+export function attributes(attrs: { mode?: unknown; size?: unknown; mtime?: unknown } | undefined): RemoteAttributes {
   const mode = integer(attrs?.mode);
   return {
     type: mode === null ? "unknown" : TYPES.get(mode & 0o170000) ?? "other",
@@ -218,7 +223,7 @@ export function createSftpChannel(sftp: SFTPWrapper, home: string): SftpChannel 
           if (name === "." || name === "..") continue;
           // Counts skipped names too, so a hostile server cannot stream unsafe names forever.
           if (entries.length + skipped === SFTP_MAX_ENTRIES) { truncated = true; break; }
-          if (typeof name !== "string" || name === "" || name.includes("/") || name.includes("\0") || Buffer.byteLength(name) > SFTP_MAX_NAME_BYTES) {
+          if (!listableName(name)) {
             skipped++;
             continue;
           }

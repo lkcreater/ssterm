@@ -32,6 +32,21 @@ const groups: { title: string; rows: [keys: string, action: string][] }[] = [
     ],
   },
   {
+    title: "Files",
+    rows: [
+      ["⇧⌘G", "Go to path"],
+      ["⌘↑ or ⌫", "Enclosing folder"],
+      ["⌘↓ or ↩", "Open folder or link"],
+      ["⇧⌘.", "Show or hide hidden files"],
+      ["Space", "Select or deselect"],
+      ["⇧↑ ⇧↓", "Extend the selection"],
+      ["⌘-click", "Add to or remove from the selection"],
+      ["⌘A", "Select all"],
+      ["⌘C", "Copy selected paths"],
+      ["Type a name", "Jump to a file"],
+    ],
+  },
+  {
     title: "Window",
     rows: [
       ["⌃⌘S", "Show or hide the sidebar"],

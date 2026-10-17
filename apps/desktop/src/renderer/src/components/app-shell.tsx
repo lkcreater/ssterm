@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircleIcon,
   CircleIcon,
+  FolderOpenIcon,
   KeyboardIcon,
   KeyRoundIcon,
   LayersIcon,
@@ -54,6 +55,8 @@ import { useCredentials } from "@/hooks/use-credentials";
 import { CredentialPrompts } from "@/components/auth/credential-prompts";
 import { useKnownHosts } from "@/hooks/use-known-hosts";
 import { useTerminals } from "@/hooks/use-terminals";
+import { useSftp } from "@/hooks/use-sftp";
+import { FilesWorkspace } from "@/components/sftp/files-workspace";
 import { useSettings } from "@/hooks/use-settings";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { SessionTabs } from "@/components/workspace/session-tabs";
@@ -146,7 +149,7 @@ const storageProblems: Record<
   },
 };
 
-type Page = "hosts" | "terminals" | "known-hosts" | "identities";
+type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities";
 type CatalogDialog =
   | { kind: "host"; id?: string; groupId?: string | null }
   | { kind: "group"; id?: string; parentId?: string | null }
@@ -155,6 +158,7 @@ type CatalogDialog =
 const titles: Record<Page, string> = {
   hosts: "Servers",
   terminals: "Terminals",
+  files: "Files",
   "known-hosts": "Known hosts",
   identities: "Identities",
 };
@@ -200,8 +204,9 @@ export function AppShell() {
   const catalog = useCatalog(owner);
   const sessions = useTerminals(owner).state?.sessions ?? [];
   const controller = useWorkspace(owner, sessions);
+  const sftp = useSftp(owner);
   const settings = useSettings(owner);
-  const connected = sessions.filter((session) => session.phase === "ready").length;
+  const connected = [...sessions, ...sftp.sessions].filter((session) => session.phase === "ready").length;
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
     storage?.status === "blocked" ? storageProblems[storage.code] : undefined;
@@ -273,6 +278,12 @@ export function AppShell() {
     });
   }
 
+  /** One remote browser per window: another host replaces the current one (browse-only, no prompt). */
+  const openSftp = (hostId: string) => {
+    setPage("files");
+    void sftp.open(hostId);
+  };
+
   /** No animation: the panel snaps, so focus can move before it is hidden. */
   const toggleSidebar = () => {
     const panel = sidebarPanel.current;
@@ -288,8 +299,11 @@ export function AppShell() {
   };
   const showTerminals = () => setPage("terminals");
   const active = controller.activeSession;
-  const activeTarget = active?.target;
   const terminalsShown = page === "terminals" && !!owner && sessions.length > 0;
+  const filesShown = page === "files" && !!owner;
+  const remote = sftp.session;
+  const statusSession = terminalsShown ? active : filesShown ? remote : undefined;
+  const statusTarget = statusSession?.target;
 
   const showHosts = (next?: CatalogScope) => {
     setPage("hosts");
@@ -432,6 +446,17 @@ export function AppShell() {
                       </SidebarMenuItem>
                       <SidebarMenuItem>
                         <SidebarMenuButton
+                          isActive={page === "files"}
+                          aria-current={page === "files" ? "page" : undefined}
+                          onClick={() => setPage("files")}
+                          disabled={!owner}
+                        >
+                          <FolderOpenIcon />
+                          <span>Files</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
                           isActive={page === "known-hosts"}
                           aria-current={page === "known-hosts" ? "page" : undefined}
                           onClick={() => setPage("known-hosts")}
@@ -501,9 +526,13 @@ export function AppShell() {
                   hidden={page !== "terminals"}
                   onShowTerminals={showTerminals}
                   onCommand={onCommand}
+                  onOpenSftp={openSftp}
                 />
               ) : null}
-              {terminalsShown ? null : (
+              {owner ? (
+                <FilesWorkspace owner={owner} sftp={sftp} catalog={state} hidden={!filesShown} />
+              ) : null}
+              {terminalsShown || filesShown ? null : (
                 <div className="workspace-page">
                   {page === "known-hosts" ? (
                     <KnownHostsWorkspace
@@ -550,6 +579,7 @@ export function AppShell() {
                       onDeleteHost={(id) => setDialog({ kind: "delete-host", id })}
                       onDeleteGroup={(id) => setDialog({ kind: "delete-group", id })}
                       onConnect={(host) => void connect(host)}
+                      onOpenSftp={(host) => openSftp(host.id)}
                       onClearFilters={() => {
                         setSearch("");
                         setTagIds([]);
@@ -685,16 +715,20 @@ export function AppShell() {
       <HostTrustDialogs state={trust.state} />
       <CredentialPrompts state={trust.state?.prompts.length ? undefined : credentials.state} />
       <footer className="app-statusbar">
-        {terminalsShown && active ? (
-          <div role="group" aria-label="Active pane" className="statusbar-target">
-            <ConnectionStatus state={phaseStates[active.phase]} />
-            <span className="statusbar-label truncate" title={activeTarget?.label}>
-              {activeTarget?.label ?? "Unknown target"}
+        {statusSession ? (
+          <div
+            role="group"
+            aria-label={terminalsShown ? "Active pane" : "Remote files"}
+            className="statusbar-target"
+          >
+            <ConnectionStatus state={phaseStates[statusSession.phase]} />
+            <span className="statusbar-label truncate" title={statusTarget?.label}>
+              {statusTarget?.label ?? "Unknown target"}
             </span>
-            {activeTarget?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
-            {activeTarget ? (
+            {statusTarget?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
+            {statusTarget ? (
               <span className="host-target truncate">
-                {endpointText(activeTarget.endpointHost, activeTarget.endpointPort, activeTarget.username)}
+                {endpointText(statusTarget.endpointHost, statusTarget.endpointPort, statusTarget.username)}
               </span>
             ) : null}
           </div>

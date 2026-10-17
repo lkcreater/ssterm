@@ -27,6 +27,8 @@ import { registerKnownHostHandlers } from "./known-host-runtime";
 import { createCredentialsController } from "./credentials";
 import { registerCredentialHandlers } from "./credential-runtime";
 import { closePrompt, createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
+import { createSftpController, registerSftpHandlers, type SftpController } from "./sftp";
+import { createLocalFiles } from "@ssterm/adapters/local-files";
 import { applicationMenuTemplate } from "./menu";
 import { registerLinkHandlers } from "./links";
 import { registerSettingsHandlers } from "./settings";
@@ -67,6 +69,8 @@ let credentials: ReturnType<typeof createCredentialsController> | undefined;
 let removeCredentialHandlers: (() => void) | undefined;
 let terminals: TerminalController | undefined;
 let removeTerminalHandlers: (() => void) | undefined;
+let sftp: SftpController | undefined;
+let removeSftpHandlers: (() => void) | undefined;
 let removeLinkHandlers: (() => void) | undefined;
 let removeSettingsHandlers: (() => void) | undefined;
 let catalog: CatalogController | undefined;
@@ -177,6 +181,7 @@ const boundary = new WindowBoundary(
     identities?.revokeOwner(owner);
     // Stop output frames before the owner's sessions start closing.
     terminals?.revokeOwner(owner);
+    sftp?.revokeOwner(owner);
     desktopSessions?.revokeOwner(owner);
   },
 );
@@ -407,6 +412,16 @@ if (ownsInstance) {
       boundary,
       controller: () => terminals,
     });
+    sftp = createSftpController({
+      registry: desktopSessions.registry,
+      checkAccess,
+      local: createLocalFiles(),
+    });
+    removeSftpHandlers = registerSftpHandlers({
+      ipc: ipcMain,
+      boundary,
+      controller: () => sftp,
+    });
     removeKnownHostHandlers = registerKnownHostHandlers({
       ipc: ipcMain,
       boundary,
@@ -461,6 +476,9 @@ if (ownsInstance) {
               event.sender.send(channels.trustStateChanged, state);
           });
           terminals?.register(result.value.owner, (channel, value) => {
+            if (!event.sender.isDestroyed()) event.sender.send(channel, value);
+          });
+          sftp?.register(result.value.owner, (channel, value) => {
             if (!event.sender.isDestroyed()) event.sender.send(channel, value);
           });
           catalog?.register(result.value.owner, (state) => {
@@ -520,12 +538,14 @@ app.on("before-quit", (event) => {
   credentials?.dispose();
   knownHosts?.dispose();
   terminals?.dispose();
+  sftp?.dispose();
   catalog?.dispose();
   identities?.dispose();
   knownHostPolicy?.dispose();
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
   removeTerminalHandlers?.();
+  removeSftpHandlers?.();
   removeLinkHandlers?.();
   removeSettingsHandlers?.();
   removeCatalogHandlers?.();

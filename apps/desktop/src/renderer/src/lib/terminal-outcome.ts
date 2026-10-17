@@ -20,6 +20,10 @@ const reasons = {
   "resource-limit": "a session limit was reached",
   locked: "ssterm is locked",
 } as const satisfies Record<TerminalErrorCode, string>;
+const sftpReasons: Partial<Record<TerminalErrorCode, string>> = {
+  "channel-open-failed": "the server did not open a file session",
+  "subsystem-unavailable": "the server does not offer SFTP",
+};
 
 /**
  * `connected` means this generation reached Ready, so output was possible: a network or timeout
@@ -28,6 +32,7 @@ const reasons = {
 export function terminalOutcome(
   session: Pick<TerminalSession, "phase" | "end" | "error">,
   connected: boolean,
+  kind: "terminal" | "sftp" = "terminal",
 ): string | null {
   const { phase, end, error } = session;
   if (end?.kind === "exit") return `Remote process exited with status ${end.code}`;
@@ -40,7 +45,8 @@ export function terminalOutcome(
   if (connected && (error === null || error === "network" || error === "timeout")) return "Connection lost";
   if (error === null) return "Couldn't connect";
   if (connected && error === "resource-limit") return "Session failed: output exceeded the safety limit";
-  return `${connected ? "Session failed" : "Couldn't connect"}: ${reasons[error]}`;
+  const reason = (kind === "sftp" ? sftpReasons[error] : undefined) ?? reasons[error];
+  return `${connected ? "Session failed" : "Couldn't connect"}: ${reason}`;
 }
 
 export type LifecycleAction = "close" | "reconnect" | "dismiss";

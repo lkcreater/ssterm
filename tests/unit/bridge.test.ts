@@ -70,11 +70,12 @@ test("bridge exposes only narrow methods and forwards a rebuilt, validated ping"
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
     "ackTerminal", "answerCredentials", "answerHostTrust", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "catalogState",
-    "chooseKeyFile", "closeTerminal", "connectHost", "credentialState", "deleteKey", "discardKeyImport", "dismissTerminal",
-    "forgetKeyPassphrase", "importKey", "onCatalogState", "onCredentialState", "onTerminalOutput",
-    "onTerminalState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping", "prepareCatalogChange",
-    "prepareKnownHostRevoke", "reconnectTerminal", "renameKey", "resizeTerminal", "retrySecrets", "revokeKnownHost",
-    "setIdentityPassword", "settings", "terminalState", "trustState", "updateSettings", "writeTerminal",
+    "chooseKeyFile", "closeSftp", "closeTerminal", "connectHost", "connectSftp", "credentialState", "deleteKey", "discardKeyImport",
+    "dismissSftp", "dismissTerminal", "forgetKeyPassphrase", "importKey", "listDirectory", "onCatalogState", "onCredentialState",
+    "onSftpState", "onTerminalOutput", "onTerminalState", "onTrustState", "onWindowState", "openLink", "openTerminal", "ping",
+    "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "renameKey", "resizeTerminal",
+    "resolvePath", "retrySecrets", "revokeKnownHost", "setIdentityPassword", "settings", "sftpState", "statPath", "terminalState",
+    "trustState", "updateSettings", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -511,6 +512,63 @@ test("identity commands send rebuilt requests, wipe preload's credential copies 
     f.api.importKey({ owner, importId: "id", label: "k", passphrase: null, savePassphrase: false }),
     f.api.chooseKeyFile({ owner, path: "/etc/passwd" } as never),
     f.api.deleteKey({ owner, keyId: identityId, expectedRevision: 0 }),
+  ]) assert.deepEqual(await invalid, failure("invalid-request"));
+  assert.equal(f.calls.length, count);
+});
+
+test("SFTP state is owner/sequence fenced; SFTP and file commands are rebuilt and validated", async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const view = { sessionId: "s-1", generation: 1, hostId: "h-1", phase: "ready", target: null, error: null, home: "/home/fixture" };
+  const state = (sequence: number, generation = 2) => ({ owner: { windowId: 1, generation }, sequence, sessions: [view] });
+  const received: unknown[] = [];
+  const off = f.api.onSftpState((value) => received.push(value));
+  f.emit(state(1)); f.emit(state(1)); f.emit(state(2, 3)); f.emit({ ...state(2), sessions: [{ ...view, end: null }] });
+  f.setReply({ ok: true, value: state(4) });
+  assert.deepEqual(await f.api.sftpState({ owner }), { ok: true, value: state(4) });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.sftpState, args: [{ owner }] });
+  f.emit(state(3)); f.emit(state(5));
+  assert.deepEqual(received, [state(1), state(5)]);
+  off();
+  assert.equal(f.listeners.size, 0);
+
+  const target = { owner, sessionId: "s-1", generation: 1 };
+  f.setReply({ ok: true, value: { sessionId: "s-1", generation: 1 } });
+  assert.ok((await f.api.connectSftp({ owner, hostId: "0b7c7f3e-6a54-4c52-9a6e-3c1f1f9b2d10" })).ok);
+  assert.equal(f.calls.at(-1)!.channel, channels.connectSftp);
+  f.setReply({ ok: true, value: { accepted: true } });
+  for (const [method, channel] of [["closeSftp", channels.closeSftp], ["reconnectSftp", channels.reconnectSftp], ["dismissSftp", channels.dismissSftp]] as const) {
+    assert.ok((await f.api[method](target)).ok);
+    assert.deepEqual(f.calls.at(-1), { channel, args: [target] });
+    assert.notEqual(f.calls.at(-1)!.args[0], target);
+  }
+  const source = { kind: "remote" as const, sessionId: "s-1", generation: 1 };
+  const listing = { path: "/home", entries: [{ name: "\u001b", addressable: true, type: "file", size: 1, mtime: 0, permissions: 0o600 }], truncated: false, skipped: 0 };
+  f.setReply({ ok: true, value: { ok: true, value: listing } });
+  assert.deepEqual(await f.api.listDirectory({ owner, source, path: "/home" }), { ok: true, value: { ok: true, value: listing } });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.listDirectory, args: [{ owner, source, path: "/home" }] });
+  assert.notEqual((f.calls.at(-1)!.args[0] as { source: unknown }).source, source, "the source is rebuilt too");
+  f.setReply({ ok: true, value: { ok: false, error: "permission-denied" } });
+  assert.deepEqual(await f.api.statPath({ owner, source: { kind: "local" }, path: "/x" }), { ok: true, value: { ok: false, error: "permission-denied" } });
+  f.setReply({ ok: true, value: { ok: false, error: "permission-denied", message: "server text" } });
+  assert.deepEqual(await f.api.statPath({ owner, source, path: "/x" }), failure("unavailable"), "text in a reply is refused");
+  f.setReply({ ok: true, value: { ok: true, value: "/home/fixture" } });
+  assert.deepEqual(await f.api.resolvePath({ owner, source, path: "~" }), { ok: true, value: { ok: true, value: "/home/fixture" } });
+  assert.equal(f.calls.at(-1)!.channel, channels.resolvePath);
+  f.setReply({ ok: true, value: { ok: true, value: "relative" } });
+  assert.deepEqual(await f.api.resolvePath({ owner, source, path: "~" }), failure("unavailable"));
+
+  const count = f.calls.length;
+  for (const invalid of [
+    f.api.sftpState({ owner, extra: 1 } as never),
+    f.api.connectSftp({ owner, hostId: "host-1" }),
+    f.api.closeSftp({ ...target, generation: 0 }),
+    f.api.listDirectory({ owner, source, path: "~" }),
+    f.api.statPath({ owner, source: { kind: "remote" } as never, path: "/" }),
+    f.api.listDirectory({ owner, source: { kind: "local", sessionId: "s-1" } as never, path: "/" }),
+    f.api.resolvePath({ owner, source, path: "" }),
+    f.api.resolvePath({ owner, source, path: "a\0b" }),
   ]) assert.deepEqual(await invalid, failure("invalid-request"));
   assert.equal(f.calls.length, count);
 });

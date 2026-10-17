@@ -1,6 +1,6 @@
-# Execution record — M0 ถึง SST-019
+# Execution record — M0 ถึง SST-020
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-018/T024 + DS04/T050 `DONE`, committed `56c85d6`; SST-017 committed `fd84629`. **In progress:** SST-019/T025 per the [current execution plan](#sst-019-execution-plan--2026-10-17). Earlier sections are historical. Standing authorization: loop through SST-028 with a commit per ticket ([SST-013 authorization](#sst-013-execution-plan--2026-10-16)).
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-019/T025 `DONE`, committed `fb8b157`; SST-018 committed `56c85d6`. **In progress:** SST-020/T026 per the [current execution plan](#sst-020-execution-plan--2026-10-17). Earlier sections are historical. Standing authorization: loop through SST-028 with a commit per ticket ([SST-013 authorization](#sst-013-execution-plan--2026-10-16)).
 
 ## Authorization / acceptance
 
@@ -722,3 +722,32 @@ SST-018/T024 and DS04/T050 DONE through independent TEST/REVIEW/DELIVER. [Worksp
 ### Final SST-019 record — 2026-10-17
 
 SST-019/T025 DONE through independent TEST/REVIEW/DELIVER. [SFTP evidence](../sftp.md) and [delivery](sst-019-delivery.md). Final source: typecheck PASS; unit 305/305; build PASS; development E2E 49/49; unsigned macOS arm64 package PASS; packaged 46/46. Review: no critical/high; three mediums and lows fixed. Carried forward: the FIFO hazard (stat before opening) and negotiated limits for SST-020/021; SFTP sessions are not listed in quit prompts until SST-020.
+
+## SST-020 execution plan — 2026-10-17
+
+**Authorization / gate:** standing loop instruction; SST-019 committed `fb8b157`. ANALYZE (one read-only explorer with a local APFS filesystem probe) is complete; placement alternatives (tab type, auxiliary panel, page) were compared against the SST-018 workspace constraints and the page won, so no further arena was run.
+
+**Acceptance / baseline:** [SST-020](../termius/tickets.md#sst-020--sftp-localremote-browser-ui), [T026](../termius/tasks.md), F04 (Unicode names, permissions, symlink navigation). Measured on APFS: 10,000-entry listing plus lstat ≈ 30 ms; NFD names are kept verbatim and Thai mark order changes under NFC, so names are never normalized for addressing. Baseline 305 unit / 49 E2E / 46 packaged.
+
+**Settled contract:** a kept-mounted **Files** page (sidebar item next to Terminals) with “This Mac” and a remote pane side by side; one remote SFTP session per window (switching hosts closes the previous one; browse-only so no prompt). Entry points: host detail “Open SFTP”, the terminal pane menu “Open in SFTP” (captures that pane's host at click time) and a server picker in the empty remote pane. IPC (`packages/contracts/src/files.ts`): `sftpState`/`onSftpState`, `connectSftp`, `closeSftp`, `reconnectSftp`, `dismissSftp` (sharing a kind-checked lifecycle helper extracted from the terminal controller, including lock-epoch unlock), and `listDirectory`, `statPath`, `resolvePath` over `FileSource {local | remote session+generation}` with file errors in the value. A main-only local provider (`packages/adapters/src/local-files.ts`) mirrors the read side of `SftpSession`: metadata only, explicit navigation only, 10,000-entry cap, errno mapping, two local operations in flight per window, available while locked. Paths are absolute lexical POSIX (≤ 4,096 bytes, no NUL, well-formed); `~` and relative input only through `resolvePath`. Hostile names are escaped for display only (C0, DEL, C1, bidi and separators shown as `\u{…}` inside `<bdi>`), unreadable names cannot be opened, copy uses the raw name. Symlinks show a Link icon and text and are followed on Enter via `statPath` at the link's own path. Hidden files are dot-prefixed, per pane (⇧⌘.). Lists are listboxes with active-descendant keyboard navigation, type-ahead, selection for SST-021 and hand-rolled windowing for 10,000 rows; columns Name/Size/Modified with permissions in the detail line. No close prompts for browse-only SFTP sessions.
+
+| ID / stage | Depends | Owner / exact files and deliverable | Validation / exit gate |
+|---|---|---|---|
+| SST020-P / PLAN | ANALYZE + decisions | root owns this file | `git diff --check` |
+| SST020-I1 / files backend | P | backend coder owns new `packages/contracts/src/files.ts`, `packages/contracts/src/index.ts`, new `packages/adapters/src/local-files.ts` (+ package export), new `apps/desktop/src/main/sftp.ts`, `apps/desktop/src/main/{terminals,index,ssh}.ts` (lifecycle helper extraction and wiring), `apps/desktop/src/preload/bridge.ts`, new `tests/unit/{files-contract,sftp-boundary,local-files}.test.ts`, `tests/unit/bridge.test.ts`, `tests/e2e/desktop.spec.ts` (key list) | Guards and bounds, kind/owner/generation fencing, local provider on temp dirs (NFD/Thai, symlinks, permissions, cap), lifecycle with unlock, no server text |
+| SST020-I2 / browser libraries | P (contract settled) | renderer coder owns new `apps/desktop/src/renderer/src/lib/file-browser.ts`, new `tests/unit/file-browser.test.ts` | Escaping, paths/breadcrumbs, permissions text, sort, type-ahead, selection reducer, window range, reply fencing |
+| SST020-I3 / Files UI | I1 + I2 | UI coder owns new `apps/desktop/src/renderer/src/{hooks/use-sftp.ts,components/sftp/*}`, `components/app-shell.tsx`, `components/workspace/{terminal-workspace,live-terminal}.tsx` (pane menu entry, shared session header), `components/catalog/hosts-page.tsx`, `lib/terminal-outcome.ts`, `components/workspace/shortcuts-dialog.tsx`, `styles/globals.css` | Typecheck/build; 960×640 |
+| SST020-I4 / runtime evidence | I3 | runtime coder owns new `tests/e2e/sftp-browser.spec.ts`, `playwright.config.ts` | Docker F04 walk with hostile names, symlinks, permissions, 10,000 entries, local pane, identity proof via the terminal menu, keyboard, reconnect/lock, independence, server process reaped, visuals |
+| SST020-T / R / L | I4 | independent tester and reviewer; root docs, delivery and commit | Critical/high block |
+
+**SST-020 ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+**SST-020 amendments during implementation:** the shared lifecycle helper also owns registration and publishing for both kinds; `~user` is not expanded; the window shortcut guard ignores the always-mounted file lists; review widened escaping to all format characters and edge spaces, made the local cap process-wide with a timeout and `not-responding` code, surfaced second-host failures, raised the registry observer cap to 256; tester findings added tail-preserving truncation, busy retry, breadcrumb and date fitting and focus after Open SFTP.
+
+### Final SST-020 record — 2026-10-17
+
+SST-020/T026 DONE through independent TEST/REVIEW/DELIVER. [Browser evidence](../sftp-browser.md) and [delivery](sst-020-delivery.md). Final source: typecheck PASS; unit 348/348; build PASS; development E2E 51/51; unsigned macOS arm64 package PASS; packaged 48/48. Review: no critical/high; three mediums and lows fixed; tester medium (indistinguishable long names) fixed.
+
+### Loop paused — 2026-10-17
+
+During SST-020 the user instructed “เสร็จงานนี้แล้วหยุดก่อน”: finish SST-020 and stop. The standing loop is paused after this commit; SST-021–028 and DS05–DS06 await a new instruction. ANALYZE notes for SST-021/022 and SST-023/024 were prepared in the session scratchpad and will need re-validation against the code when work resumes.

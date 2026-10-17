@@ -450,9 +450,6 @@ export function LiveTerminal({
   const label = target?.label ?? "Unknown target";
   const production = target?.environment === "PROD";
   const notify = (text: string) => setNotice({ text });
-  const fullTarget = endpoint ?? label;
-  const copyTarget = () =>
-    notify(copyText(fullTarget) ? `Copied ${fullTarget}` : "The target could not be copied.");
   const outcome = terminalOutcome(session, connected === generation);
   const inTerminal = (node: EventTarget) =>
     !!controls.current?.term.element?.contains(node as Node);
@@ -565,36 +562,15 @@ export function LiveTerminal({
       data-rows={size?.rows}
       style={{ ...terminalStyle, ...style, visibility: hidden ? "hidden" : undefined }}
     >
-      <div className="pane-header flex h-8 min-w-0 shrink-0 items-center gap-2 border-b border-border bg-card px-2">
-        <Tooltip>
-          <TooltipTrigger render={<span tabIndex={0} className="host-identity min-w-0 flex-1 basis-0" />}>
-            <span className="type-label truncate">{label}</span>
-            {endpoint ? <span className="host-target truncate">{endpoint}</span> : null}
-          </TooltipTrigger>
-          <TooltipContent>
-            <span className="break-all select-text">{endpoint ? `${label} · ${endpoint}` : label}</span>
-          </TooltipContent>
-        </Tooltip>
-        {production ? <Badge variant="production" className="pane-badge">PROD</Badge> : null}
-        <ConnectionStatus state={statuses[phase]} />
-        <span role="status" className="pane-outcome type-caption min-w-0 shrink truncate text-muted-foreground" title={outcome ?? undefined}>
-          {outcome}
-        </span>
-        <div className="pane-actions flex shrink-0 items-center gap-1">
-          <Button size="icon-sm" variant="ghost" aria-label="Copy target" title={`Copy ${fullTarget}`} onClick={copyTarget}>
-            <CopyIcon aria-hidden="true" />
-          </Button>
-          {actions}
-          {/* Distinct keys: a phase change mounts a new button rather than relabelling a focused or pressed one. */}
-          {phase === "connecting" ? (
-            <PaneAction key="cancel" label="Cancel" icon={BanIcon} variant="outline" disabled={busy} onClick={(detail) => act("close", detail)} />
-          ) : ready ? (
-            <PaneAction key="disconnect" label="Disconnect" icon={UnplugIcon} variant="outline" disabled={busy} onClick={(detail) => act("close", detail)} />
-          ) : (
-            <PaneAction key="dismiss" label="Close pane" icon={XIcon} variant="ghost" disabled={busy} onClick={(detail) => act("dismiss", detail)} />
-          )}
-        </div>
-      </div>
+      <SessionHeader
+        target={target}
+        phase={phase}
+        outcome={outcome}
+        busy={busy}
+        actions={actions}
+        onAction={act}
+        onNotify={notify}
+      />
       {ended ? (
         <div className="live-terminal-notice">
           {/* The header status line announces the outcome; this offers the next step without interrupting. */}
@@ -658,6 +634,67 @@ export function LiveTerminal({
         onConfirm={confirmPaste}
       />
     </section>
+  );
+}
+
+/**
+ * The pane header shared by terminal and SFTP panes: `[name · endpoint] [PROD] [state] [outcome] [Copy
+ * target] [extra actions] [Cancel | Disconnect | Close pane]`, compacted by the pane's container queries.
+ */
+export function SessionHeader({
+  target,
+  phase,
+  outcome,
+  busy,
+  actions,
+  onAction,
+  onNotify,
+}: {
+  target: TerminalSession["target"];
+  phase: TerminalPhase;
+  outcome: string | null;
+  busy: boolean;
+  actions?: ReactNode;
+  /** `detail` is the click count, 0 from the keyboard. */
+  onAction(action: LifecycleAction, detail: number): void;
+  onNotify(text: string): void;
+}) {
+  const endpoint = target ? endpointText(target.endpointHost, target.endpointPort, target.username) : null;
+  const label = target?.label ?? "Unknown target";
+  const fullTarget = endpoint ?? label;
+  const copyTarget = () =>
+    onNotify(copyText(fullTarget) ? `Copied ${fullTarget}` : "The target could not be copied.");
+  return (
+    <div className="pane-header flex h-8 min-w-0 shrink-0 items-center gap-2 border-b border-border bg-card px-2">
+      <Tooltip>
+        <TooltipTrigger render={<span tabIndex={0} className="host-identity min-w-0 flex-1 basis-0" />}>
+          <span className="type-label truncate">{label}</span>
+          {endpoint ? <span className="host-target truncate">{endpoint}</span> : null}
+        </TooltipTrigger>
+        <TooltipContent>
+          <span className="break-all select-text">{endpoint ? `${label} · ${endpoint}` : label}</span>
+        </TooltipContent>
+      </Tooltip>
+      {target?.environment === "PROD" ? <Badge variant="production" className="pane-badge">PROD</Badge> : null}
+      <ConnectionStatus state={statuses[phase]} />
+      <span role="status" className="pane-outcome type-caption min-w-0 shrink truncate text-muted-foreground" title={outcome ?? undefined}>
+        {outcome}
+      </span>
+      <div className="pane-actions flex shrink-0 items-center gap-1">
+        <Button size="icon-sm" variant="ghost" aria-label="Copy target" title={`Copy ${fullTarget}`} onClick={copyTarget}>
+          <CopyIcon aria-hidden="true" />
+        </Button>
+        {actions}
+        {/* Distinct keys: a phase change mounts a new button rather than relabelling a focused or pressed one. */}
+        {phase === "connecting" ? (
+          <PaneAction key="cancel" label="Cancel" icon={BanIcon} variant="outline" disabled={busy} onClick={(detail) => onAction("close", detail)} />
+        ) : phase === "ready" ? (
+          <PaneAction key="disconnect" label="Disconnect" icon={UnplugIcon} variant="outline" disabled={busy} onClick={(detail) => onAction("close", detail)} />
+        ) : (
+          <PaneAction key="dismiss" label="Close pane" icon={XIcon} variant="ghost" disabled={busy} onClick={(detail) => onAction("dismiss", detail)} />
+        )}
+      </div>
+    </div>
   );
 }
 

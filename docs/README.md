@@ -1,6 +1,6 @@
 # เอกสารเตรียมพัฒนา ssterm
 
-**SST-019 / T025: `DONE`** — [SFTP capability / ownership](sftp.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 305/305, E2E 49/49, packaged 46/46; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–018 committed (`56c85d6` latest); SST-020–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-020 / T026: `DONE`** — [SFTP local/remote browser UI](sftp-browser.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 348/348, E2E 51/51, packaged 48/48; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–019 committed (`fb8b157` latest); SST-021–028 และ DS05–DS06 หยุดรอคำสั่ง (loop paused หลัง SST-020)
 
 วิเคราะห์ Termius ที่ติดตั้งในเครื่องด้วย skill `reverse-engineer-anything` และเอกสารทางการ เพื่อเตรียม implementation อิสระของ ssterm
 

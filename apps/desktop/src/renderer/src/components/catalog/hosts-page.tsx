@@ -3,6 +3,7 @@ import {
   AlertTriangleIcon,
   CheckIcon,
   FolderIcon,
+  FolderOpenIcon,
   FolderPlusIcon,
   PencilIcon,
   PlusIcon,
@@ -91,6 +92,7 @@ export function HostsPage({
   onDeleteHost,
   onDeleteGroup,
   onConnect,
+  onOpenSftp,
   onClearFilters,
 }: {
   catalog: Catalog;
@@ -110,6 +112,7 @@ export function HostsPage({
   onDeleteHost(id: string): void;
   onDeleteGroup(id: string): void;
   onConnect(host: CatalogHost): void;
+  onOpenSftp(host: CatalogHost): void;
   onClearFilters(): void;
 }) {
   const groups = useMemo(() => new Map(state.groups.map((group) => [group.id, group])), [state.groups]);
@@ -298,6 +301,7 @@ export function HostsPage({
               onEdit={() => onEditHost(selected.id)}
               onDelete={() => onDeleteHost(selected.id)}
               onConnect={() => onConnect(selected)}
+              onOpenSftp={() => onOpenSftp(selected)}
             />
           ) : null}
         </div>
@@ -317,6 +321,7 @@ function HostDetail({
   onEdit,
   onDelete,
   onConnect,
+  onOpenSftp,
 }: {
   catalog: Catalog;
   state: CatalogState;
@@ -328,6 +333,7 @@ function HostDetail({
   onEdit(): void;
   onDelete(): void;
   onConnect(): void;
+  onOpenSftp(): void;
 }) {
   // A tag change in flight is revision-fenced on this host; editing or deleting it meanwhile would conflict.
   const [tagsBusy, setTagsBusy] = useState(false);
@@ -353,6 +359,17 @@ function HostDetail({
           }}
         >
           <TerminalIcon data-icon="inline-start" /> Connect
+        </Button>
+        <Button
+          variant="outline"
+          aria-disabled={canConnect ? undefined : true}
+          aria-describedby={canConnect ? undefined : reason}
+          className="aria-disabled:opacity-50"
+          onClick={() => {
+            if (canConnect) onOpenSftp();
+          }}
+        >
+          <FolderOpenIcon data-icon="inline-start" /> Open SFTP
         </Button>
         <Button variant="outline" disabled={tagsBusy} onClick={onEdit}>
           <PencilIcon data-icon="inline-start" /> Edit

@@ -1,1 +1,1 @@
-{"name":"@ssterm/adapters","version":"0.1.0","private":true,"type":"module","exports":{".":"./src/index.ts","./keychain":"./src/keychain.ts","./ssh":"./src/ssh.ts"},"dependencies":{"@napi-rs/keyring":"2.1.1","@ssterm/domain":"0.1.0","ssh2":"1.17.0"}}
+{"name":"@ssterm/adapters","version":"0.1.0","private":true,"type":"module","exports":{".":"./src/index.ts","./keychain":"./src/keychain.ts","./ssh":"./src/ssh.ts","./local-files":"./src/local-files.ts"},"dependencies":{"@napi-rs/keyring":"2.1.1","@ssterm/domain":"0.1.0","ssh2":"1.17.0"}}

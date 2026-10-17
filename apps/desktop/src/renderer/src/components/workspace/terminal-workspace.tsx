@@ -15,6 +15,7 @@ import {
   ChevronRightIcon,
   Columns2Icon,
   EllipsisIcon,
+  FolderOpenIcon,
   Maximize2Icon,
   MergeIcon,
   Minimize2Icon,
@@ -265,6 +266,7 @@ export function TerminalWorkspace({
   hidden,
   onCommand,
   onShowTerminals,
+  onOpenSftp,
 }: {
   owner: Owner;
   controller: WorkspaceController;
@@ -274,6 +276,8 @@ export function TerminalWorkspace({
   onCommand?(command: WorkspaceCommand): void;
   /** A tab shortcut was used while another page was shown. */
   onShowTerminals?(): void;
+  /** "Open in SFTP": the pane's saved host, captured when the item is chosen. */
+  onOpenSftp?(hostId: string): void;
 }) {
   const { workspace, dispatch, sessions, activeTab: tab } = controller;
   const layer = useRef<HTMLDivElement>(null);
@@ -354,7 +358,8 @@ export function TerminalWorkspace({
     if (event.target instanceof Element && event.target.closest('[role="dialog"],[role="alertdialog"],[role="menu"]'))
       return;
     // A combobox keeps focus in its input while its list is open; a modal may not hold focus yet.
-    if (document.querySelector('[role="listbox"],[aria-modal="true"]')) return;
+    // The Files lists are always mounted listboxes, not popups.
+    if (document.querySelector('[role="listbox"]:not(.file-list),[aria-modal="true"]')) return;
     if (!run(shortcut, event.repeat)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -416,7 +421,9 @@ export function TerminalWorkspace({
               active={inActiveTab && session.sessionId === tab?.active}
               hidden={!visible}
               style={style}
-              actions={entry ? <PaneMenu controller={controller} session={session} home={entry.tab} /> : null}
+              actions={
+                entry ? <PaneMenu controller={controller} session={session} home={entry.tab} onOpenSftp={onOpenSftp} /> : null
+              }
             />
           );
         })}
@@ -499,10 +506,12 @@ function PaneMenu({
   controller,
   session,
   home,
+  onOpenSftp,
 }: {
   controller: WorkspaceController;
   session: TerminalSession;
   home: Tab;
+  onOpenSftp?(hostId: string): void;
 }) {
   const { workspace, dispatch, sessions } = controller;
   const { sessionId } = session;
@@ -559,6 +568,11 @@ function PaneMenu({
                 <AppWindowIcon /> Move to new tab
               </DropdownMenuItem>
             </>
+          ) : null}
+          {onOpenSftp ? (
+            <DropdownMenuItem onClick={() => onOpenSftp(session.hostId)}>
+              <FolderOpenIcon /> Open in SFTP
+            </DropdownMenuItem>
           ) : null}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />

@@ -11,19 +11,18 @@ import type { TerminalStream } from "@ssterm/domain";
 import type { WindowBoundary } from "./boundary";
 import { sessionOwnerId } from "./session-runtime";
 
-type Send = (channel: string, value: TerminalState | TerminalOutput) => void;
-interface Registration {
+interface Registration<M> {
   owner: Owner;
   sequence: number;
-  send: Send;
+  send(channel: string, value: M): void;
   unsubscribe(): void;
 }
-const phases = {
+export const phases = {
   Idle: "connecting", Connecting: "connecting", VerifyingHost: "connecting", Authenticating: "connecting",
   AwaitingInput: "connecting", Ready: "ready", Closing: "closed", Closed: "closed", Failed: "failed",
 } as const satisfies Record<SessionState, TerminalPhase>;
 // Exhaustive, so a new registry code fails compilation until it is allowlisted or folded.
-const errors = {
+export const errors = {
   "invalid-request": "subsystem-unavailable", "invalid-state": "subsystem-unavailable", "not-found": "subsystem-unavailable",
   disposed: "subsystem-unavailable", locked: "locked", "invalid-config": "invalid-config",
   "host-key-untrusted": "host-key-untrusted", "host-key-changed": "host-key-changed", "auth-denied": "auth-denied",
@@ -38,7 +37,7 @@ const relocked: SessionResult<never> = { ok: false, error: { code: "locked", mes
 const outcome = (result: SessionResult<unknown>): Result<TerminalActionResponse> =>
   result.ok ? accepted : failure(["not-found", "invalid-state"].includes(result.error.code) ? "conflict" : "unavailable");
 
-function project(snapshot: SessionSnapshot): TerminalSession {
+export function project(snapshot: SessionSnapshot): TerminalSession {
   const target = snapshot.target;
   return {
     sessionId: snapshot.id,
@@ -52,74 +51,154 @@ function project(snapshot: SessionSnapshot): TerminalSession {
   };
 }
 
-/** Fence and framing only: stream policy lives in the adapter, lifecycle in the registry. */
-export function createTerminalController(options: {
-  registry: Pick<SessionRegistry, "snapshot" | "subscribe" | "terminal" | "connect" | "close" | "reconnect" | "forget" | "unlock" | "settled" | "lockEpoch">;
+export type LifecycleRegistry = Pick<SessionRegistry, "snapshot" | "subscribe" | "connect" | "close" | "reconnect" | "forget" | "unlock" | "settled" | "lockEpoch">;
+export interface KindState<V> { owner: Owner; sequence: number; sessions: V[] }
+
+/**
+ * One session kind's owner registrations, state stream and lifecycle commands. Sessions of another kind are
+ * invisible: they publish nothing and every command on them is `conflict`, exactly like a missing session.
+ */
+export function createKindSessions<V, Extra = never>(options: {
+  kind: SessionSnapshot["kind"];
+  registry: LifecycleRegistry;
   /** Whether a locked registry may unlock (metadata storage ready; a missing secret store fails per saved ref). Absent: never. */
   checkAccess?: () => Promise<boolean>;
+  stateChannel: string;
+  view(snapshot: SessionSnapshot, ownerId: string): V;
+  isState(value: unknown): value is KindState<V>;
 }) {
-  const registrations = new Map<string, Registration>();
+  type Live = Registration<KindState<V> | Extra>;
+  const { registry, kind } = options;
+  const registrations = new Map<string, Live>();
   let disposed = false;
-  const matching = (owner: Owner) => registrations.get(sessionOwnerId(owner));
-  const state = (registration: Registration): Result<TerminalState> => {
+  /** The live registration of `owner`; undefined once revoked or disposed. */
+  const registration = (owner: Owner) => disposed ? undefined : registrations.get(sessionOwnerId(owner));
+  const state = (current: Live): Result<KindState<V>> => {
     try {
-      const value: TerminalState = { owner: { ...registration.owner }, sequence: registration.sequence,
-        sessions: options.registry.snapshot(sessionOwnerId(registration.owner)).filter((session) => session.kind === "terminal").map(project) };
-      return isTerminalState(value) ? { ok: true, value } : failure("unavailable");
+      const ownerId = sessionOwnerId(current.owner);
+      const value: KindState<V> = { owner: { ...current.owner }, sequence: current.sequence,
+        sessions: registry.snapshot(ownerId).filter((session) => session.kind === kind).map((session) => options.view(session, ownerId)) };
+      return options.isState(value) ? { ok: true, value } : failure("unavailable");
     } catch { return failure("unavailable"); }
   };
-  const publish = (registration: Registration) => {
-    if (disposed || matching(registration.owner) !== registration) return;
-    registration.sequence += 1;
-    const current = state(registration);
-    if (!current.ok) return;
-    try { registration.send(channels.terminalStateChanged, current.value); } catch { /* Closed windows cannot interrupt cleanup. */ }
+  const publish = (current: Live) => {
+    if (registration(current.owner) !== current) return;
+    current.sequence += 1;
+    const next = state(current);
+    if (!next.ok) return;
+    try { current.send(options.stateChannel, next.value); } catch { /* Closed windows cannot interrupt cleanup. */ }
   };
   const revokeOwner = (owner: Owner) => {
-    const registration = matching(owner);
+    const current = registrations.get(sessionOwnerId(owner));
     registrations.delete(sessionOwnerId(owner));
-    registration?.unsubscribe();
-  };
-  /** Runs `use` only on the exact owner/session/generation stream while it is live and Ready. */
-  const withStream = (request: TerminalTarget, use: (stream: TerminalStream, registration: Registration) => Result<TerminalActionResponse>): Result<TerminalActionResponse> => {
-    const registration = matching(request.owner);
-    if (disposed || !registration) return failure("stale-owner");
-    try {
-      const stream = options.registry.terminal(sessionOwnerId(request.owner), request.sessionId, request.generation);
-      return stream ? use(stream, registration) : failure("conflict");
-    } catch { return failure("unavailable"); }
+    current?.unsubscribe();
   };
   /** Exact owner/session/generation lifecycle command; foreign sessions are indistinguishable from missing ones. */
   const lifecycle = async (request: TerminalTarget, run: (ownerId: string) => SessionResult<unknown> | Promise<SessionResult<unknown>>, settle = false): Promise<Result<TerminalActionResponse>> => {
     if (!isTerminalTarget(request)) return failure("invalid-request");
-    if (disposed || !matching(request.owner)) return failure("stale-owner");
+    if (!registration(request.owner)) return failure("stale-owner");
     try {
       const ownerId = sessionOwnerId(request.owner);
-      // Another kind's session is not a terminal target, exactly like a missing one.
-      if (options.registry.snapshot(ownerId, request.sessionId).some((session) => session.kind !== "terminal")) return failure("conflict");
+      if (registry.snapshot(ownerId, request.sessionId).some((session) => session.kind !== kind)) return failure("conflict");
       if (settle) {
         // A pane offers Reconnect/Close as soon as a generation fails; wait out its bounded teardown instead of refusing.
-        await options.registry.settled(ownerId, request.sessionId, request.generation);
-        if (disposed || !matching(request.owner)) return failure("stale-owner");
+        await registry.settled(ownerId, request.sessionId, request.generation);
+        if (!registration(request.owner)) return failure("stale-owner");
       }
       return outcome(await run(ownerId));
     } catch { return failure("unavailable"); }
   };
   return {
-    register(owner: Owner, send: Send) {
+    registration,
+    register(owner: Owner, send: Live["send"]) {
       if (disposed) return;
-      const existing = matching(owner);
+      const existing = registration(owner);
       if (existing) { existing.send = send; return; }
-      const registration: Registration = { owner: { ...owner }, sequence: 0, send, unsubscribe: () => {} };
-      registrations.set(sessionOwnerId(owner), registration);
-      registration.unsubscribe = options.registry.subscribe(sessionOwnerId(owner), (snapshot) => {
-        if (snapshot.kind === "terminal") publish(registration);
+      const current: Live = { owner: { ...owner }, sequence: 0, send, unsubscribe: () => {} };
+      registrations.set(sessionOwnerId(owner), current);
+      current.unsubscribe = registry.subscribe(sessionOwnerId(owner), (snapshot) => {
+        if (snapshot.kind === kind) publish(current);
       });
     },
-    terminalState(owner: Owner): Result<TerminalState> {
-      const registration = matching(owner);
-      return !disposed && registration ? state(registration) : failure("stale-owner");
+    state(owner: Owner): Result<KindState<V>> {
+      const current = registration(owner);
+      return current ? state(current) : failure("stale-owner");
     },
+    /** Resolves once teardown settles (bounded by the registry drain limit). Idempotent on Closed. */
+    close(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
+      return lifecycle(request, (ownerId) => registry.close(ownerId, request.sessionId, request.generation));
+    },
+    reconnect(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
+      // Captured on arrival, before the teardown wait: a click that predates a lock never unlocks or reconnects after it.
+      const since = registry.lockEpoch;
+      return lifecycle(request, async (ownerId) => {
+        const reconnect = () => registry.lockEpoch === since
+          ? registry.reconnect(ownerId, request.sessionId, request.generation) : relocked;
+        const first = reconnect();
+        if (first.ok || first.error.code !== "locked" || !options.checkAccess) return first;
+        // The user's Reconnect is the explicit unlock action. A refused unlock may only have been superseded by
+        // a concurrent one, so reconnect is retried once either way; it re-checks the lock and the epoch.
+        await registry.unlock(options.checkAccess, since);
+        // An owner revoked while access was checked must not start a new generation.
+        return registration(request.owner) ? reconnect() : first;
+      }, true);
+    },
+    /** Opens a new session of this kind for a saved host. Like Reconnect, a Connect after a lock is the explicit unlock. */
+    async connect(request: ConnectHostRequest): Promise<Result<ConnectHostResponse>> {
+      if (!isConnectHostRequest(request)) return failure("invalid-request");
+      if (!registration(request.owner)) return failure("stale-owner");
+      const since = registry.lockEpoch;
+      try {
+        const ownerId = sessionOwnerId(request.owner);
+        const connect = () => registry.lockEpoch === since ? registry.connect(ownerId, request.hostId, kind) : relocked;
+        let result = connect();
+        if (!result.ok && result.error.code === "locked" && options.checkAccess) {
+          await registry.unlock(options.checkAccess, since);
+          if (!registration(request.owner)) return failure("stale-owner");
+          result = connect();
+        }
+        if (result.ok) return { ok: true, value: { sessionId: result.value.id, generation: result.value.generation } };
+        return failure(result.error.code === "resource-limit" ? "busy" : "unavailable");
+      } catch { return failure("unavailable"); }
+    },
+    dismiss(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
+      return lifecycle(request, (ownerId) => {
+        const result = registry.forget(ownerId, request.sessionId, request.generation);
+        // Forgetting a record emits nothing from the registry, so the owner's view learns it here.
+        const current = registration(request.owner);
+        if (result.ok && current) publish(current);
+        return result;
+      }, true);
+    },
+    revokeOwner,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const current of [...registrations.values()]) revokeOwner(current.owner);
+    },
+  };
+}
+
+/** Fence and framing only: stream policy lives in the adapter, lifecycle in the registry. */
+export function createTerminalController(options: {
+  registry: LifecycleRegistry & Pick<SessionRegistry, "terminal">;
+  checkAccess?: () => Promise<boolean>;
+}) {
+  const sessions = createKindSessions<TerminalSession, TerminalOutput>({ kind: "terminal", registry: options.registry, checkAccess: options.checkAccess,
+    stateChannel: channels.terminalStateChanged, view: project, isState: isTerminalState });
+  type Live = NonNullable<ReturnType<typeof sessions.registration>>;
+  /** Runs `use` only on the exact owner/session/generation stream while it is live and Ready. */
+  const withStream = (request: TerminalTarget, use: (stream: TerminalStream, registration: Live) => Result<TerminalActionResponse>): Result<TerminalActionResponse> => {
+    const registration = sessions.registration(request.owner);
+    if (!registration) return failure("stale-owner");
+    try {
+      const stream = options.registry.terminal(sessionOwnerId(request.owner), request.sessionId, request.generation);
+      return stream ? use(stream, registration) : failure("conflict");
+    } catch { return failure("unavailable"); }
+  };
+  return {
+    register: sessions.register,
+    terminalState: (owner: Owner): Result<TerminalState> => sessions.state(owner),
     openTerminal(request: TerminalTarget): Result<TerminalActionResponse> {
       if (!isTerminalTarget(request)) return failure("invalid-request");
       const { sessionId, generation } = request;
@@ -128,7 +207,7 @@ export function createTerminalController(options: {
         // A second open would bind nothing; the view must not wait for frames from sequence 0.
         const bound = stream.open((bytes, sequence) => {
           // Frames for a revoked or replaced owner are discarded; its sessions are already closing.
-          if (disposed || matching(owner) !== registration) return;
+          if (sessions.registration(owner) !== registration) return;
           const frame: TerminalOutput = { owner: { ...owner }, sessionId, generation, sequence, bytes };
           if (!isTerminalOutput(frame)) return;
           try { registration.send(channels.terminalOutput, frame); } catch { /* Closed windows cannot interrupt output. */ }
@@ -151,58 +230,12 @@ export function createTerminalController(options: {
       if (!isAckTerminalRequest(request)) return failure("invalid-request");
       return withStream(request, (stream) => { stream.ack(request.bytes); return accepted; });
     },
-    /** Resolves once teardown settles (bounded by the registry drain limit). Idempotent on Closed. */
-    closeTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
-      return lifecycle(request, (ownerId) => options.registry.close(ownerId, request.sessionId, request.generation));
-    },
-    reconnectTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
-      // Captured on arrival, before the teardown wait: a click that predates a lock never unlocks or reconnects after it.
-      const since = options.registry.lockEpoch;
-      return lifecycle(request, async (ownerId) => {
-        const reconnect = () => options.registry.lockEpoch === since
-          ? options.registry.reconnect(ownerId, request.sessionId, request.generation) : relocked;
-        const first = reconnect();
-        if (first.ok || first.error.code !== "locked" || !options.checkAccess) return first;
-        // The user's Reconnect is the explicit unlock action. A refused unlock may only have been superseded by
-        // a concurrent one, so reconnect is retried once either way; it re-checks the lock and the epoch.
-        await options.registry.unlock(options.checkAccess, since);
-        // An owner revoked while access was checked must not start a new generation.
-        return disposed || !matching(request.owner) ? first : reconnect();
-      }, true);
-    },
-    /** Opens a new session for a saved host. Like Reconnect, a Connect after a lock is the explicit unlock. */
-    async connectHost(request: ConnectHostRequest): Promise<Result<ConnectHostResponse>> {
-      if (!isConnectHostRequest(request)) return failure("invalid-request");
-      if (disposed || !matching(request.owner)) return failure("stale-owner");
-      const since = options.registry.lockEpoch;
-      try {
-        const ownerId = sessionOwnerId(request.owner);
-        const connect = () => options.registry.lockEpoch === since ? options.registry.connect(ownerId, request.hostId) : relocked;
-        let result = connect();
-        if (!result.ok && result.error.code === "locked" && options.checkAccess) {
-          await options.registry.unlock(options.checkAccess, since);
-          if (disposed || !matching(request.owner)) return failure("stale-owner");
-          result = connect();
-        }
-        if (result.ok) return { ok: true, value: { sessionId: result.value.id, generation: result.value.generation } };
-        return failure(result.error.code === "resource-limit" ? "busy" : "unavailable");
-      } catch { return failure("unavailable"); }
-    },
-    dismissTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>> {
-      return lifecycle(request, (ownerId) => {
-        const result = options.registry.forget(ownerId, request.sessionId, request.generation);
-        // Forgetting a record emits nothing from the registry, so the owner's view learns it here.
-        const registration = matching(request.owner);
-        if (result.ok && registration) publish(registration);
-        return result;
-      }, true);
-    },
-    revokeOwner,
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      for (const registration of [...registrations.values()]) revokeOwner(registration.owner);
-    },
+    closeTerminal: sessions.close,
+    reconnectTerminal: sessions.reconnect,
+    connectHost: sessions.connect,
+    dismissTerminal: sessions.dismiss,
+    revokeOwner: sessions.revokeOwner,
+    dispose: sessions.dispose,
   };
 }
 export type TerminalController = ReturnType<typeof createTerminalController>;

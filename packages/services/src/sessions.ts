@@ -419,7 +419,8 @@ export class SessionRegistry {
       return () => {};
     let count = 0;
     for (const observers of this.#observers.values()) count += observers.size;
-    if (count >= 128) return () => {};
+    // Each window subscribes up to four times (terminals, SFTP, credentials, known hosts): 64 windows.
+    if (count >= 256) return () => {};
     const observers = this.#observers.get(ownerId) ?? new Set();
     observers.add(callback);
     this.#observers.set(ownerId, observers);

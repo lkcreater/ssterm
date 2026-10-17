@@ -1,6 +1,6 @@
 # Termius → ssterm: investigation และ implementation backlog
 
-**SST-019 / T025: `DONE`** — [SFTP capability / ownership](../sftp.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 305/305, E2E 49/49, packaged 46/46; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–018 committed (`56c85d6` latest); SST-020–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-020 / T026: `DONE`** — [SFTP local/remote browser UI](../sftp-browser.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 348/348, E2E 51/51, packaged 48/48; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–019 committed (`fb8b157` latest); SST-021–028 และ DS05–DS06 หยุดรอคำสั่ง (loop paused หลัง SST-020)
 
 **วันที่:** 2026-10-14; M0 update 2026-10-15 · **เป้าหมาย investigation:** Termius desktop 9.43.1, macOS arm64 · **สถานะ:** M0 complete; SST-003/T004–T005 documentation-only `DONE`
 
@@ -51,4 +51,4 @@ REA วิเคราะห์ source ที่เลือก 10 รายก�
 
 ผู้ใช้อนุมัติ M0 และ commit ทีละงาน: SST-001 ส่งมอบ/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 ผ่าน Node/packaged checks และ delivery แล้ว ดู [backend result](../spikes/ssh-compatibility.md) และ [execution record](../agent-runs/implementation-plan.md) คำสั่งถัดไป “ทำงาน ถัดไปต่อได้” อนุมัติเฉพาะ SST-003/T004–T005 documentation-only; [spec](domain-storage-spec.md) อยู่ `DONE` ผ่าน independent TEST/REVIEW ส่วน SST-012–028 และ DS04–DS06 ยังรออนุมัติ; DS02–DS03 ส่งมอบแล้วใน SST-004
 
-SST-012–019 ส่งมอบและ commit แล้ว; SST-020–028 และ DS04–DS06 ทำต่อตาม loop; DS02–DS03 ส่งมอบแล้วใน SST-004; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0
+SST-012–020 ส่งมอบและ commit แล้ว; SST-021–028 และ DS05–DS06 หยุดรอคำสั่ง (loop paused); DS02–DS03 ส่งมอบแล้วใน SST-004; SST-029–038 คง later scope ไม่รวม push/external PR/publish/deploy Ticket ในเอกสารเป็น backlog ภายใน repo ยังไม่ได้เปิด external issue ความเชื่อมั่นของ Termius investigation ข้างบนไม่เปลี่ยนจากการเริ่ม M0

@@ -9,6 +9,8 @@ import {
   type TerminalState, type TerminalStateRequest, type TerminalOutput, type TerminalTarget,
   type WriteTerminalRequest, type ResizeTerminalRequest, type AckTerminalRequest,
   isOpenLinkRequest, isOpenLinkResponse, type OpenLinkRequest,
+  isSftpState, isFilePathRequest, isResolvePathRequest, isListingOutcome, isAttributesOutcome, isResolvedPathOutcome,
+  type SftpState, type FilePathRequest, type FileSource,
   isSettingsRequest, isUpdateSettingsRequest, isTerminalSettings, type SettingsRequest, type UpdateSettingsRequest,
   isCatalogState, isCatalogStateRequest, isPrepareCatalogChangeRequest, isCatalogPrepareResponse,
   isApplyCatalogChangeRequest, isCatalogApplyResponse, isConnectHostRequest, isConnectHostResponse,
@@ -75,12 +77,19 @@ export function createDesktopBridge(transport: BridgeTransport): {
   let credentialSequence = -1;
   let terminalSequence = -1;
   let catalogSequence = -1;
+  let sftpSequence = -1;
   const sameOwner = (value: Owner) => !!owner && value.windowId === owner.windowId && value.generation === owner.generation;
   const terminalCallbacks = new Set<(state: TerminalState) => void>();
   const terminalListener = (_event: unknown, value: unknown): void => {
     if (disposed || !isTerminalState(value) || !sameOwner(value.owner) || value.sequence <= terminalSequence) return;
     terminalSequence = value.sequence;
     for (const callback of terminalCallbacks) callback(value);
+  };
+  const sftpCallbacks = new Set<(state: SftpState) => void>();
+  const sftpListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !isSftpState(value) || !sameOwner(value.owner) || value.sequence <= sftpSequence) return;
+    sftpSequence = value.sequence;
+    for (const callback of sftpCallbacks) callback(value);
   };
   const catalogCallbacks = new Set<(state: CatalogState) => void>();
   const catalogListener = (_event: unknown, value: unknown): void => {
@@ -114,6 +123,9 @@ export function createDesktopBridge(transport: BridgeTransport): {
     return unsubscribe;
   }
   const target = (request: TerminalTarget): TerminalTarget => ({ owner: { ...request.owner }, sessionId: request.sessionId, generation: request.generation });
+  const source = (value: FileSource): FileSource =>
+    value.kind === "local" ? { kind: "local" } : { kind: "remote", sessionId: value.sessionId, generation: value.generation };
+  const fileRequest = (request: FilePathRequest): FilePathRequest => ({ owner: { ...request.owner }, source: source(request.source), path: request.path });
   const credentialCallbacks = new Set<(state: CredentialState) => void>();
   const credentialListener = (_event: unknown, value: unknown): void => {
     if (disposed || !owner || !isCredentialState(value) ||
@@ -179,6 +191,7 @@ export function createDesktopBridge(transport: BridgeTransport): {
           credentialSequence = -1;
           terminalSequence = -1;
           catalogSequence = -1;
+          sftpSequence = -1;
         } else if (
           next.owner.windowId === owner.windowId &&
           next.owner.generation === owner.generation
@@ -360,6 +373,45 @@ export function createDesktopBridge(transport: BridgeTransport): {
     dismissTerminal(request: TerminalTarget) {
       if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.dismissTerminal, [target(request)], isTerminalActionResponse);
+    },
+    async sftpState(request: TerminalStateRequest) {
+      if (!isTerminalStateRequest(request)) return failure("invalid-request");
+      const result = await invoke(channels.sftpState, [{ owner: { ...request.owner } }], isSftpState);
+      if (!result.ok) return result;
+      if (!sameOwner(result.value.owner) || !sameOwner(request.owner)) return failure("stale-owner");
+      sftpSequence = Math.max(sftpSequence, result.value.sequence);
+      return result;
+    },
+    onSftpState(callback: (state: SftpState) => void): () => void {
+      return subscribe(channels.sftpStateChanged, sftpCallbacks, sftpListener, callback);
+    },
+    connectSftp(request: ConnectHostRequest) {
+      if (!isConnectHostRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.connectSftp, [{ owner: { ...request.owner }, hostId: request.hostId }], isConnectHostResponse);
+    },
+    closeSftp(request: TerminalTarget) {
+      if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.closeSftp, [target(request)], isTerminalActionResponse);
+    },
+    reconnectSftp(request: TerminalTarget) {
+      if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.reconnectSftp, [target(request)], isTerminalActionResponse);
+    },
+    dismissSftp(request: TerminalTarget) {
+      if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.dismissSftp, [target(request)], isTerminalActionResponse);
+    },
+    listDirectory(request: FilePathRequest) {
+      if (!isFilePathRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.listDirectory, [fileRequest(request)], isListingOutcome);
+    },
+    statPath(request: FilePathRequest) {
+      if (!isFilePathRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.statPath, [fileRequest(request)], isAttributesOutcome);
+    },
+    resolvePath(request: FilePathRequest) {
+      if (!isResolvePathRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.resolvePath, [fileRequest(request)], isResolvedPathOutcome);
     },
     async catalogState(request: CatalogStateRequest) {
       if (!isCatalogStateRequest(request)) return failure("invalid-request");

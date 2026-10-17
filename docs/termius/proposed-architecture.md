@@ -1,6 +1,6 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
-**SST-019 / T025: `DONE`** — [SFTP capability / ownership](../sftp.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 305/305, E2E 49/49, packaged 46/46; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–018 committed (`56c85d6` latest); SST-020–028 และ DS04–DS06 ทำต่อตาม loop
+**SST-020 / T026: `DONE`** — [SFTP local/remote browser UI](../sftp-browser.md) ผ่าน independent TEST/REVIEW/DELIVER: unit 348/348, E2E 51/51, packaged 48/48; commit ตามคำสั่ง loop “ทำงานนี้เสร็จ commit -> ทำงานถัดไปต่อได้เลย -> loop จนจบ”. SST-001–019 committed (`fb8b157` latest); SST-021–028 และ DS05–DS06 หยุดรอคำสั่ง (loop paused หลัง SST-020)
 
 **ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-012–028 ยังรออนุมัติ รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation
 
@@ -173,3 +173,5 @@ SST-017 adds [identities and SSH keys](../identities.md): main-only key import w
 SST-018 adds the [workspace](../workspace.md): flat stable pane mounting with tab split trees, key-code shortcuts, in-app and native close prompts, a validated terminal settings IPC that no longer advances the catalog revision, and the DS04 terminal-first shell.
 
 SST-019 adds the [SFTP capability](../sftp.md) as a registry session kind with its own connection and a main-only `SftpSession` with bounded handles and requests, typed failures and hang-free disposal.
+
+SST-020 adds the [Files browser](../sftp-browser.md): a main-only local metadata provider, fenced file IPC over local and remote sources, a kind-checked lifecycle helper shared with terminals, and a keyboard-first dual-pane UI with safe name display.
