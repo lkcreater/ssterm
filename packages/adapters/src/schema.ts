@@ -1,8 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 export const APPLICATION_ID = 0x5353544d;
-/** v3 (SST-030): hosts gain jump-host and proxy routes. */
-export const SCHEMA_VERSION = 3;
+/** v4 (SST-033): metadata-only workspace templates. */
+export const SCHEMA_VERSION = 4;
 export const IDENTITY = 'ssterm-metadata-v1';
 const uuidCheck = (name: string) => `CHECK(length(${name})=36 AND ${name} NOT GLOB '*[^0-9a-f-]*')`;
 const common = `id TEXT PRIMARY KEY ${uuidCheck('id')}, vaultId TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>=1), createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL`;
@@ -29,7 +29,9 @@ export const tunnelColumns = `${common}, ${label}, hostId TEXT NOT NULL, type TE
  CHECK(type='remote' OR bindAddress IN ('127.0.0.1','::1')), CHECK(type='remote' OR bindPort>=1),
  CHECK((type='dynamic' AND destinationHost IS NULL AND destinationPort IS NULL) OR (type<>'dynamic' AND destinationHost IS NOT NULL AND destinationPort IS NOT NULL)),
  FOREIGN KEY(vaultId,hostId) REFERENCES host(vaultId,id) DEFERRABLE INITIALLY DEFERRED`;
+export const workspaceTemplateSql = `CREATE TABLE workspace_template (${common}, ${label}, configuration TEXT NOT NULL CHECK(json_valid(configuration)), UNIQUE(vaultId,id), FOREIGN KEY(vaultId) REFERENCES local_vault(id) DEFERRABLE INITIALLY DEFERRED) STRICT;`;
 const rawSchemaSql = `
+${workspaceTemplateSql}
 CREATE TABLE identity_manifest (singleton INTEGER PRIMARY KEY CHECK(singleton=1), identity TEXT NOT NULL CHECK(identity='${IDENTITY}')) STRICT;
 CREATE TABLE entity_registry (id TEXT PRIMARY KEY) STRICT;
 CREATE TABLE catalog_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), revision INTEGER NOT NULL CHECK(revision>=0)) STRICT;

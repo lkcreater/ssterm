@@ -76,7 +76,7 @@ test('metadata CRUD, Thai, independent settings and restart durability cross the
   const f = await fixture(t);
   const id = randomUUID();
   const before = f.snapshot();
-  assert.equal(before.schemaVersion, 3);
+  assert.equal(before.schemaVersion, 4);
   assert.equal(before.catalogRevision, 0);
   assert.equal(before.settings.terminalScrollback, 10000);
   let next = f.commit([host(id)]);
@@ -606,7 +606,7 @@ test('safe open blocks zero/foreign/newer/corrupt/FK-invalid/unwritable storage 
       }));
       const s = value(repo.snapshot());
       repo.close();
-      if (kind === 'newer') raw(path, 'PRAGMA user_version=4');
+      if (kind === 'newer') raw(path, 'PRAGMA user_version=5');
       if (kind === 'version-zero') raw(path, 'PRAGMA user_version=0');
       if (kind === 'manifest') raw(path, "PRAGMA ignore_check_constraints=ON; UPDATE identity_manifest SET identity='foreign'");
       if (kind === 'fk') raw(path, `PRAGMA foreign_keys=OFF; INSERT INTO host (id,vaultId,revision,createdAt,updatedAt,label,address,groupId,environment,portMode,portValue,authMode,identityId) VALUES('${randomUUID()}','${s.vault.id}',1,'${s.vault.createdAt}','${s.vault.createdAt}','x','example.com','${randomUUID()}',NULL,'inherit',NULL,'inherit',NULL)`);
@@ -680,25 +680,25 @@ test('future internal migration chain preflights all steps, backs up v1, preserv
   const missing = await runMigrations({
     db,
     path: f.path,
-    targetVersion: 5,
+    targetVersion: 6,
     backupDestination: destination,
     steps: [{
-      from: 3,
-      to: 4,
+      from: 4,
+      to: 5,
       apply: () => assert.fail('must not run')
     }]
   });
   code(missing, 'unsupported-schema');
   assert.equal(existsSync(destination), false);
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 3);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 4);
   code(await runMigrations({
     db,
     path: f.path,
-    targetVersion: 4,
+    targetVersion: 5,
     backupDestination: destination,
     steps: [{
-      from: 3,
-      to: 4,
+      from: 4,
+      to: 5,
       requiresProtection: true,
       apply: () => assert.fail('must not run')
     }]
@@ -707,15 +707,15 @@ test('future internal migration chain preflights all steps, backs up v1, preserv
   const result = await runMigrations({
     db,
     path: f.path,
-    targetVersion: 5,
+    targetVersion: 6,
     backupDestination: destination,
     steps: [{
-      from: 3,
-      to: 4,
-      apply: handle => handle.exec('CREATE TABLE migration_3_fixture(id INTEGER) STRICT')
-    }, {
       from: 4,
       to: 5,
+      apply: handle => handle.exec('CREATE TABLE migration_3_fixture(id INTEGER) STRICT')
+    }, {
+      from: 5,
+      to: 6,
       apply: handle => {
         handle.exec('CREATE TABLE migration_4_fixture(id INTEGER) STRICT');
         throw Error('fixture-sensitive');
@@ -723,30 +723,30 @@ test('future internal migration chain preflights all steps, backs up v1, preserv
     }]
   });
   code(result, 'migration-failed');
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 4);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 5);
   assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='migration_3_fixture'").get()?.n, 1);
   assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='migration_4_fixture'").get()?.n, 0);
   const backup = new DatabaseSync(destination, {
     readOnly: true
   });
   t.after(() => backup.close());
-  assert.equal(backup.prepare('PRAGMA user_version').get()?.user_version, 3);
+  assert.equal(backup.prepare('PRAGMA user_version').get()?.user_version, 4);
   assert.equal(backup.prepare('SELECT count(*) AS n FROM host').get()?.n, 1);
-  assert.equal(JSON.parse(readFileSync(destination + '.manifest.json', 'utf8')).schemaVersion, 3);
+  assert.equal(JSON.parse(readFileSync(destination + '.manifest.json', 'utf8')).schemaVersion, 4);
   const original = readFileSync(destination);
   code(await runMigrations({
     db,
     path: f.path,
-    targetVersion: 5,
+    targetVersion: 6,
     backupDestination: destination,
     steps: [{
-      from: 4,
-      to: 5,
+      from: 5,
+      to: 6,
       apply: handle => handle.exec('CREATE TABLE migration_4_fixture(id INTEGER) STRICT')
     }]
   }), 'constraint');
   assert.deepEqual(readFileSync(destination), original);
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 4);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 5);
 });
 test('migration failed first step remains v1 and successful chain activates each version atomically', async t => {
   const f = await fixture(t);
@@ -757,15 +757,15 @@ test('migration failed first step remains v1 and successful chain activates each
   code(await runMigrations({
     db,
     path: f.path,
-    targetVersion: 4,
+    targetVersion: 5,
     backupDestination: join(f.dir, 'first-backup.db'),
     steps: [{
-      from: 3,
-      to: 4,
+      from: 4,
+      to: 5,
       apply: handle => handle.exec('CREATE TABLE transient_fixture(id INTEGER); INSERT INTO nonexistent VALUES(1)')
     }]
   }), 'migration-failed');
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 3);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 4);
   assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='transient_fixture'").get()?.n, 0);
   // Nothing committed, so the store is unchanged and this attempt's backup is removed (no pile-up per launch).
   assert.equal(existsSync(join(f.dir, 'first-backup.db')), false);
@@ -773,20 +773,20 @@ test('migration failed first step remains v1 and successful chain activates each
   const result = value(await runMigrations({
     db,
     path: f.path,
-    targetVersion: 5,
+    targetVersion: 6,
     backupDestination: join(f.dir, 'success-backup.db'),
     steps: [{
-      from: 3,
-      to: 4,
-      apply: handle => handle.exec('CREATE TABLE v2_fixture(id INTEGER) STRICT')
-    }, {
       from: 4,
       to: 5,
+      apply: handle => handle.exec('CREATE TABLE v2_fixture(id INTEGER) STRICT')
+    }, {
+      from: 5,
+      to: 6,
       apply: handle => handle.exec('CREATE TABLE v3_fixture(id INTEGER) STRICT')
     }]
   }));
-  assert.equal(result.schemaVersion, 5);
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 5);
+  assert.equal(result.schemaVersion, 6);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 6);
 });
 
 test('deleting a host preserves normalized shared trust, identity and tags; SQL rejects duplicate endpoint trust', async t => {
@@ -941,7 +941,7 @@ test('a v1 store whose credential journal awaits runtime reconciliation still up
   const repo = value(await openMetadata({ path: f.path }));
   t.after(() => repo.close());
   const after = value(repo.snapshot());
-  assert.equal(after.schemaVersion, 3);
+  assert.equal(after.schemaVersion, 4);
   assert.deepEqual(after.secretOperations.map((op) => op.state), ['needs-input'], 'the journal is carried over for reconciliation');
   assert.equal(readdirSync(f.dir).filter((name) => /\.v1-.*\.backup$/u.test(name)).length, 1);
 });

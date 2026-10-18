@@ -1,5 +1,5 @@
 import type { MigrationStep } from './migrations.ts';
-import { hostChainColumns, tunnelColumns } from './schema.ts';
+import { hostChainColumns, tunnelColumns, workspaceTemplateSql } from './schema.ts';
 
 /**
  * Production migration chain. Each step runs in its own transaction after a verified backup. Steps that do not touch
@@ -31,4 +31,7 @@ export const MIGRATIONS: readonly MigrationStep[] = [{
     for (const column of hostChainColumns) db.exec(`ALTER TABLE host ADD COLUMN ${column}`);
     db.exec('CREATE INDEX host_jump_idx ON host(jumpHostId)');
   },
+}, {
+  from: 3, to: 4, preservesProtection: true, preservesJournal: true,
+  apply(db) { db.exec(workspaceTemplateSql); },
 }];

@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 /**
  * Rewrites a fresh store into the layouts earlier builds shipped, starting from the DDL stored in the database:
+ * - schema 3 (SST-030): no workspace templates;
  * - schema 2 (SST-031): `host` without the SST-030 jump/proxy columns;
  * - schema 1 (SST-025–028): additionally the local-only, loopback-only `tunnel_rule`.
  * Only the changed parts are replaced; id/label/uuid checks, keys and foreign keys stay as stored.
@@ -20,7 +21,14 @@ function renamed(sql: string, table: string, temporary: string): string {
   return next;
 }
 
+export function downgradeToSchemaV3(db: DatabaseSync): void {
+  if (db.prepare("PRAGMA user_version").get()?.user_version !== 4) throw new Error("SCHEMA_FIXTURE_NOT_V4");
+  if (db.prepare("SELECT count(*) AS n FROM workspace_template").get()?.n !== 0) throw new Error("SCHEMA_FIXTURE_TEMPLATES_PRESENT");
+  db.exec("BEGIN; DROP TABLE workspace_template; PRAGMA user_version=3; COMMIT;");
+}
+
 export function downgradeToSchemaV2(db: DatabaseSync): void {
+  if (db.prepare("PRAGMA user_version").get()?.user_version === 4) downgradeToSchemaV3(db);
   if (db.prepare("PRAGMA user_version").get()?.user_version !== 3) throw new Error("SCHEMA_FIXTURE_NOT_V3");
   const host = stored(db, "host");
   if (!CHAIN_COLUMNS.test(host)) throw new Error("SCHEMA_FIXTURE_UNEXPECTED_HOST_DDL");
@@ -36,6 +44,7 @@ export function downgradeToSchemaV2(db: DatabaseSync): void {
 }
 
 export function downgradeToSchemaV1(db: DatabaseSync): void {
+  if (db.prepare("PRAGMA user_version").get()?.user_version === 4) downgradeToSchemaV3(db);
   if (db.prepare("PRAGMA user_version").get()?.user_version === 3) downgradeToSchemaV2(db);
   const tunnel = stored(db, "tunnel_rule");
   const start = tunnel.indexOf("type TEXT NOT NULL CHECK(type IN ('local','remote','dynamic'))");

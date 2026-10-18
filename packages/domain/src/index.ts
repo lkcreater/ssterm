@@ -1,4 +1,6 @@
 /** Metadata and opaque descriptors only. Secret values cross only the main-side SecretProvider seam. */
+import type { WorkspaceTemplateConfiguration } from './workspace-templates.ts';
+export * from './workspace-templates.ts';
 export type Id = string;
 export type StorageErrorCode = 'invalid-request' | 'conflict' | 'constraint' | 'busy' | 'closed' | 'io' | 'corrupt' | 'foreign-database' | 'unsupported-schema' | 'unsupported-protection' | 'recovery-required' | 'unwritable' | 'migration-failed' | 'unavailable';
 export type StoreResult<T> = {
@@ -131,6 +133,10 @@ export interface Snippet extends Entity {
   keyRef: Id;
   protectionFormat: string;
 }
+export interface WorkspaceTemplate extends Entity {
+  label: string;
+  configuration: WorkspaceTemplateConfiguration;
+}
 export interface KnownHost extends Entity {
   endpointHost: string;
   endpointPort: number;
@@ -207,6 +213,7 @@ export interface MetadataSnapshot {
   keys: KeyMetadata[];
   secretRefs: SecretRef[];
   snippets: Snippet[];
+  workspaceTemplates: WorkspaceTemplate[];
   knownHosts: KnownHost[];
   tunnelRules: TunnelRule[];
   secretOperations: SecretOperation[];
@@ -239,7 +246,7 @@ type Crud<K extends string, T> = {
   id: Id;
   expectedRevision: number;
 };
-export type MetadataChange = KnownHostChange | Crud<'host', HostInput> | Crud<'group', GroupInput> | Crud<'identity', IdentityInput> | Crud<'tag', TagInput> | Crud<'tunnel-rule', TunnelRuleInput> | {
+export type MetadataChange = Crud<'workspace-template', Fields<WorkspaceTemplate>> | KnownHostChange | Crud<'host', HostInput> | Crud<'group', GroupInput> | Crud<'identity', IdentityInput> | Crud<'tag', TagInput> | Crud<'tunnel-rule', TunnelRuleInput> | {
   type: 'set-host-tag';
   hostId: Id;
   tagId: Id;

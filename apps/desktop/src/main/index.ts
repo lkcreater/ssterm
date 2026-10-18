@@ -37,6 +37,7 @@ import { createLocalTransferFiles } from "@ssterm/adapters/local-transfers";
 import { createTransferController, registerTransferHandlers, withTransferPrompt, type TransferController } from "./transfers";
 import { applicationMenuTemplate } from "./menu";
 import { registerLinkHandlers } from "./links";
+import { registerWorkspaceTemplateHandlers } from "./workspace-templates";
 import { registerSettingsHandlers } from "./settings";
 import { createCatalogController, observeCommits, registerCatalogHandlers, type CatalogController } from "./catalog-controller";
 import { createIdentitiesController, registerIdentityHandlers, secretNamespace, type IdentitiesController } from "./identities";
@@ -97,6 +98,7 @@ let transfers: TransferController | undefined;
 let removeTransferHandlers: (() => void) | undefined;
 let removeSftpHandlers: (() => void) | undefined;
 let removeLinkHandlers: (() => void) | undefined;
+let removeWorkspaceTemplateHandlers: (() => void) | undefined;
 let removeSettingsHandlers: (() => void) | undefined;
 let catalog: CatalogController | undefined;
 let removeCatalogHandlers: (() => void) | undefined;
@@ -527,6 +529,7 @@ if (ownsInstance) {
       boundary,
       controller: () => snippets,
     });
+    removeWorkspaceTemplateHandlers = registerWorkspaceTemplateHandlers({ ipc: ipcMain, boundary, repository: () => repository });
     removeSettingsHandlers = registerSettingsHandlers({
       ipc: ipcMain,
       boundary,
@@ -648,6 +651,7 @@ app.on("before-quit", (event) => {
   removeTransferHandlers?.();
   removeSftpHandlers?.();
   removeLinkHandlers?.();
+  removeWorkspaceTemplateHandlers?.();
   removeSettingsHandlers?.();
   removeCatalogHandlers?.();
   removeIdentityHandlers?.();

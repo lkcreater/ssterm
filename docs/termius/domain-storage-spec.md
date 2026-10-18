@@ -189,3 +189,7 @@ Use symbolic IDs below as fixed UUID aliases and lab-only secret values. These a
 ## Remaining implementation gates
 
 SST-005 proves SQLite constraints, revision/graph transactions, backup/integrity/migration recovery and deterministic normalization. SST-006 proves OS Adapter namespace/operation lookup, denied/missing/ambiguous outcomes, mature authenticated protection, tamper/record-binding rejection, key/cache/lock lifecycle and packaged dependencies. SST-007/009/017/023 verify domain/trust/edit/protected-body flows through these Interfaces; SST-008/015 verify resource closure and generation invalidation. Tests need project-owned database/Keychain fixtures; no user/Termius/production access. None of these later tickets is authorized or completed by SST-003.
+
+## Implemented workspace-template extension — SST-033
+
+Schema 4 adds `workspace_template` as a versioned metadata entity. It stores a label and exact bounded configuration JSON: saved-host references, globally unique pane slots, tab/split geometry and active/Focus state, plus an optional encrypted-snippet reference. It stores no command body, credentials, terminal history or live session ID. Saves validate referenced catalog items; later deletions leave visible stale references instead of silently substituting another host/snippet. The existing migration backup/transaction path preserves protected content and pending journals. [Behavior and rollback](../workspace-tools.md), [verification](../agent-runs/sst-033-delivery.md).

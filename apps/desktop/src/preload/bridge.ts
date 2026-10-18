@@ -6,9 +6,9 @@ import {
   isCancelCredentialPromptRequest, isCredentialActionResponse,
   type CredentialState, type CredentialStateRequest, type AnswerCredentialsRequest,
   type CancelCredentialPromptRequest,
-  isTerminalState, isTerminalStateRequest, isTerminalOutput, isTerminalTarget, isWriteTerminalRequest,
+  isTerminalState, isTerminalStateRequest, isTerminalOutput, isTerminalTarget, isCloseTerminalRequest, isWriteTerminalRequest,
   isResizeTerminalRequest, isAckTerminalRequest, isTerminalActionResponse,
-  type TerminalState, type TerminalStateRequest, type TerminalOutput, type TerminalTarget,
+  type TerminalState, type TerminalStateRequest, type TerminalOutput, type TerminalTarget, type CloseTerminalRequest,
   type WriteTerminalRequest, type ResizeTerminalRequest, type AckTerminalRequest,
   isOpenLinkRequest, isOpenLinkResponse, type OpenLinkRequest,
   isSftpState, isFilePathRequest, isResolvePathRequest, isListingOutcome, isAttributesOutcome, isResolvedPathOutcome,
@@ -24,6 +24,9 @@ import {
   isRetrySecretsResponse,
   type SetIdentityPasswordRequest, type ChooseKeyFileRequest, type ImportKeyRequest, type DiscardKeyImportRequest,
   type RenameKeyRequest, type ForgetKeyPassphraseRequest, type DeleteKeyRequest, type RetrySecretsRequest,
+  isWorkspaceTemplatesRequest, isWorkspaceTemplatesResponse, isSaveWorkspaceTemplateRequest, isWorkspaceTemplateView,
+  isDeleteWorkspaceTemplateRequest, isDeleteWorkspaceTemplateResponse, copyWorkspaceTemplateConfiguration,
+  type WorkspaceTemplatesRequest, type SaveWorkspaceTemplateRequest, type DeleteWorkspaceTemplateRequest,
   isOpenSnippetRequest, isOpenSnippetResponse, isSaveSnippetRequest, isSaveSnippetResponse, isDeleteSnippetRequest,
   isDeleteSnippetResponse,
   type OpenSnippetRequest, type SaveSnippetRequest, type DeleteSnippetRequest,
@@ -389,9 +392,9 @@ export function createDesktopBridge(transport: BridgeTransport): {
       if (!isAckTerminalRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.ackTerminal, [{ ...target(request), bytes: request.bytes }], isTerminalActionResponse);
     },
-    closeTerminal(request: TerminalTarget) {
-      if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
-      return invoke(channels.closeTerminal, [target(request)], isTerminalActionResponse);
+    closeTerminal(request: CloseTerminalRequest) {
+      if (!isCloseTerminalRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.closeTerminal, [{ ...target(request), ...(request.onlyConnecting === true ? { onlyConnecting: true } : {}) }], isTerminalActionResponse);
     },
     reconnectTerminal(request: TerminalTarget) {
       if (!isTerminalTarget(request)) return Promise.resolve(failure("invalid-request"));
@@ -540,6 +543,20 @@ export function createDesktopBridge(transport: BridgeTransport): {
     retrySecrets(request: RetrySecretsRequest) {
       if (!isRetrySecretsRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.retrySecrets, [{ owner: { ...request.owner } }], isRetrySecretsResponse);
+    },
+    workspaceTemplates(request: WorkspaceTemplatesRequest) {
+      if (!isWorkspaceTemplatesRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.workspaceTemplates, [{ owner: { ...request.owner } }], isWorkspaceTemplatesResponse);
+    },
+    saveWorkspaceTemplate(request: SaveWorkspaceTemplateRequest) {
+      if (!isSaveWorkspaceTemplateRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.saveWorkspaceTemplate, [{ owner: { ...request.owner }, templateId: request.templateId,
+        expectedRevision: request.expectedRevision, label: request.label, configuration: copyWorkspaceTemplateConfiguration(request.configuration) }], isWorkspaceTemplateView);
+    },
+    deleteWorkspaceTemplate(request: DeleteWorkspaceTemplateRequest) {
+      if (!isDeleteWorkspaceTemplateRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.deleteWorkspaceTemplate, [{ owner: { ...request.owner }, templateId: request.templateId,
+        expectedRevision: request.expectedRevision }], isDeleteWorkspaceTemplateResponse);
     },
     openSnippet(request: OpenSnippetRequest) {
       if (!isOpenSnippetRequest(request)) return Promise.resolve(failure("invalid-request"));

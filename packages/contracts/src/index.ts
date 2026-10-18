@@ -2,7 +2,7 @@ import type { CredentialState, CredentialStateRequest, AnswerCredentialsRequest,
 export * from "./credentials.ts";
 import type { TrustState, TrustStateRequest, AnswerHostTrustRequest, PrepareKnownHostRevokeRequest, RevokeKnownHostRequest, KnownHostRevokePreview, TrustActionResponse } from "./known-hosts.ts";
 export * from "./known-hosts.ts";
-import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarget, WriteTerminalRequest, ResizeTerminalRequest, AckTerminalRequest, TerminalActionResponse } from "./terminals.ts";
+import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarget, CloseTerminalRequest, WriteTerminalRequest, ResizeTerminalRequest, AckTerminalRequest, TerminalActionResponse } from "./terminals.ts";
 export * from "./terminals.ts";
 import type { SftpState, FilePathRequest, FileOutcome, DirectoryListing, FileAttributes } from "./files.ts";
 export * from "./files.ts";
@@ -31,6 +31,8 @@ import type {
 export * from "./app-lock.ts";
 import type { TerminalSettings, SettingsRequest, UpdateSettingsRequest } from "./settings.ts";
 export * from "./settings.ts";
+import type { WorkspaceTemplatesRequest, WorkspaceTemplatesResponse, WorkspaceTemplateView, SaveWorkspaceTemplateRequest, DeleteWorkspaceTemplateRequest, DeleteWorkspaceTemplateResponse } from './workspace-templates.ts';
+export * from './workspace-templates.ts';
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
   | "invalid-request"
@@ -94,7 +96,7 @@ export interface DesktopAPI {
   writeTerminal(request: WriteTerminalRequest): Promise<Result<TerminalActionResponse>>;
   resizeTerminal(request: ResizeTerminalRequest): Promise<Result<TerminalActionResponse>>;
   ackTerminal(request: AckTerminalRequest): Promise<Result<TerminalActionResponse>>;
-  closeTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
+  closeTerminal(request: CloseTerminalRequest): Promise<Result<TerminalActionResponse>>;
   reconnectTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
   dismissTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
   sftpState(request: TerminalStateRequest): Promise<Result<SftpState>>;
@@ -129,6 +131,9 @@ export interface DesktopAPI {
   forgetKeyPassphrase(request: ForgetKeyPassphraseRequest): Promise<Result<ForgetKeyPassphraseResponse>>;
   deleteKey(request: DeleteKeyRequest): Promise<Result<DeleteKeyResponse>>;
   retrySecrets(request: RetrySecretsRequest): Promise<Result<RetrySecretsResponse>>;
+  workspaceTemplates(request: WorkspaceTemplatesRequest): Promise<Result<WorkspaceTemplatesResponse>>;
+  saveWorkspaceTemplate(request: SaveWorkspaceTemplateRequest): Promise<Result<WorkspaceTemplateView>>;
+  deleteWorkspaceTemplate(request: DeleteWorkspaceTemplateRequest): Promise<Result<DeleteWorkspaceTemplateResponse>>;
   openSnippet(request: OpenSnippetRequest): Promise<Result<OpenSnippetResponse>>;
   saveSnippet(request: SaveSnippetRequest): Promise<Result<SaveSnippetResponse>>;
   deleteSnippet(request: DeleteSnippetRequest): Promise<Result<DeleteSnippetResponse>>;
@@ -207,6 +212,9 @@ export const channels = Object.freeze({
   forgetKeyPassphrase: "ssterm:forget-key-passphrase",
   deleteKey: "ssterm:delete-key",
   retrySecrets: "ssterm:retry-secrets",
+  workspaceTemplates: "ssterm:workspace-templates",
+  saveWorkspaceTemplate: "ssterm:save-workspace-template",
+  deleteWorkspaceTemplate: "ssterm:delete-workspace-template",
   openSnippet: "ssterm:open-snippet",
   saveSnippet: "ssterm:save-snippet",
   deleteSnippet: "ssterm:delete-snippet",

@@ -1624,3 +1624,42 @@
 .transfer-job[data-state="publishing"] .transfer-job-heading > svg {
   color: var(--connection-connecting);
 }
+
+/* SST-033: bounded, scrollable tools preserve the mounted terminal layer underneath. */
+.workspace-tools[data-slot="dialog-content"] {
+  width: min(720px, calc(100vw - 32px));
+  max-width: min(720px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.workspace-tools-scroll {
+  min-height: 0;
+  display: grid;
+  gap: 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 4px 8px;
+}
+.workspace-template-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.workspace-tools-input {
+  field-sizing: fixed;
+  min-height: 100px;
+  max-height: 30dvh;
+  resize: vertical;
+  font-family: var(--font-mono);
+}
+.workspace-tools-confirm[data-slot="alert-dialog-content"] {
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}

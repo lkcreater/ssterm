@@ -75,7 +75,7 @@ function snapshot(): MetadataSnapshot {
     snippetTags: [],
     knownHosts: [],
     tunnelRules: [],
-    secretOperations: [],
+    workspaceTemplates: [], secretOperations: [],
   };
 }
 

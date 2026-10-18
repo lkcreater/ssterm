@@ -83,7 +83,7 @@ test("schema 2 → 3 adds the jump/proxy columns (existing hosts stay direct) af
   const repo = value(await openMetadata({ path: s.path }));
   t.after(() => repo.close());
   const snapshot = value(repo.snapshot());
-  assert.equal(snapshot.schemaVersion, 3);
+  assert.equal(snapshot.schemaVersion, 4);
   assert.deepEqual(snapshot.hosts.map((row) => [row.id, row.jumpHostId, row.proxy]), [[a, null, null]]);
   assert.equal(readdirSync(s.dir).filter((name) => /\.v2-.*\.backup$/u.test(name)).length, 1);
   // A migrated store accepts chains like a fresh one.

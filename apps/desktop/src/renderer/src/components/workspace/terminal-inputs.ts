@@ -14,6 +14,8 @@ export interface TerminalInputHandle {
   /**
    * `sent` once main accepted the write for `generation`; `refused` if the pane is not accepting, the
    * generation moved on, or the write was refused (which pauses the pane, as for typing).
+   * Copies bytes synchronously before returning; callers may wipe their buffer immediately. The pane
+   * owns and purges its queued copy on acceptance, refusal, generation change or disposal.
    */
   deliver(bytes: Uint8Array, generation: number): Promise<"sent" | "refused">;
 }

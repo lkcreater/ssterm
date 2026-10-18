@@ -56,3 +56,7 @@ The explicit action is the unlock (identities rule). An open, save or delete tha
 - The panel overlays the right side of the workspace and can cover the rightmost pane's header (status, menu, close) while open; the panel shows its own target, and Esc/Close are always reachable.
 - “Sent” means main accepted the write for that session generation; delivery to the remote shell and command success are not observed.
 - The E2E's decrypt gate relies on Electron's private `ipcMain._invokeHandlers` and asserts that the gate was active.
+
+# Multi-host snippets — SST-033
+
+[Workspace tools](workspace-tools.md) provides explicit Existing sessions and New sessions modes. Targets are captured before decrypt; new mode opens fresh connections instead of reusing an existing session for the same host. Loading a snippet fills a reviewable composer and sends nothing. Arm, Insert/Run and per-target confirmation use each destination's current paste mode, with visible partial results and cancellation. The SST-024 single-active-session panel keeps its existing behavior. [Delivery evidence](agent-runs/sst-033-delivery.md).

@@ -1,1 +1,10 @@
-{"name":"@ssterm/domain","version":"0.1.0","private":true,"type":"module","exports":"./src/index.ts"}
+{
+  "name": "@ssterm/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./workspace-templates": "./src/workspace-templates.ts"
+  }
+}

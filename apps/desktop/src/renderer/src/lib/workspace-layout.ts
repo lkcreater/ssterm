@@ -39,6 +39,8 @@ export interface Workspace {
    * gives a new active tab, a placement splits beside its target.
    */
   pending: Record<string, Placement | null>;
+  /** Template Connect results may precede the first state listing their IDs. */
+  awaitingTemplate?: string[];
   serial: number;
 }
 
@@ -71,6 +73,7 @@ export type LayoutAction =
   | { type: "activate-tab"; tabId: string }
   | { type: "activate-index"; index: number | "last" }
   | { type: "cycle-tab"; step: 1 | -1 }
+  | { type: "append-template"; tabs: Omit<Tab, "id">[]; activeTab: number; newSessionIds: readonly string[] }
   | { type: "owner-reset" };
 
 export function panes(node: LayoutNode): string[] {
@@ -176,8 +179,9 @@ export function layoutReducer(workspace: Workspace, action: LayoutAction): Works
     case "reconcile": {
       const present = new Set(action.sessions);
       let next = workspace;
-      for (const id of placed(workspace)) if (!present.has(id)) next = detach(next, id);
-      next = { ...next, closing: next.closing.filter((id) => present.has(id)) };
+      const awaiting = new Set(workspace.awaitingTemplate ?? []);
+      for (const id of placed(workspace)) if (!present.has(id) && !awaiting.has(id)) next = detach(next, id);
+      next = { ...next, closing: next.closing.filter((id) => present.has(id) || awaiting.has(id)) };
       const known = new Set([...placed(next), ...next.closing]);
       const pending = { ...next.pending };
       for (const id of action.sessions) {
@@ -188,7 +192,44 @@ export function layoutReducer(workspace: Workspace, action: LayoutAction): Works
           (placement && insert(next, placement.target, id, placement.direction)) ??
           addTab(next, id, placement !== undefined);
       }
-      return { ...next, pending };
+      return { ...next, pending, awaitingTemplate: [...awaiting].filter((id) => !present.has(id)) };
+    }
+    case "append-template": {
+      const allowed = new Set(action.newSessionIds.filter((id) => !workspace.closing.includes(id)));
+      const used = new Set<string>();
+      function prune(node: LayoutNode): LayoutNode | null {
+        if (node.kind === "pane") {
+          if (!allowed.has(node.sessionId) || used.has(node.sessionId)) return null;
+          used.add(node.sessionId);
+          return node;
+        }
+        const first = prune(node.first), second = prune(node.second);
+        if (!first) return second;
+        if (!second) return first;
+        return { ...node, first, second };
+      }
+      let next = workspace;
+      // Only allocation IDs belonging to this operation may move out of auto-created tabs.
+      for (const id of allowed) next = detach(next, id);
+      const pending = { ...next.pending };
+      for (const id of allowed) delete pending[id];
+      const awaiting = new Set(workspace.awaitingTemplate ?? []);
+      const alreadyListed = placed(workspace);
+      const tabs = [...next.tabs];
+      const appended: { id: string; source: number }[] = [];
+      let serial = next.serial;
+      action.tabs.forEach((tab, index) => {
+        const root = prune(tab.root);
+        if (!root) return;
+        const ids = panes(root);
+        for (const id of ids) if (!alreadyListed.has(id)) awaiting.add(id);
+        const id = `tab-${++serial}`;
+        tabs.push({ id, root, active: ids.includes(tab.active) ? tab.active : ids[0]!, mode: root.kind === "pane" ? "split" : tab.mode });
+        appended.push({ id, source: index });
+      });
+      let active = (appended.find((tab) => tab.source >= action.activeTab) ?? appended.at(-1))?.id ?? next.activeTab;
+      if (!tabs.some((tab) => tab.id === active)) active = tabs.at(-1)?.id ?? null;
+      return { ...next, tabs, serial, activeTab: active, pending, awaitingTemplate: [...awaiting] };
     }
     case "reveal":
       if (tabOf(workspace, action.sessionId)) return layoutReducer(workspace, { type: "focus-pane", sessionId: action.sessionId });

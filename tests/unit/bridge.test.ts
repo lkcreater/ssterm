@@ -69,7 +69,7 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "ackTerminal", "answerCredentials", "answerHostTrust", "appLockState", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "cancelGoogleSignIn", "cancelTransfer", "catalogState", "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "confirmAppLockPassword", "connectHost", "connectSftp", "credentialState", "deleteKey", "deleteSnippet", "discardKeyImport", "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "googleSignIn", "importKey", "listDirectory", "onCatalogState", "onCredentialState", "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onTunnelState", "onWindowState", "openLink", "openSnippet", "openTerminal", "ping", "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "recoverAppLock", "regenerateRecoveryCode", "renameKey", "resizeTerminal", "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "saveSnippet", "setIdentityPassword", "settings", "setupAppLockPassword", "sftpState", "startTunnel", "statPath", "stopTunnel", "terminalState", "transferState", "trustState", "tunnelState", "unlockAppLock", "unlockAppLockOffline", "updateSettings", "writeTerminal",
+    "ackTerminal", "answerCredentials", "answerHostTrust", "appLockState", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "cancelGoogleSignIn", "cancelTransfer", "catalogState", "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "confirmAppLockPassword", "connectHost", "connectSftp", "credentialState", "deleteKey", "deleteSnippet", "deleteWorkspaceTemplate", "discardKeyImport", "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "googleSignIn", "importKey", "listDirectory", "onCatalogState", "onCredentialState", "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onTunnelState", "onWindowState", "openLink", "openSnippet", "openTerminal", "ping", "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "recoverAppLock", "regenerateRecoveryCode", "renameKey", "resizeTerminal", "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "saveSnippet", "saveWorkspaceTemplate", "setIdentityPassword", "settings", "setupAppLockPassword", "sftpState", "startTunnel", "statPath", "stopTunnel", "terminalState", "transferState", "trustState", "tunnelState", "unlockAppLock", "unlockAppLockOffline", "updateSettings", "workspaceTemplates", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -354,7 +354,12 @@ test("terminal commands are rebuilt and written bytes are copied then wiped", as
     assert.deepEqual(f.calls.at(-1), { channel, args: [target] });
     assert.notEqual(f.calls.at(-1)!.args[0], target, "rebuilt, never the caller's object");
   }
+  assert.ok((await f.api.closeTerminal({ ...target, onlyConnecting: true })).ok);
+  assert.deepEqual(f.calls.at(-1), { channel: channels.closeTerminal, args: [{ ...target, onlyConnecting: true }] });
+  assert.notEqual((f.calls.at(-1)!.args[0] as typeof target).owner, owner, "cancellation copies its owner projection");
   const count = f.calls.length;
+  for (const onlyConnecting of [false, undefined, null, 1, "true"])
+    assert.deepEqual(await f.api.closeTerminal({ ...target, onlyConnecting } as never), failure("invalid-request"));
   for (const invalid of [
     f.api.writeTerminal({ ...target, bytes: new Uint8Array(0) }),
     f.api.writeTerminal({ ...target, bytes: new Uint8Array(MAX_TERMINAL_WRITE + 1) }),

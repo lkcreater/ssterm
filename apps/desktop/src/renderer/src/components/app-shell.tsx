@@ -8,6 +8,7 @@ import {
   LayersIcon,
   LockKeyholeIcon,
   PanelLeftIcon,
+  PanelsTopLeftIcon,
   ServerIcon,
   Settings2Icon,
   ShieldCheckIcon,
@@ -196,6 +197,7 @@ export function AppShell() {
   const [dialog, setDialog] = useState<CatalogDialog>();
   const [connectFailure, setConnectFailure] = useState<ConnectFailure>();
   const [overlay, setOverlay] = useState<"settings" | "shortcuts">();
+  const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const sidebarPanel = usePanelRef();
   const sidebarToggle = useRef<HTMLButtonElement>(null);
@@ -352,6 +354,16 @@ export function AppShell() {
             <span className="titlebar-title">ssterm</span>
           )}
         </div>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Workspace tools"
+          title="Workspace templates and multi-target input"
+          disabled={!owner || !ready}
+          onClick={() => { setPage("terminals"); setWorkspaceToolsOpen(true); }}
+        >
+          <PanelsTopLeftIcon aria-hidden="true" />
+        </Button>
         <Button
           size="icon-sm"
           variant="ghost"
@@ -550,6 +562,8 @@ export function AppShell() {
                   onCommand={onCommand}
                   onOpenSftp={openSftp}
                   catalog={ready ? state : undefined}
+                  toolsOpen={workspaceToolsOpen}
+                  onCloseTools={() => setWorkspaceToolsOpen(false)}
                 />
               ) : null}
               {owner ? (

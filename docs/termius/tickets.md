@@ -1,6 +1,6 @@
 # Tickets สำหรับ ssterm
 
-**SST-030: jump host / multi-hop / proxy `DONE`** — [jump hosts](../jump-hosts.md), [delivery](../agent-runs/sst-030-delivery.md): per-hop trust/auth and cleanup, up to three jump hosts, HTTP CONNECT/SOCKS5 proxies, schema 3 migration; unit 451/451, development E2E 66/66, packaged 67/67. SST-031 is delivered; SST-029–038 remain authorized with SST-033 next. SST-027/028 manual Thai IME/VoiceOver/menu/TCC checks and Developer ID/notarization remain pending.
+**SST-033: templates / broadcast / multi-host snippets `DONE`** — [workspace tools](../workspace-tools.md), [delivery](../agent-runs/sst-033-delivery.md): metadata-only saved layouts, fresh-session restore, explicit armed composer and captured existing/new targets; schema 4. Unit 474/474, development E2E 69/69, packaged 70/70. SST-030/031 are delivered; SST-029–038 remain authorized with SST-032 next. Native manual release checks and Developer ID/notarization remain pending.
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) และ SST-029–038 เป็น later scope
 
@@ -44,7 +44,7 @@ UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) �
 | SST-030 | Jump host / multi-hop / proxy | DONE | P2 | L | 015,028 |
 | SST-031 | Remote and dynamic forwarding | Later | P2 | M | 025,026,028 |
 | SST-032 | Remote editing / advanced transfers | Later | P2 | L | 022,028 |
-| SST-033 | Templates / broadcast / multi-host snippets | Later | P2 | L | 018,024,028 |
+| SST-033 | Templates / broadcast / multi-host snippets | DONE | P2 | L | 018,024,028 |
 | SST-034 | Logs / history / autocomplete / AI scope | Later | P2 | L | 028 |
 | SST-035 | Independent cloud sync | Later | P2 | L | 036,038 |
 | SST-036 | Crypto protocol / key lifecycle review | Later | P2 | L | 028 |
@@ -397,6 +397,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Acceptance:** temp download/editor/change/upload decision; stale remote version detection; temp cleanup; resume และ remote↔remote transport semantics explicit ไม่อ้าง server-side direct copy โดยไม่มี capability. **Validation:** concurrent editor/remote-change/cancel fixtures. **Tasks:** external editor integration; version conflict; transfer capabilities.
 
 ### SST-033 — Templates / broadcast / multi-host snippets
+
+**Status:** `DONE` — TEST/REVIEW/DELIVER complete; [behavior](../workspace-tools.md), [delivery](../agent-runs/sst-033-delivery.md). Templates restore fresh sessions/layout; command preparation is opt-in, with explicit armed multi-target text dispatch and visible partial results.
 
 **Evidence:** W06/W07. **Outcome:** saved layouts และ explicit multi-target operations.
 

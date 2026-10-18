@@ -14,6 +14,7 @@ export const tables = {
   snippetTags: ['snippet_tag', ['vaultId', 'snippetId', 'tagId']],
   keys: ['key_metadata', [...common, 'label', 'algorithm', 'publicKey', 'fingerprint', 'privateKeyRef', 'passphraseRef']],
   secretRefs: ['secret_ref', [...common, 'kind', 'operationId']],
+  workspaceTemplates: ['workspace_template', [...common, 'label', 'configuration']],
   snippets: ['snippet', [...common, 'label', 'bodyEnvelope', 'envelopeVersion', 'keyRef', 'protectionFormat']],
   knownHosts: ['known_host', [...common, 'endpointHost', 'endpointPort', 'algorithm', 'publicKey', 'fingerprint', 'firstAcceptedAt', 'lastVerifiedAt']],
   tunnelRules: ['tunnel_rule', [...common, 'label', 'hostId', 'type', 'bindAddress', 'bindPort', 'destinationHost', 'destinationPort']],
@@ -47,6 +48,7 @@ function decode(row: Record<string, unknown>): Record<string, unknown> {
     delete result.proxyHost;
     delete result.proxyPort;
   }
+  if ('configuration' in result) result.configuration = JSON.parse(result.configuration as string);
   if ('terminalCursorBlink' in result) result.terminalCursorBlink = result.terminalCursorBlink === 1;
   return result;
 }
@@ -89,12 +91,13 @@ function encode(raw: unknown, columns: readonly string[]): SQLInputValue[] {
     row.proxyHost = proxy?.host ?? null;
     row.proxyPort = proxy?.port ?? null;
   }
+  if ('configuration' in row) row.configuration = JSON.stringify(row.configuration);
   if ('terminalCursorBlink' in row) row.terminalCursorBlink = row.terminalCursorBlink ? 1 : 0;
   return columns.map(key => row[key] as SQLInputValue);
 }
 /** Replaces only writable metadata under deferred NO ACTION FKs, avoiding transient rename uniqueness collisions. */
 export function writeSnapshot(db: DatabaseSync, s: MetadataSnapshot): void {
-  const collections = ['hostTags', 'snippetTags', 'tunnelRules', 'hosts', 'groups', 'identities', 'tags', 'keys', 'snippets', 'knownHosts', 'secretRefs', 'secretOperations'] as const;
+  const collections = ['hostTags', 'snippetTags', 'tunnelRules', 'hosts', 'groups', 'identities', 'tags', 'keys', 'snippets', 'workspaceTemplates', 'knownHosts', 'secretRefs', 'secretOperations'] as const;
   for (const key of collections) db.exec(`DELETE FROM ${tables[key][0]}`);
   for (const key of collections) {
     const [table, columns] = tables[key];
@@ -110,7 +113,7 @@ export function writeSnapshot(db: DatabaseSync, s: MetadataSnapshot): void {
 /** Journal intended refs are reserved when staged, so a published descriptor reuses its own reservation. */
 function registeredIds(s: MetadataSnapshot): Set<string> {
   const ids = new Set<string>([s.vault.id, s.settings.id, ...s.secretOperations.map(op => op.intendedRef)]);
-  for (const key of ['hosts', 'groups', 'identities', 'tags', 'tunnelRules', 'keys', 'snippets', 'knownHosts', 'secretRefs'] as const) for (const row of s[key] as Entity[]) ids.add(row.id);
+  for (const key of ['hosts', 'groups', 'identities', 'tags', 'tunnelRules', 'keys', 'snippets', 'workspaceTemplates', 'knownHosts', 'secretRefs'] as const) for (const row of s[key] as Entity[]) ids.add(row.id);
   return ids;
 }
 export function reserveNewIds(db: DatabaseSync, before: MetadataSnapshot, after: MetadataSnapshot): void {

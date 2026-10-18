@@ -152,7 +152,7 @@ function fixture(): MetadataSnapshot {
     snippetTags: [],
     knownHosts: [],
     tunnelRules: [],
-    secretOperations: [],
+    workspaceTemplates: [], secretOperations: [],
   };
 }
 function value<T>(outcome: StoreResult<T>): T {

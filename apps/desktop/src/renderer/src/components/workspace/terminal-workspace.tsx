@@ -41,6 +41,7 @@ import {
 import { toast } from "@/components/ui/toast";
 import { CloseConfirm, type CloseRequest } from "@/components/workspace/close-confirm";
 import { LiveTerminal, type PaneSettings } from "@/components/workspace/live-terminal";
+import { WorkspaceTools } from "@/components/workspace/workspace-tools";
 import { SnippetPanel } from "@/components/workspace/snippet-panel";
 import { TerminalInputsContext, type TerminalInputs } from "@/components/workspace/terminal-inputs";
 import { paneScrollback, type PaneScrollback } from "@/lib/terminal-theme";
@@ -276,12 +277,16 @@ export function TerminalWorkspace({
   onShowTerminals,
   onOpenSftp,
   catalog,
+  toolsOpen = false,
+  onCloseTools,
 }: {
   owner: Owner;
   controller: WorkspaceController;
   settings: TerminalSettings;
   /** Snippet labels and the lock epoch; absent while the catalog is unavailable (no snippet panel). */
   catalog?: CatalogState;
+  toolsOpen?: boolean;
+  onCloseTools?(): void;
   /** Another page is shown; terminals keep streaming underneath. */
   hidden: boolean;
   onCommand?(command: WorkspaceCommand): void;
@@ -291,6 +296,7 @@ export function TerminalWorkspace({
   onOpenSftp?(hostId: string): void;
 }) {
   const { workspace, dispatch, sessions, activeTab: tab } = controller;
+  useEffect(() => { if (hidden || !catalog) onCloseTools?.(); }, [hidden, !!catalog]);
   const layer = useRef<HTMLDivElement>(null);
   const inputs = useRef<TerminalInputs>(new Map()).current;
   const [snippetsOpen, setSnippetsOpen] = useState(false);
@@ -401,6 +407,11 @@ export function TerminalWorkspace({
 
   return (
     <TerminalInputsContext.Provider value={inputs}>
+      {toolsOpen && !hidden && catalog ? <WorkspaceTools
+        key={`${owner.windowId}:${owner.generation}:${catalog.lockEpoch}`}
+        owner={owner} catalog={catalog} controller={controller}
+        onClose={() => { onCloseTools?.(); controller.focusActive(); }}
+      /> : null}
       <div
         className="terminal-workspace"
         data-hidden={hidden || undefined}

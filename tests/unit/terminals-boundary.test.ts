@@ -7,7 +7,7 @@ import { sessionOwnerId } from "../../apps/desktop/src/main/session-runtime.ts";
 import { SessionRegistry, TransientSecrets, type SessionContext } from "../../packages/services/src/index.ts";
 import {
   channels, failure, isAckTerminalRequest, isResizeTerminalRequest, isTerminalEnd, isTerminalOutput, isTerminalState,
-  isTerminalTarget, isWriteTerminalRequest, MAX_TERMINAL_CHUNK, MAX_TERMINAL_WRITE, TERMINAL_ERROR_CODES, type TerminalOutput, type TerminalState,
+  isTerminalTarget, isCloseTerminalRequest, isWriteTerminalRequest, MAX_TERMINAL_CHUNK, MAX_TERMINAL_WRITE, TERMINAL_ERROR_CODES, type TerminalOutput, type TerminalState,
 } from "../../packages/contracts/src/index.ts";
 import type { ResolvedHostConfig, TerminalChannel, TerminalWrite } from "../../packages/domain/src/index.ts";
 
@@ -64,6 +64,12 @@ async function fixture(checkAccess?: () => Promise<boolean>, limits?: { sessions
 test("terminal contracts reject extra keys, oversize payloads, non-integers and zero sizes", () => {
   const target = { owner, sessionId: "s-1", generation: 1 };
   assert.ok(isTerminalTarget(target));
+  assert.ok(isCloseTerminalRequest(target));
+  assert.ok(isCloseTerminalRequest({ ...target, onlyConnecting: true }));
+  for (const onlyConnecting of [false, undefined, null, 1, "true"])
+    assert.equal(isCloseTerminalRequest({ ...target, onlyConnecting }), false);
+  assert.equal(isCloseTerminalRequest({ ...target, onlyConnecting: true, extra: true }), false);
+  assert.equal(isTerminalTarget({ ...target, onlyConnecting: true }), false, "the cancellation option does not widen other commands");
   assert.ok(isWriteTerminalRequest({ ...target, bytes: new Uint8Array(MAX_TERMINAL_WRITE) }));
   assert.ok(isResizeTerminalRequest({ ...target, columns: 1, rows: 1000 }));
   assert.ok(isAckTerminalRequest({ ...target, bytes: MAX_TERMINAL_CHUNK }));
@@ -295,6 +301,44 @@ test("close, reconnect and dismiss act only on the exact owner, session and gene
   } finally { f.controller.dispose(); await f.registry.dispose(); }
 });
 
+test("connecting-only cancellation retains Ready sessions and atomically fences only the owned terminal generation", async () => {
+  const f = await fixture();
+  try {
+    assert.deepEqual(await f.controller.closeTerminal({ ...f.identity, onlyConnecting: true }), failure("conflict"));
+    assert.equal(f.first.context.signal.aborted, false, "Ready sessions survive operation cancellation");
+    assert.equal(session(f).phase, "ready");
+    for (const onlyConnecting of [false, undefined, null, 1, "true"])
+      assert.deepEqual(await f.controller.closeTerminal({ ...f.identity, onlyConnecting } as never), failure("invalid-request"));
+
+    const connected = f.registry.connect(ownerId, "host-1");
+    assert.ok(connected.ok);
+    await tick();
+    const context = f.contexts.at(-1)!;
+    context.verifyingHost(); context.authenticating();
+    const captured = { owner, sessionId: connected.value.id, generation: connected.value.generation, onlyConnecting: true as const };
+    assert.deepEqual(await f.controller.closeTerminal({ ...captured, owner: other }), failure("conflict"));
+    assert.deepEqual(await f.controller.closeTerminal({ ...captured, generation: captured.generation + 1 }), failure("conflict"));
+    assert.deepEqual(await f.controller.closeTerminal({ ...captured, owner: { windowId: 9, generation: 9 } }), failure("stale-owner"));
+    assert.deepEqual(await f.controller.closeTerminal({ ...captured, sessionId: "unknown" }), failure("conflict"));
+    assert.equal(context.signal.aborted, false, "rejected target fences leave the connection intact");
+    const sftp = f.registry.connect(ownerId, "host-1", "sftp");
+    assert.ok(sftp.ok);
+    assert.deepEqual(await f.controller.closeTerminal({ ...captured, sessionId: sftp.value.id }), failure("conflict"));
+    assert.notEqual(f.registry.snapshot(ownerId, sftp.value.id)[0]!.state, "Closing", "another kind is never closed");
+
+    // A Ready transition already queued in the microtask queue cannot slip between the phase check and close.
+    let lateReady: boolean | undefined;
+    void Promise.resolve().then(() => { lateReady = context.ready(fakeChannel().channel); });
+    const cancellation = f.controller.closeTerminal(captured);
+    assert.equal(context.signal.aborted, true, "registry close fences synchronously before the controller returns its promise");
+    assert.deepEqual(await cancellation, ok);
+    assert.equal(lateReady, false);
+    assert.equal(f.registry.snapshot(ownerId, captured.sessionId)[0]!.state, "Closed");
+    assert.deepEqual(await f.controller.closeTerminal(captured), failure("conflict"), "closed generations cannot be cancelled again");
+    assert.equal(session(f).phase, "ready", "the original Ready target remains available");
+  } finally { f.controller.dispose(); await f.registry.dispose(); }
+});
+
 test("session errors project only allowlisted codes and fold request-level codes", async () => {
   const f = await fixture();
   try {
@@ -463,6 +507,19 @@ test("lifecycle IPC requires the owning main frame and exactly one valid target"
       assert.deepEqual(await invoke(channel, event, f.identity, f.identity), failure("invalid-request"));
       assert.deepEqual(await invoke(channel, event, { ...f.identity, generation: 0 }), failure("invalid-request"));
     }
+    assert.equal(session(f).phase, "ready");
+    assert.deepEqual(await invoke(channels.closeTerminal, event, { ...f.identity, onlyConnecting: true }), failure("conflict"));
+    for (const onlyConnecting of [false, undefined, null, 1, "true"])
+      assert.deepEqual(await invoke(channels.closeTerminal, event, { ...f.identity, onlyConnecting }), failure("invalid-request"));
+    const connecting = f.registry.connect(ownerId, "host-1");
+    assert.ok(connecting.ok);
+    const cancellation = { owner, sessionId: connecting.value.id, generation: connecting.value.generation, onlyConnecting: true };
+    boundary.setAccessGate(() => false);
+    assert.deepEqual(await invoke(channels.closeTerminal, event, cancellation), failure("unauthorized"));
+    boundary.setAccessGate(() => true);
+    assert.deepEqual(await invoke(channels.closeTerminal, { sender, senderFrame: { ...mainFrame } }, cancellation), failure("unauthorized"));
+    assert.deepEqual(await invoke(channels.closeTerminal, event, cancellation), ok);
+    assert.deepEqual(await invoke(channels.dismissTerminal, event, { owner, sessionId: connecting.value.id, generation: connecting.value.generation }), ok);
     assert.equal(session(f).phase, "ready");
     assert.deepEqual(await invoke(channels.closeTerminal, event, f.identity), ok);
     assert.deepEqual(await invoke(channels.reconnectTerminal, event, f.identity), ok);

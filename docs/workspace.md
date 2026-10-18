@@ -31,3 +31,7 @@ The independent tester confirmed mouse separator and sidebar drags, window resiz
 ## Boundaries and rollback
 
 Layout and open sessions are not persisted. Narrow split panes use a compact header (full target in the tooltip and status bar). Theme persistence is satisfied by the single Signal Blue Dark theme; theme switching is later scope. Split panes to the same host share the same accessible region name. With scrollback at 100,000 and four panes the renderer used ≈ 728 MiB. Rollback restores the stacked workspace and toolbars, the previous menu and window options, and removes the settings IPC; stored settings remain valid.
+
+# Saved templates and explicit multi-target input — SST-033
+
+[Workspace tools](workspace-tools.md) adds optional saved configurations to the transient SST-018 workspace: restoring opens fresh sessions and appends tabs/splits, without restoring history or remote processes. An optional saved-snippet reference requires opt-in preparation and subsequent Arm/Insert/Run. Existing panes remain mounted. Broadcast is an explicitly armed text composer; ordinary typing remains local to its pane. [Delivery evidence](agent-runs/sst-033-delivery.md).

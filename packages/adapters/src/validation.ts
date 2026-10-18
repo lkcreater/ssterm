@@ -1,4 +1,4 @@
-import { normalizeEndpoint, normalizeLabel, normalizeTag, tunnelRuleProblem, hostChainProblem, type MetadataSnapshot, type MetadataChange, type Entity, type Id, type SecretKind, type SecretOperation } from '@ssterm/domain';
+import { isWorkspaceTemplateConfiguration, workspaceTemplateHostIds, MAX_WORKSPACE_TEMPLATES, normalizeEndpoint, normalizeLabel, normalizeTag, tunnelRuleProblem, hostChainProblem, type MetadataSnapshot, type MetadataChange, type Entity, type Id, type SecretKind, type SecretOperation } from '@ssterm/domain';
 import { fail } from './errors.ts';
 import { validHostKeyIdentity } from './host-key.ts';
 import { ENVELOPE_OVERHEAD, ENVELOPE_VERSION, MAX_ENVELOPE, PROTECTION_FORMAT } from './protection.ts';
@@ -23,6 +23,7 @@ const fields = {
   tag: ['label'],
   'tunnel-rule': ['label', 'hostId', 'type', 'bindAddress', 'bindPort', 'destinationHost', 'destinationPort'],
   key: ['label', 'algorithm', 'publicKey', 'fingerprint', 'privateKeyRef', 'passphraseRef'],
+  'workspace-template': ['label', 'configuration'],
   snippet: ['label', 'bodyEnvelope', 'envelopeVersion', 'keyRef', 'protectionFormat'],
   settings: ['theme', 'uiFont', 'uiFontSize', 'terminalFont', 'terminalFontSize', 'terminalScrollback', 'terminalPalette', 'terminalCursor', 'terminalCursorBlink', 'reducedMotion'],
   vault: ['label']
@@ -34,6 +35,7 @@ const required = {
   tag: ['label'],
   'tunnel-rule': ['label', 'hostId', 'bindPort'],
   key: ['label', 'algorithm', 'publicKey', 'fingerprint', 'privateKeyRef'],
+  'workspace-template': ['label', 'configuration'],
   snippet: ['label', 'bodyEnvelope', 'envelopeVersion', 'keyRef', 'protectionFormat']
 };
 const defaults = {
@@ -72,6 +74,7 @@ const defaults = {
   key: {
     passphraseRef: null
   },
+  'workspace-template': {},
   snippet: {}
 };
 const collections = {
@@ -81,6 +84,7 @@ const collections = {
   tag: 'tags',
   'tunnel-rule': 'tunnelRules',
   key: 'keys',
+  'workspace-template': 'workspaceTemplates',
   snippet: 'snippets'
 } as const;
 type Kind = keyof typeof collections;
@@ -147,6 +151,10 @@ function normalizeData(kind: keyof typeof fields, data: Record<string, unknown>,
       case 'publicKey':
       case 'fingerprint':
         if (typeof value !== 'string' || !value.length || value.length > 16384 || /[\u0000-\u001f\u007f]/u.test(value)) fail('invalid-request');
+        break;
+      case 'configuration':
+        if (!isWorkspaceTemplateConfiguration(value)) fail('invalid-request');
+        result[key] = structuredClone(value);
         break;
       case 'bodyEnvelope':
         if (!(value instanceof Uint8Array) || value.length < ENVELOPE_OVERHEAD || value.length > MAX_ENVELOPE) fail('invalid-request');
@@ -261,7 +269,7 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
   initialRecords.set(initial.settings.id, initial.settings);
   initialRecords.set(initial.vault.id, initial.vault);
   const usedIds = new Set<string>();
-  for (const row of [initial.vault, initial.settings, ...initial.hosts, ...initial.groups, ...initial.identities, ...initial.tags, ...initial.keys, ...initial.secretRefs, ...initial.snippets, ...initial.knownHosts, ...initial.tunnelRules]) usedIds.add(row.id);
+  for (const row of [initial.vault, initial.settings, ...initial.hosts, ...initial.groups, ...initial.identities, ...initial.tags, ...initial.keys, ...initial.secretRefs, ...initial.snippets, ...initial.workspaceTemplates, ...initial.knownHosts, ...initial.tunnelRules]) usedIds.add(row.id);
   for (const op of initial.secretOperations) usedIds.add(op.intendedRef);
   const newOwnerPublications: SecretOperation[] = [];
   function touch(row: Entity, expected: unknown) {
@@ -481,7 +489,7 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
       next.secretRefs = next.secretRefs.filter(row => row.id !== op.intendedRef);
       continue;
     }
-    const match = /^(create|update|delete)-(host|group|identity|tag|tunnel-rule|key|snippet)$/u.exec(raw.type);
+    const match = /^(create|update|delete)-(host|group|identity|tag|tunnel-rule|key|snippet|workspace-template)$/u.exec(raw.type);
     if (!match) fail('invalid-request');
     const action = match[1];
     const kind = match[2] as Kind;
@@ -489,6 +497,15 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
     keys(raw, action === 'create' ? ['type', 'id', 'data'] : action === 'update' ? ['type', 'id', 'expectedRevision', 'data'] : ['type', 'id', 'expectedRevision'], action === 'create' ? ['id', 'data'] : action === 'update' ? ['id', 'expectedRevision', 'data'] : ['id', 'expectedRevision']);
     id(raw.id);
     const index = collection.findIndex(row => row.id === raw.id);
+    if (kind === 'workspace-template' && action !== 'delete') {
+      if (action === 'create' && next.workspaceTemplates.length >= MAX_WORKSPACE_TEMPLATES) fail('constraint');
+      const configuration = (raw.data as Record<string, unknown>)?.configuration ?? (action === 'update' ? next.workspaceTemplates[index]?.configuration : undefined);
+      if (configuration !== undefined) {
+        if (!isWorkspaceTemplateConfiguration(configuration)) fail('invalid-request');
+        if (workspaceTemplateHostIds(configuration).some(hostId => !next.hosts.some(row => row.id === hostId)) ||
+          (configuration.snippetId !== null && !next.snippets.some(row => row.id === configuration.snippetId))) fail('constraint');
+      }
+    }
     if (action === 'create') {
       if (usedIds.has(raw.id)) fail('constraint');
       usedIds.add(raw.id);
@@ -538,7 +555,7 @@ export function applyChanges(initial: MetadataSnapshot, changes: MetadataChange[
 }
 /** Full resulting graph, including reserved tables, must remain valid within the transaction. */
 export function validateGraph(s: MetadataSnapshot): void {
-  const all = [s.vault, s.settings, ...s.hosts, ...s.groups, ...s.identities, ...s.tags, ...s.keys, ...s.secretRefs, ...s.snippets, ...s.knownHosts, ...s.tunnelRules];
+  const all = [s.vault, s.settings, ...s.hosts, ...s.groups, ...s.identities, ...s.tags, ...s.keys, ...s.secretRefs, ...s.snippets, ...s.workspaceTemplates, ...s.knownHosts, ...s.tunnelRules];
   const ids = new Set<string>();
   const utc = (value: string) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) && Number.isFinite(Date.parse(value));
   for (const row of all) {
@@ -641,6 +658,8 @@ export function validateGraph(s: MetadataSnapshot): void {
     ref(row.keyRef, 'content-key');
     if (!(row.bodyEnvelope instanceof Uint8Array) || row.bodyEnvelope.length < ENVELOPE_OVERHEAD || row.bodyEnvelope[0] !== row.envelopeVersion || row.keyRef !== s.vault.contentKeyRef || row.protectionFormat !== s.vault.protectionFormat) fail('constraint');
   }
+  if (s.workspaceTemplates.length > MAX_WORKSPACE_TEMPLATES || s.workspaceTemplates.some(row => !isWorkspaceTemplateConfiguration(row.configuration))) fail('constraint');
+  // Host/snippet references may become stale after catalog deletion; restore reports those missing references.
   const endpoints = new Set<string>();
   for (const row of s.knownHosts) {
     try {

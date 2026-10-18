@@ -1,9 +1,9 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import {
-  channels, failure, isTerminalOutput, isTerminalState, isTerminalStateRequest, isTerminalTarget,
+  channels, failure, isTerminalOutput, isTerminalState, isTerminalStateRequest, isTerminalTarget, isCloseTerminalRequest,
   isWriteTerminalRequest, isResizeTerminalRequest, isAckTerminalRequest, isConnectHostRequest,
   type Owner, type Result, type TerminalState, type TerminalSession, type TerminalOutput, type TerminalPhase,
-  type TerminalTarget, type TerminalActionResponse, type WriteTerminalRequest, type ResizeTerminalRequest,
+  type TerminalTarget, type CloseTerminalRequest, type TerminalActionResponse, type WriteTerminalRequest, type ResizeTerminalRequest,
   type AckTerminalRequest, type TerminalErrorCode, type ConnectHostRequest, type ConnectHostResponse,
 } from "@ssterm/contracts";
 import type { SessionErrorCode, SessionRegistry, SessionResult, SessionSnapshot, SessionState } from "@ssterm/services";
@@ -231,7 +231,19 @@ export function createTerminalController(options: {
       if (!isAckTerminalRequest(request)) return failure("invalid-request");
       return withStream(request, (stream) => { stream.ack(request.bytes); return accepted; });
     },
-    closeTerminal: sessions.close,
+    closeTerminal(request: CloseTerminalRequest): Promise<Result<TerminalActionResponse>> {
+      if (!isCloseTerminalRequest(request)) return Promise.resolve(failure("invalid-request"));
+      if (!sessions.registration(request.owner)) return Promise.resolve(failure("stale-owner"));
+      if (request.onlyConnecting === true) {
+        try {
+          const current = options.registry.snapshot(sessionOwnerId(request.owner), request.sessionId).find(snapshot =>
+            snapshot.id === request.sessionId && snapshot.generation === request.generation && snapshot.kind === "terminal");
+          if (!current || phases[current.state] !== "connecting") return Promise.resolve(failure("conflict"));
+        } catch { return Promise.resolve(failure("unavailable")); }
+      }
+      // No await between the phase check and registry.close: its generation fence runs in this same turn.
+      return sessions.close({ owner: { ...request.owner }, sessionId: request.sessionId, generation: request.generation });
+    },
     reconnectTerminal: sessions.reconnect,
     connectHost: sessions.connect,
     dismissTerminal: sessions.dismiss,
@@ -282,7 +294,7 @@ export function registerTerminalHandlers(options: {
   handle(channels.writeTerminal, isWriteTerminalRequest, (controller, request) => controller.writeTerminal(request));
   handle(channels.resizeTerminal, isResizeTerminalRequest, (controller, request) => controller.resizeTerminal(request));
   handle(channels.ackTerminal, isAckTerminalRequest, (controller, request) => controller.ackTerminal(request));
-  handle(channels.closeTerminal, isTerminalTarget, (controller, request) => controller.closeTerminal(request));
+  handle(channels.closeTerminal, isCloseTerminalRequest, (controller, request) => controller.closeTerminal(request));
   handle(channels.reconnectTerminal, isTerminalTarget, (controller, request) => controller.reconnectTerminal(request));
   handle(channels.dismissTerminal, isTerminalTarget, (controller, request) => controller.dismissTerminal(request));
   handle(channels.connectHost, isConnectHostRequest, (controller, request) => controller.connectHost(request));

@@ -39,6 +39,8 @@ export interface TerminalSession {
 export interface TerminalState { owner: Owner; sequence: number; sessions: TerminalSession[] }
 export interface TerminalStateRequest { owner: Owner }
 export interface TerminalTarget { owner: Owner; sessionId: string; generation: number }
+/** Operation cancellation may close a captured generation only while it is still connecting. */
+export interface CloseTerminalRequest extends TerminalTarget { onlyConnecting?: true }
 export interface TerminalOutput extends TerminalTarget { sequence: number; bytes: Uint8Array }
 export interface WriteTerminalRequest extends TerminalTarget { bytes: Uint8Array }
 export interface ResizeTerminalRequest extends TerminalTarget { columns: number; rows: number }
@@ -76,6 +78,9 @@ export function isTerminalState(v: unknown): v is TerminalState {
 export function isTerminalStateRequest(v: unknown): v is TerminalStateRequest { return exactObject(v, ["owner"]) && isOwner(v.owner); }
 export function isTerminalTarget(v: unknown): v is TerminalTarget {
   return exactObject(v, ["owner", "sessionId", "generation"]) && target(v);
+}
+export function isCloseTerminalRequest(v: unknown): v is CloseTerminalRequest {
+  return isTerminalTarget(v) || (exactObject(v, ["owner", "sessionId", "generation", "onlyConnecting"]) && target(v) && v.onlyConnecting === true);
 }
 export function isTerminalOutput(v: unknown): v is TerminalOutput {
   return exactObject(v, ["owner", "sessionId", "generation", "sequence", "bytes"]) && target(v) && isCounter(v.sequence) && bytes(v.bytes, MAX_TERMINAL_CHUNK);

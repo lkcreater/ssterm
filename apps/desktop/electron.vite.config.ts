@@ -84,7 +84,7 @@ export default defineConfig({
     plugins: [moduleManifest("preload")],
     resolve: { alias: { "@ssterm/contracts": contracts } },
     build: {
-      externalizeDeps: { exclude: ["@ssterm/contracts", "zod"] },
+      externalizeDeps: { exclude: ["@ssterm/contracts", "@ssterm/domain", "zod"] },
       rollupOptions: {
         input: fileURLToPath(
           new URL("./src/preload/index.ts", import.meta.url),
