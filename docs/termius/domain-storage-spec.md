@@ -193,3 +193,7 @@ SST-005 proves SQLite constraints, revision/graph transactions, backup/integrity
 ## Implemented workspace-template extension — SST-033
 
 Schema 4 adds `workspace_template` as a versioned metadata entity. It stores a label and exact bounded configuration JSON: saved-host references, globally unique pane slots, tab/split geometry and active/Focus state, plus an optional encrypted-snippet reference. It stores no command body, credentials, terminal history or live session ID. Saves validate referenced catalog items; later deletions leave visible stale references instead of silently substituting another host/snippet. The existing migration backup/transaction path preserves protected content and pending journals. [Behavior and rollback](../workspace-tools.md), [verification](../agent-runs/sst-033-delivery.md).
+
+## Temporary remote-edit content — SST-032
+
+[Remote editing](../remote-edit.md) keeps schema 4 unchanged. Document bytes stay in main-owned private working copies/snapshots and the SFTP stream; IPC carries only bounded metadata, revision and approval identifiers. Explicit external-editor consent shares a plaintext copy with TextEdit, whose independent retention cannot be revoked by app cleanup. Lifecycle cleanup is confined to marked owned directories, with retryable failure accounting and verified orphan handling. Snippet-body authenticated protection remains enforced independently. [Verification and limits](../agent-runs/sst-032-delivery.md).

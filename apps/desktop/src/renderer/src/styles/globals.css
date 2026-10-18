@@ -1625,6 +1625,67 @@
   color: var(--connection-connecting);
 }
 
+/* Remote edit metadata stays visible while its captured browser folder changes. */
+.remote-edits {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  max-height: 35%;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+.remote-edits-heading,
+.remote-edit-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.remote-edits > .remote-edits-heading {
+  flex-shrink: 0;
+  padding: 4px 10px;
+}
+.remote-edit-capabilities {
+  flex-shrink: 0;
+  padding: 0 10px 6px;
+}
+.remote-edits > [role="alert"] {
+  width: auto;
+  margin: 0 8px 6px;
+}
+.remote-edit-list {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.remote-edit-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.remote-edit-destination {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.remote-edit-error {
+  color: var(--destructive);
+}
+.remote-edit-confirm {
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
 /* SST-033: bounded, scrollable tools preserve the mounted terminal layer underneath. */
 .workspace-tools[data-slot="dialog-content"] {
   width: min(720px, calc(100vw - 32px));

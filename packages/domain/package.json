@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./workspace-templates": "./src/workspace-templates.ts"
+    "./workspace-templates": "./src/workspace-templates.ts",
+    "./remote-edit": "./src/remote-edit.ts"
   }
 }

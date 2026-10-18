@@ -34,7 +34,8 @@ ssterm needs no account and makes no network requests except SSH connections you
 
 | Data | Location | Notes |
 |---|---|---|
-| Hosts, groups, tags, identities (metadata), known hosts, snippets (ciphertext), tunnel rules, settings | `~/Library/Application Support/ssterm/metadata/catalog.sqlite` (+ `-wal`, `-shm`) | SQLite, schema version 1; directory `0700`. Snippet bodies are AES-256-GCM ciphertext. The folder name is fixed in code (`appData/ssterm`) |
+| Hosts, groups, tags, identities (metadata), known hosts, snippets (ciphertext), tunnel rules, workspace templates, settings | `~/Library/Application Support/ssterm/metadata/catalog.sqlite` (+ `-wal`, `-shm`) | SQLite, schema version 4; directory `0700`. Snippet bodies are AES-256-GCM ciphertext. The folder name is fixed in code (`appData/ssterm`) |
+| Remote-edit working copies and immutable upload snapshots | `~/Library/Application Support/ssterm/remote-edit-temp/` | Plaintext, private `0700` directories and `0600` document/`0400` snapshot files. Explicit discard and lifecycle cleanup remove only owned copies; verified marked leftovers are retried on startup. TextEdit's independent copies are outside this cleanup |
 | Passwords, private keys, passphrases, the snippet content key | login Keychain, generic passwords with service `dev.ssterm.desktop.secrets` | Never in the database. Item access is bound to the app's code signature |
 | Chromium data (caches, local state) | `~/Library/Application Support/ssterm/` beside `metadata/`; possibly `~/Library/Caches/SSTerm` | No credentials |
 | Logs, telemetry | none | ssterm writes no logs and sends no telemetry |
@@ -49,7 +50,7 @@ A newer database schema is refused by an older app ("A newer ssterm version is r
 
 ## Uninstall
 
-1. Quit ssterm (running tunnels and sessions close).
+1. Quit ssterm (running tunnels and sessions close; owned remote-edit cleanup is attempted).
 2. Delete `/Applications/SSTerm.app`.
 3. To remove your data as well: delete `~/Library/Application Support/ssterm` (and `~/Library/Caches/SSTerm` if present), and in **Keychain Access** delete the items named `dev.ssterm.desktop.secrets`. Removing the folder without the Keychain items (or the reverse) leaves the other half unusable but harmless.
 4. Optional: reset folder permissions with `tccutil reset All dev.ssterm.desktop`.
@@ -67,3 +68,4 @@ A newer database schema is refused by an older app ("A newer ssterm version is r
 | Developer ID signing / notarization | NOT DONE — no credentials; unsigned limitation |
 | Clean macOS user/VM | NOT DONE — tested in fresh profiles on one development Mac |
 | Manual: real menu ⌘C/⌘A, VoiceOver, TCC prompt from Finder, Thai IME | PENDING — needs a human operator. Info.plist now carries ssterm's folder usage strings and drops Electron's camera/microphone/Bluetooth strings; the signing identifier is `dev.ssterm.desktop` (not `Electron`), but ad-hoc grants still do not survive rebuilds |
+| Manual: native TextEdit UI/save/autosave for SST-032 | PENDING — automated [remote-edit checks](../remote-edit.md) launch a project-owned editor process through the shipped launcher seam and verify safe fixed TextEdit arguments. Native TextEdit and its independent retained copies require a manual check using owned fixture text; app cleanup cannot revoke editor copies |

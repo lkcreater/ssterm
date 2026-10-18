@@ -69,7 +69,7 @@ function event(sequence: number, generation = 2): WindowStateEvent {
 test("bridge exposes only narrow methods and forwards a rebuilt, validated ping", async () => {
   const { api, calls, setReply } = fixture();
   assert.deepEqual(Object.keys(api).sort(), [
-    "ackTerminal", "answerCredentials", "answerHostTrust", "appLockState", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "cancelGoogleSignIn", "cancelTransfer", "catalogState", "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "confirmAppLockPassword", "connectHost", "connectSftp", "credentialState", "deleteKey", "deleteSnippet", "deleteWorkspaceTemplate", "discardKeyImport", "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "googleSignIn", "importKey", "listDirectory", "onCatalogState", "onCredentialState", "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onTunnelState", "onWindowState", "openLink", "openSnippet", "openTerminal", "ping", "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "recoverAppLock", "regenerateRecoveryCode", "renameKey", "resizeTerminal", "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "saveSnippet", "saveWorkspaceTemplate", "setIdentityPassword", "settings", "setupAppLockPassword", "sftpState", "startTunnel", "statPath", "stopTunnel", "terminalState", "transferState", "trustState", "tunnelState", "unlockAppLock", "unlockAppLockOffline", "updateSettings", "workspaceTemplates", "writeTerminal",
+    "ackTerminal", "answerCredentials", "answerHostTrust", "appLockState", "applyCatalogChange", "bootstrap", "cancelCredentialPrompt", "cancelGoogleSignIn", "cancelTransfer", "catalogState", "checkRemoteEdit", "chooseKeyFile", "clearFinishedTransfers", "closeSftp", "closeTerminal", "confirmAppLockPassword", "connectHost", "connectSftp", "credentialState", "deleteKey", "deleteSnippet", "deleteWorkspaceTemplate", "discardKeyImport", "discardRemoteEdit", "dismissSftp", "dismissTerminal", "enqueueTransfers", "forgetKeyPassphrase", "googleSignIn", "importKey", "listDirectory", "onCatalogState", "onCredentialState", "onRemoteEditState", "onSftpState", "onTerminalOutput", "onTerminalState", "onTransferState", "onTrustState", "onTunnelState", "onWindowState", "openLink", "openRemoteEditor", "openSnippet", "openTerminal", "ping", "prepareCatalogChange", "prepareKnownHostRevoke", "reconnectSftp", "reconnectTerminal", "recoverAppLock", "regenerateRecoveryCode", "remoteEditState", "renameKey", "resizeTerminal", "resolvePath", "resolveTransferConflict", "retrySecrets", "retryTransfer", "revokeKnownHost", "saveSnippet", "saveWorkspaceTemplate", "setIdentityPassword", "settings", "setupAppLockPassword", "sftpState", "startRemoteEdit", "startTunnel", "statPath", "stopTunnel", "terminalState", "transferState", "trustState", "tunnelState", "unlockAppLock", "unlockAppLockOffline", "updateSettings", "uploadRemoteEdit", "workspaceTemplates", "writeTerminal",
   ]);
   assert.ok(Object.isFrozen(api));
   const bootstrap = await api.bootstrap();
@@ -688,4 +688,50 @@ test("transfer bridge projects conflict and retained-stage fields while refusing
   const failed = { ...state, sequence: 2, jobs: [{ ...job, state: "failed", error: "publication-unknown",
     partial: true, partialPath: "/home/fixture/.ssterm-owned.part", conflictId: null }] };
   f.emit(failed); assert.deepEqual(received.at(-1), failed);
+});
+
+test('remote edit bridge rebuilds bounded metadata commands and rejects extra filesystem authority', async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const start = { owner, source: { kind: 'remote' as const, sessionId: 'session', generation: 3 }, path: '/ไฟล์.txt' };
+  f.setReply({ ok: true, value: { editId: 'edit' } });
+  assert.deepEqual(await f.api.startRemoteEdit(start), { ok: true, value: { editId: 'edit' } });
+  assert.deepEqual(f.calls.at(-1), { channel: channels.startRemoteEdit, args: [start] });
+  assert.notEqual(f.calls.at(-1)!.args[0], start);
+  const request = { owner, editId: 'edit', revision: 4 };
+  f.setReply({ ok: true, value: { accepted: true } });
+  for (const [method, channel] of [['openRemoteEditor', channels.openRemoteEditor], ['checkRemoteEdit', channels.checkRemoteEdit], ['discardRemoteEdit', channels.discardRemoteEdit]] as const) {
+    assert.ok((await f.api[method](request)).ok);
+    assert.deepEqual(f.calls.at(-1), { channel, args: [request] });
+    assert.deepEqual(await f.api[method]({ ...request, documentPath: '/private/document.txt' } as never), failure('invalid-request'));
+  }
+  const upload = { ...request, approvalId: 'approval' };
+  assert.ok((await f.api.uploadRemoteEdit(upload)).ok);
+  assert.deepEqual(f.calls.at(-1), { channel: channels.uploadRemoteEdit, args: [upload] });
+  assert.deepEqual(await f.api.uploadRemoteEdit({ ...upload, bytes: new Uint8Array([1]) } as never), failure('invalid-request'));
+  assert.deepEqual(await f.api.startRemoteEdit({ ...start, source: { kind: 'local' } } as never), failure('invalid-request'));
+  f.setReply({ ok: true, value: { editId: 'edit', localPath: '/private' } });
+  assert.deepEqual(await f.api.startRemoteEdit(start), failure('unavailable'));
+  f.dispose();
+});
+
+test('remote edit state subscriptions fence owner, sequence and private response fields', async () => {
+  const f = fixture();
+  await f.api.bootstrap();
+  const owner = { windowId: 1, generation: 2 };
+  const state = { owner, sequence: 1, edits: [], capabilities: { editor: 'textedit', maxBytes: 8388608, resume: false, remoteToRemote: false } };
+  const received: unknown[] = [];
+  const stop = f.api.onRemoteEditState((value) => received.push(value));
+  f.emit(state); f.emit(state); f.emit({ ...state, sequence: 2, owner: { ...owner, generation: 1 } });
+  f.emit({ ...state, sequence: 3, documentPath: '/private' });
+  assert.equal(received.length, 1);
+  f.setReply({ ok: true, value: { ...state, sequence: 5 } });
+  assert.ok((await f.api.remoteEditState({ owner })).ok);
+  f.emit({ ...state, sequence: 4 }); assert.equal(received.length, 1);
+  f.emit({ ...state, sequence: 6 }); assert.equal(received.length, 2);
+  f.setReply({ ok: true, value: { ...state, owner: { ...owner, generation: 1 } } });
+  assert.deepEqual(await f.api.remoteEditState({ owner }), failure('stale-owner'));
+  stop(); f.emit({ ...state, sequence: 7 }); assert.equal(received.length, 2);
+  f.dispose(); assert.equal(f.listeners.size, 0);
 });

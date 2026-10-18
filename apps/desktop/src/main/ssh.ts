@@ -68,3 +68,8 @@ export { channels } from "@ssterm/contracts";
 
 export { createTransferController, registerTransferHandlers, transferChannels } from "./transfers";
 export { createLocalTransferFiles } from "@ssterm/adapters/local-transfers";
+
+export { createRemoteEditController, registerRemoteEditHandlers, remoteEditChannels } from "./remote-edit";
+export { createRemoteEditService } from "@ssterm/services";
+export { createRemoteEditFiles } from "@ssterm/adapters/remote-edit-files";
+export { createRemoteEditEditor } from "@ssterm/adapters/remote-edit-editor";

@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-033: templates / broadcast / multi-host snippets `DONE`** — [workspace tools](../workspace-tools.md), [delivery](../agent-runs/sst-033-delivery.md): metadata-only saved layouts, fresh-session restore, explicit armed composer and captured existing/new targets; schema 4. Unit 474/474, development E2E 69/69, packaged 70/70. SST-030/031 are delivered; SST-029–038 remain authorized with SST-032 next. Native manual release checks and Developer ID/notarization remain pending.
+**SST-032: remote editing `DONE` (automated)** — [remote editing](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md): private text copies, explicit TextEdit/snapshot upload consent, SHA-256 stale checks, owned cleanup and captured SFTP targets. Unit 514/514, development E2E 72/72, packaged 73/73; schema remains 4. Resume and remote↔remote remain unsupported optional capabilities. SST-029 is next in the authorized order. Native TextEdit UI/autosave and prior manual release/signing gates remain pending.
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -81,7 +81,7 @@
 - [ ] **T037 / SST-029:** local PTY and additional OS capability/packaging matrix
 - [x] **T038 / SST-030:** jump host/multi-hop/proxy resolver, per-hop auth/trust/cleanup — DONE ([jump hosts](../jump-hosts.md), [delivery](../agent-runs/sst-030-delivery.md))
 - [x] **T039 / SST-031:** remote/dynamic tunnel capabilities and UI — DONE ([tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031), [delivery](../agent-runs/sst-031-delivery.md))
-- [ ] **T040 / SST-032:** remote editing/stale version/temp cleanup/advanced transfers
+- [x] **T040 / SST-032:** remote editing/stale version/temp cleanup/advanced transfers — automated DONE ([behavior](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md)); native TextEdit manual check pending; resume/remote↔remote unsupported
 - [x] **T041 / SST-033:** workspace templates/explicit broadcast/multi-host snippet target orchestration — DONE ([workspace tools](../workspace-tools.md), [delivery](../agent-runs/sst-033-delivery.md))
 - [ ] **T042 / SST-034:** logs/history/autocomplete/AI privacy and implementation scope
 - [ ] **T043 / SST-036:** threat model/independent crypto key lifecycle/test vectors/review

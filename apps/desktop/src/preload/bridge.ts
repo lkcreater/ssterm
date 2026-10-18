@@ -1,5 +1,7 @@
 import {
   channels,
+  isRemoteEditState, isStartRemoteEditRequest, isStartRemoteEditResponse, isRemoteEditRequest, isUploadRemoteEditRequest,
+  type RemoteEditState, type StartRemoteEditRequest, type RemoteEditRequest, type UploadRemoteEditRequest,
   isTransferState, isEnqueueTransfersRequest, isCancelTransferRequest, isResolveTransferConflictRequest, isRetryTransferRequest,
   type TransferState, type EnqueueTransfersRequest, type CancelTransferRequest, type ResolveTransferConflictRequest, type RetryTransferRequest,
   isCredentialState, isCredentialStateRequest, isAnswerCredentialsRequest,
@@ -92,6 +94,13 @@ export function createDesktopBridge(transport: BridgeTransport): {
   let terminalSequence = -1;
   let catalogSequence = -1;
   let sftpSequence = -1;
+  let remoteEditSequence = -1;
+  const remoteEditCallbacks = new Set<(state: RemoteEditState) => void>();
+  const remoteEditListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !isRemoteEditState(value) || !sameOwner(value.owner) || value.sequence <= remoteEditSequence) return;
+    remoteEditSequence = value.sequence;
+    for (const callback of remoteEditCallbacks) callback(value);
+  };
   let transferSequence = -1;
   let tunnelSequence = -1;
   const tunnelCallbacks = new Set<(state: TunnelState) => void>();
@@ -220,6 +229,7 @@ export function createDesktopBridge(transport: BridgeTransport): {
           terminalSequence = -1;
           catalogSequence = -1;
           sftpSequence = -1;
+          remoteEditSequence = -1;
           transferSequence = -1;
           tunnelSequence = -1;
         } else if (
@@ -414,6 +424,37 @@ export function createDesktopBridge(transport: BridgeTransport): {
     },
     onSftpState(callback: (state: SftpState) => void): () => void {
       return subscribe(channels.sftpStateChanged, sftpCallbacks, sftpListener, callback);
+    },
+    async remoteEditState(request: TerminalStateRequest) {
+      if (!isTerminalStateRequest(request)) return failure("invalid-request");
+      const result = await invoke(channels.remoteEditState, [{ owner: { ...request.owner } }], isRemoteEditState);
+      if (!result.ok) return result;
+      if (!sameOwner(result.value.owner) || !sameOwner(request.owner)) return failure("stale-owner");
+      remoteEditSequence = Math.max(remoteEditSequence, result.value.sequence);
+      return result;
+    },
+    onRemoteEditState(callback: (state: RemoteEditState) => void): () => void {
+      return subscribe(channels.remoteEditStateChanged, remoteEditCallbacks, remoteEditListener, callback);
+    },
+    startRemoteEdit(request: StartRemoteEditRequest) {
+      if (!isStartRemoteEditRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.startRemoteEdit, [{ owner: { ...request.owner }, source: source(request.source), path: request.path }], isStartRemoteEditResponse);
+    },
+    openRemoteEditor(request: RemoteEditRequest) {
+      if (!isRemoteEditRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.openRemoteEditor, [{ owner: { ...request.owner }, editId: request.editId, revision: request.revision }], isTerminalActionResponse);
+    },
+    checkRemoteEdit(request: RemoteEditRequest) {
+      if (!isRemoteEditRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.checkRemoteEdit, [{ owner: { ...request.owner }, editId: request.editId, revision: request.revision }], isTerminalActionResponse);
+    },
+    uploadRemoteEdit(request: UploadRemoteEditRequest) {
+      if (!isUploadRemoteEditRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.uploadRemoteEdit, [{ owner: { ...request.owner }, editId: request.editId, revision: request.revision, approvalId: request.approvalId }], isTerminalActionResponse);
+    },
+    discardRemoteEdit(request: RemoteEditRequest) {
+      if (!isRemoteEditRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.discardRemoteEdit, [{ owner: { ...request.owner }, editId: request.editId, revision: request.revision }], isTerminalActionResponse);
     },
     async transferState(request: TerminalStateRequest) {
       if (!isTerminalStateRequest(request)) return failure("invalid-request");

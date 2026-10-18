@@ -33,6 +33,10 @@ import { registerCredentialHandlers } from "./credential-runtime";
 import { closePrompt, createTerminalController, registerTerminalHandlers, type TerminalController } from "./terminals";
 import { createSftpController, registerSftpHandlers, type SftpController } from "./sftp";
 import { createLocalFiles } from "@ssterm/adapters/local-files";
+import { createRemoteEditFiles } from "@ssterm/adapters/remote-edit-files";
+import { createRemoteEditEditor } from "@ssterm/adapters/remote-edit-editor";
+import { createRemoteEditService } from "@ssterm/services";
+import { createRemoteEditController, registerRemoteEditHandlers, withRemoteEditPrompt, type RemoteEditController } from "./remote-edit";
 import { createLocalTransferFiles } from "@ssterm/adapters/local-transfers";
 import { createTransferController, registerTransferHandlers, withTransferPrompt, type TransferController } from "./transfers";
 import { applicationMenuTemplate } from "./menu";
@@ -94,6 +98,8 @@ let removeCredentialHandlers: (() => void) | undefined;
 let terminals: TerminalController | undefined;
 let removeTerminalHandlers: (() => void) | undefined;
 let sftp: SftpController | undefined;
+let remoteEdits: RemoteEditController | undefined;
+let removeRemoteEditHandlers: (() => void) | undefined;
 let transfers: TransferController | undefined;
 let removeTransferHandlers: (() => void) | undefined;
 let removeSftpHandlers: (() => void) | undefined;
@@ -217,6 +223,7 @@ const boundary = new WindowBoundary(
     identities?.revokeOwner(owner);
     // Stop output frames before the owner's sessions start closing.
     terminals?.revokeOwner(owner);
+    remoteEdits?.revokeOwner(owner);
     transfers?.revokeOwner(owner);
     sftp?.revokeOwner(owner);
     // Listeners and sockets close before the owner's sessions are revoked.
@@ -256,6 +263,12 @@ function pendingTransfers(windows: BrowserWindow[]): number {
   return windows.reduce((count, window) => {
     const owner = !window.isDestroyed() && boundary.ownerOf(window.webContents);
     return count + (owner ? transfers?.pendingCount(owner) ?? 0 : 0);
+  }, 0);
+}
+function pendingRemoteEdits(windows: BrowserWindow[]): number {
+  return windows.reduce((count, window) => {
+    const owner = !window.isDestroyed() && boundary.ownerOf(window.webContents);
+    return count + (owner ? remoteEdits?.pendingCount(owner) ?? 0 : 0);
   }, 0);
 }
 /** Windows showing a close sheet; a Quit meanwhile brings that sheet forward instead of stacking another. */
@@ -363,7 +376,7 @@ function createWindow(): void {
       allowClose = false;
       return;
     }
-    const prompt = withTransferPrompt(closePrompt(liveSessions([window]), "close"), pendingTransfers([window]), "close");
+    const prompt = withRemoteEditPrompt(withTransferPrompt(closePrompt(liveSessions([window]), "close"), pendingTransfers([window]), "close"), pendingRemoteEdits([window]), "close");
     if (!prompt) return;
     event.preventDefault();
     if (closePrompting) return;
@@ -506,6 +519,15 @@ if (ownsInstance) {
       boundary,
       controller: () => sftp,
     });
+    // Only marked, app-owned workspaces are pruned. Failure disables remote editing without blocking SSH.
+    const editFiles = createRemoteEditFiles({ root: join(app.getPath("userData"), "remote-edit-temp") });
+    const pruned = await editFiles.prune().catch(() => ({ ok: false as const }));
+    if (pruned.ok) remoteEdits = createRemoteEditController({
+      registry: desktopSessions.registry,
+      service: createRemoteEditService({ files: editFiles, editor: createRemoteEditEditor() }),
+      onLock: (listener) => desktopSessions!.onLock(listener),
+    });
+    removeRemoteEditHandlers = registerRemoteEditHandlers({ ipc: ipcMain, boundary, controller: () => remoteEdits });
     transfers = createTransferController({ registry: desktopSessions.registry, local: createLocalTransferFiles() });
     removeTransferHandlers = registerTransferHandlers({ ipc: ipcMain, boundary, controller: () => transfers });
     removeKnownHostHandlers = registerKnownHostHandlers({
@@ -575,6 +597,9 @@ if (ownsInstance) {
           sftp?.register(result.value.owner, (channel, value) => {
             if (!event.sender.isDestroyed()) event.sender.send(channel, value);
           });
+          remoteEdits?.register(result.value.owner, (channel, value) => {
+            if (!event.sender.isDestroyed()) event.sender.send(channel, value);
+          });
           transfers?.register(result.value.owner, (channel, value) => {
             if (!event.sender.isDestroyed()) event.sender.send(channel, value);
           });
@@ -622,7 +647,7 @@ app.on("before-quit", (event) => {
     if (!sheet.isDestroyed()) bringToFront(sheet);
     return;
   }
-  const prompt = quitConfirmed ? undefined : withTransferPrompt(closePrompt(liveSessions(BrowserWindow.getAllWindows()), "quit"), pendingTransfers(BrowserWindow.getAllWindows()), "quit");
+  const prompt = quitConfirmed ? undefined : withRemoteEditPrompt(withTransferPrompt(closePrompt(liveSessions(BrowserWindow.getAllWindows()), "quit"), pendingTransfers(BrowserWindow.getAllWindows()), "quit"), remoteEdits?.pendingCount() ?? 0, "quit");
   if (prompt) {
     quitPrompt = confirmDisconnect(BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0], prompt, "Quit")
       .then((confirmed) => {
@@ -638,6 +663,7 @@ app.on("before-quit", (event) => {
   credentials?.dispose();
   knownHosts?.dispose();
   terminals?.dispose();
+  const remoteEditsClosed = Promise.resolve(remoteEdits?.dispose()).catch(() => undefined);
   transfers?.dispose();
   sftp?.dispose();
   catalog?.dispose();
@@ -648,6 +674,7 @@ app.on("before-quit", (event) => {
   removeKnownHostHandlers?.();
   removeCredentialHandlers?.();
   removeTerminalHandlers?.();
+  removeRemoteEditHandlers?.();
   removeTransferHandlers?.();
   removeSftpHandlers?.();
   removeLinkHandlers?.();
@@ -668,7 +695,7 @@ app.on("before-quit", (event) => {
     Promise.resolve(tunnels?.dispose()).catch(() => undefined),
     new Promise<void>((done) => setTimeout(done, 2_000)),
   ]);
-  void Promise.all([tunnelsClosed, Promise.resolve(desktopSessions?.shutdown())]).finally(() => {
+  void Promise.all([tunnelsClosed, remoteEditsClosed.then(() => desktopSessions?.shutdown())]).finally(() => {
     closeStorage();
     shutdownComplete = true;
     app.quit();

@@ -1,3 +1,5 @@
+import type { RemoteEditState, StartRemoteEditRequest, StartRemoteEditResponse, RemoteEditRequest, UploadRemoteEditRequest } from './remote-edit.ts';
+export * from './remote-edit.ts';
 import type { CredentialState, CredentialStateRequest, AnswerCredentialsRequest, CancelCredentialPromptRequest, CredentialActionResponse } from "./credentials.ts";
 export * from "./credentials.ts";
 import type { TrustState, TrustStateRequest, AnswerHostTrustRequest, PrepareKnownHostRevokeRequest, RevokeKnownHostRequest, KnownHostRevokePreview, TrustActionResponse } from "./known-hosts.ts";
@@ -110,6 +112,13 @@ export interface DesktopAPI {
   statPath(request: FilePathRequest): Promise<Result<FileOutcome<FileAttributes>>>;
   /** Canonical path of an absolute, `~` or home-relative path. */
   resolvePath(request: FilePathRequest): Promise<Result<FileOutcome<string>>>;
+  remoteEditState(request: TerminalStateRequest): Promise<Result<RemoteEditState>>;
+  onRemoteEditState(callback: (state: RemoteEditState) => void): () => void;
+  startRemoteEdit(request: StartRemoteEditRequest): Promise<Result<StartRemoteEditResponse>>;
+  openRemoteEditor(request: RemoteEditRequest): Promise<Result<TerminalActionResponse>>;
+  checkRemoteEdit(request: RemoteEditRequest): Promise<Result<TerminalActionResponse>>;
+  uploadRemoteEdit(request: UploadRemoteEditRequest): Promise<Result<TerminalActionResponse>>;
+  discardRemoteEdit(request: RemoteEditRequest): Promise<Result<TerminalActionResponse>>;
   transferState(request: TerminalStateRequest): Promise<Result<TransferState>>;
   onTransferState(callback: (state: TransferState) => void): () => void;
   enqueueTransfers(request: EnqueueTransfersRequest): Promise<Result<TerminalActionResponse>>;
@@ -191,6 +200,13 @@ export const channels = Object.freeze({
   listDirectory: "ssterm:list-directory",
   statPath: "ssterm:stat-path",
   resolvePath: "ssterm:resolve-path",
+  remoteEditState: "ssterm:remote-edit-state",
+  remoteEditStateChanged: "ssterm:remote-edit-state-changed",
+  startRemoteEdit: "ssterm:start-remote-edit",
+  openRemoteEditor: "ssterm:open-remote-editor",
+  checkRemoteEdit: "ssterm:check-remote-edit",
+  uploadRemoteEdit: "ssterm:upload-remote-edit",
+  discardRemoteEdit: "ssterm:discard-remote-edit",
   transferState: "ssterm:transfer-state",
   transferStateChanged: "ssterm:transfer-state-changed",
   enqueueTransfers: "ssterm:enqueue-transfers",

@@ -1,6 +1,6 @@
 # Tickets สำหรับ ssterm
 
-**SST-033: templates / broadcast / multi-host snippets `DONE`** — [workspace tools](../workspace-tools.md), [delivery](../agent-runs/sst-033-delivery.md): metadata-only saved layouts, fresh-session restore, explicit armed composer and captured existing/new targets; schema 4. Unit 474/474, development E2E 69/69, packaged 70/70. SST-030/031 are delivered; SST-029–038 remain authorized with SST-032 next. Native manual release checks and Developer ID/notarization remain pending.
+**SST-032: remote editing `DONE` (automated)** — [remote editing](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md): private text copies, explicit TextEdit/snapshot upload consent, SHA-256 stale checks, owned cleanup and captured SFTP targets. Unit 514/514, development E2E 72/72, packaged 73/73; schema remains 4. Resume and remote↔remote remain unsupported optional capabilities. SST-029 is next in the authorized order. Native TextEdit UI/autosave and prior manual release/signing gates remain pending.
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) และ SST-029–038 เป็น later scope
 
@@ -43,7 +43,7 @@ UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) �
 | SST-029 | Local PTY / additional platforms | Later | P2 | L | 028 |
 | SST-030 | Jump host / multi-hop / proxy | DONE | P2 | L | 015,028 |
 | SST-031 | Remote and dynamic forwarding | Later | P2 | M | 025,026,028 |
-| SST-032 | Remote editing / advanced transfers | Later | P2 | L | 022,028 |
+| SST-032 | Remote editing / advanced transfers | DONE | P2 | L | 022,028 |
 | SST-033 | Templates / broadcast / multi-host snippets | DONE | P2 | L | 018,024,028 |
 | SST-034 | Logs / history / autocomplete / AI scope | Later | P2 | L | 028 |
 | SST-035 | Independent cloud sync | Later | P2 | L | 036,038 |
@@ -391,6 +391,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Acceptance:** server bind restrictions/remote assigned port surfaced; SOCKS behavior specified; ownership/stop/resources ตาม local contract; capability unavailable explicit. **Validation:** dedicated forwarding/SOCKS lab. **Tasks:** adapters; rule form; network tests.
 
 ### SST-032 — Remote editing / advanced transfers
+
+**Status:** automated gates `DONE` — [behavior](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md). Owned editor-process fixture, stale content/approval checks and private cleanup verified; native TextEdit UI/autosave is a manual release check. Resume and remote↔remote are explicitly unsupported optional scope.
 
 **Evidence:** W05. **Outcome:** remote-edit และ optional remote↔remote/resume workflows.
 

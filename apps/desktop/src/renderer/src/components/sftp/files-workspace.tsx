@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
-import { ArrowDownToLineIcon, ArrowUpFromLineIcon, CircleIcon, LaptopIcon, RotateCcwIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowDownToLineIcon, ArrowUpFromLineIcon, CircleIcon, FilePenLineIcon, LaptopIcon, RotateCcwIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
 import type { CatalogState, Owner, SftpSessionView } from "@ssterm/contracts";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +18,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { SessionHeader } from "@/components/workspace/live-terminal";
 import { FilePane, type FilePaneHandle } from "@/components/sftp/file-pane";
 import { TransferQueue } from "@/components/sftp/transfer-queue";
+import { RemoteEdits } from "@/components/sftp/remote-edits";
 import type { SftpController } from "@/hooks/use-sftp";
 import { useTransfers } from "@/hooks/use-transfers";
-import { parentPath } from "@/lib/file-browser";
+import { useRemoteEdit } from "@/hooks/use-remote-edit";
+import { joinPath, parentPath } from "@/lib/file-browser";
 import { endpointText } from "@/lib/catalog-filter";
 import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
 
@@ -79,6 +81,25 @@ export function FilesWorkspace({
     if (remote) remote.current = pane;
   }, [remote]);
   const transfers = useTransfers(owner);
+  const edits = useRemoteEdit(owner);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const uploaded = useRef(new Map<string, number>());
+  useEffect(() => { uploaded.current.clear(); }, [owner.windowId, owner.generation]);
+  useEffect(() => {
+    const retained = new Set(edits.edits.map((edit) => edit.id));
+    for (const id of uploaded.current.keys()) if (!retained.has(id)) uploaded.current.delete(id);
+    for (const edit of edits.edits) {
+      if (edit.state !== "uploaded" || uploaded.current.get(edit.id) === edit.revision) continue;
+      uploaded.current.set(edit.id, edit.revision);
+      remotePane.current?.refresh({ kind: "remote", sessionId: edit.sessionId, generation: edit.generation }, parentPath(edit.remotePath));
+    }
+  }, [edits.edits]);
+  const startEdit = () => {
+    const captured = remotePane.current?.snapshot();
+    if (!captured || captured.source.kind !== "remote") { edits.notify("Wait until the remote folder has finished loading."); return; }
+    if (captured.names.length !== 1) { edits.notify("Select one regular remote text file to edit."); return; }
+    void edits.start({ owner, source: captured.source, path: joinPath(captured.path, captured.names[0]!) });
+  };
   const completed = useRef(new Set<string>());
   useEffect(() => {
     completed.current.clear();
@@ -121,6 +142,9 @@ export function FilesWorkspace({
         </Button>
         <Button size="sm" variant="outline" disabled={session?.phase !== "ready" || transfers.pending.has("enqueue")} onClick={() => transfer("download")}>
           <ArrowDownToLineIcon data-icon="inline-start" aria-hidden="true" />Download selected files
+        </Button>
+        <Button ref={editButton} size="sm" variant="outline" disabled={session?.phase !== "ready" || edits.pending.has("start")} onClick={startEdit}>
+          <FilePenLineIcon data-icon="inline-start" aria-hidden="true" />Edit remote file
         </Button>
       </div>
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
@@ -189,6 +213,7 @@ export function FilesWorkspace({
         </ResizablePanel>
       </ResizablePanelGroup>
       <TransferQueue transfers={transfers} />
+      <RemoteEdits edits={edits} fallbackFocus={editButton} />
     </div>
   );
 }
