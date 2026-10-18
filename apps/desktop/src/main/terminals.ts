@@ -30,6 +30,7 @@ export const errors = {
   "invalid-private-key": "invalid-private-key", "unsupported-private-key": "unsupported-private-key",
   "key-mismatch": "key-mismatch", "prompt-cancelled": "prompt-cancelled", timeout: "timeout", dns: "dns", network: "network",
   "channel-open-failed": "channel-open-failed", "subsystem-unavailable": "subsystem-unavailable", "resource-limit": "resource-limit",
+  "jump-refused": "jump-refused", "proxy-failed": "proxy-failed",
 } as const satisfies Record<SessionErrorCode, TerminalErrorCode>;
 const accepted: Result<TerminalActionResponse> = { ok: true, value: { accepted: true } };
 const relocked: SessionResult<never> = { ok: false, error: { code: "locked", message: "The workspace is locked." } };

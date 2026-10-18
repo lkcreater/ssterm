@@ -1,4 +1,4 @@
-import { normalizeEndpoint, normalizeLabel, normalizeTag, tunnelRuleProblem, type MetadataSnapshot, type MetadataChange, type Entity, type Id, type SecretKind, type SecretOperation } from '@ssterm/domain';
+import { normalizeEndpoint, normalizeLabel, normalizeTag, tunnelRuleProblem, hostChainProblem, type MetadataSnapshot, type MetadataChange, type Entity, type Id, type SecretKind, type SecretOperation } from '@ssterm/domain';
 import { fail } from './errors.ts';
 import { validHostKeyIdentity } from './host-key.ts';
 import { ENVELOPE_OVERHEAD, ENVELOPE_VERSION, MAX_ENVELOPE, PROTECTION_FORMAT } from './protection.ts';
@@ -17,7 +17,7 @@ function oneOf(value: unknown, values: unknown[]): void {
   if (!values.includes(value)) fail('invalid-request');
 }
 const fields = {
-  host: ['label', 'address', 'groupId', 'environment', 'port', 'auth'],
+  host: ['label', 'address', 'groupId', 'environment', 'port', 'auth', 'jumpHostId', 'proxy'],
   group: ['label', 'parentId', 'port', 'auth'],
   identity: ['label', 'username', 'method', 'passwordRef', 'keyId'],
   tag: ['label'],
@@ -45,7 +45,9 @@ const defaults = {
     },
     auth: {
       mode: 'inherit'
-    }
+    },
+    jumpHostId: null,
+    proxy: null
   },
   group: {
     parentId: null,
@@ -115,7 +117,19 @@ function normalizeData(kind: keyof typeof fields, data: Record<string, unknown>,
         break;
       case 'parentId':
       case 'groupId':
+      case 'jumpHostId':
         if (value !== null) id(value);
+        break;
+      case 'proxy':
+        if (value === null) break;
+        keys(value, ['type', 'host', 'port'], ['type', 'host', 'port']);
+        oneOf((value as { type: unknown }).type, ['http', 'socks5']);
+        if (!Number.isInteger((value as { port: unknown }).port) || (value as { port: number }).port < 1 || (value as { port: number }).port > 65535) fail('invalid-request');
+        try {
+          result[key] = { ...(value as object), host: normalizeEndpoint((value as { host: string }).host) };
+        } catch {
+          fail('invalid-request');
+        }
         break;
       case 'hostId':
         id(value);
@@ -575,7 +589,16 @@ export function validateGraph(s: MetadataSnapshot): void {
       parent = groups.get(parent)!.parentId;
     }
   }
+  const hostsById = new Map(s.hosts.map((row) => [row.id, row]));
   for (const row of s.hosts) {
+    if (hostChainProblem(row, hostsById) !== null) fail('constraint');
+    if (row.proxy) {
+      try {
+        if (normalizeEndpoint(row.proxy.host) !== row.proxy.host) fail('constraint');
+      } catch {
+        fail('constraint');
+      }
+    }
     if (!has(s.groups, row.groupId)) fail('constraint');
     try {
       if (normalizeEndpoint(row.address) !== row.address) fail('constraint');

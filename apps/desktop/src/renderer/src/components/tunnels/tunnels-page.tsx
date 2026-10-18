@@ -74,6 +74,8 @@ export const tunnelErrorText: Record<TunnelErrorCode, string> = {
   dns: "The server's address could not be resolved.",
   network: "The SSH connection was lost.",
   "channel-open-failed": "The server refused the tunnel.",
+  "jump-refused": "A jump host refused to connect onward to the server.",
+  "proxy-failed": "The proxy did not connect.",
   other: "The tunnel stopped.",
 };
 const requestText = (code: ErrorCode) =>

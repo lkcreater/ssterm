@@ -9,7 +9,7 @@ test("initializes one durable vault without exposing database details", async ({
   const before = await page.evaluate(() => window.ssterm.bootstrap());
   expect(before.ok).toBe(true);
   if (!before.ok) throw new Error("Bootstrap failed");
-  expect(before.value.storage).toEqual({ status: "ready", schemaVersion: 2 });
+  expect(before.value.storage).toEqual({ status: "ready", schemaVersion: 3 });
   expect(JSON.stringify(before)).not.toContain(profile);
   const database = await readFile(join(profile, "metadata/catalog.sqlite"));
   expect(database.subarray(0, 16).toString()).toBe("SQLite format 3\0");
@@ -209,7 +209,7 @@ test("runs the shipped SQLite Adapter through atomic CRUD, backup and restart", 
   expect(result.backup).toEqual({
     hashMatches: true,
     includesOsSecrets: false,
-    schemaVersion: 2,
+    schemaVersion: 3,
   });
   expect(result.newer).toBe("unsupported-schema");
   expect(result.newerPreserved).toBe(true);

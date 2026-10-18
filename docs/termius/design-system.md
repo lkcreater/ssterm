@@ -66,6 +66,8 @@ Concise, calm, and actionable. Say **“Connection lost. Reconnect”** rather t
 | Disconnected / Inactive | `#7087AA` | Not connected | Circle + “Disconnected” |
 | Brand / Active focus | `#6A9FFF` | User selection or current workspace | Accent edge / focus ring |
 
+Validation labels and error copy use the derived semantic `destructive-text` token (`#EE8686`) on popover forms. The original destructive state/fill remains `#E87979`; its text contrast on the popover was 4.33:1 during the SST-030 rendered check, below the required 4.5:1.
+
 **Important:** A connected server is green even when its tab is not active. The **active tab** is blue regardless of connection state. Use icon and text alongside color. Mark production environments explicitly with a `PROD` text label; do not rely on red alone.
 
 ### 3.3 Light theme — proposed complementary palette
@@ -214,6 +216,7 @@ The values below assume a shadcn/ui configuration that accepts CSS variables as 
   --accent: #243650;
   --accent-foreground: #e5edfa;
   --destructive: #e87979;
+  --destructive-text: #ee8686;
   --border: #2b3d59;
   --input: #2b3d59;
   --ring: #6a9fff;

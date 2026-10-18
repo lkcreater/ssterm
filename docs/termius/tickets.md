@@ -1,6 +1,6 @@
 # Tickets สำหรับ ssterm
 
-**SST-031: remote and dynamic forwarding `DONE`** — [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031): remote `tcpip-forward` with assigned port, loopback SOCKS5, schema 2 migration with backup; unit 440/440, E2E 64/64, packaged 65/65. Later-scope range SST-029–038 authorized (ทำงาน SST-029 - SST-038 ให้จบ); next SST-030. SST-028 manual checks (T035, DS06/T052), SST-027 manual Thai IME/VoiceOver and Developer ID/notarization remain pending
+**SST-030: jump host / multi-hop / proxy `DONE`** — [jump hosts](../jump-hosts.md), [delivery](../agent-runs/sst-030-delivery.md): per-hop trust/auth and cleanup, up to three jump hosts, HTTP CONNECT/SOCKS5 proxies, schema 3 migration; unit 451/451, development E2E 66/66, packaged 67/67. SST-031 is delivered; SST-029–038 remain authorized with SST-033 next. SST-027/028 manual Thai IME/VoiceOver/menu/TCC checks and Developer ID/notarization remain pending.
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) และ SST-029–038 เป็น later scope
 
@@ -41,7 +41,7 @@ UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) �
 | SST-027 | End-to-end / accessibility / regression gate | M5 | P0 | L | 018,022,024,026 |
 | SST-028 | macOS package / release readiness | M5 | P0 | M | 027 |
 | SST-029 | Local PTY / additional platforms | Later | P2 | L | 028 |
-| SST-030 | Jump host / multi-hop / proxy | Later | P2 | L | 015,028 |
+| SST-030 | Jump host / multi-hop / proxy | DONE | P2 | L | 015,028 |
 | SST-031 | Remote and dynamic forwarding | Later | P2 | M | 025,026,028 |
 | SST-032 | Remote editing / advanced transfers | Later | P2 | L | 022,028 |
 | SST-033 | Templates / broadcast / multi-host snippets | Later | P2 | L | 018,024,028 |
@@ -375,6 +375,8 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 **Acceptance:** spawn/write/resize/exit/dispose + Unicode/backpressure/child cleanup ผ่าน local fixtures; Windows/Linux secure-store/PTY/package capability declared per platform; unsupported features มี explicit message. **Validation:** OS-specific integration matrix. **Tasks:** local adapter; platform parity ADR; packaging matrices.
 
 ### SST-030 — Jump host / multi-hop / proxy
+
+**Status:** `DONE` — independent TEST/REVIEW/DELIVER complete; [behavior](../jump-hosts.md), [delivery](../agent-runs/sst-030-delivery.md). Per-hop trust/auth, cancellation/failure cleanup, cycle/depth limits, proxy parser bounds and schema-3 upgrade verified.
 
 **Evidence:** W04/S03. **Outcome:** per-hop authenticated transport chain.
 

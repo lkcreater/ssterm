@@ -105,6 +105,7 @@ function CredentialPromptDialog({ owner, prompt, available }: { owner: Owner; pr
           <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="min-w-0 break-all font-medium">{prompt.targetLabel}</span>
             {prompt.environment ? <Badge variant={prompt.environment === "PROD" ? "production" : "outline"}>{prompt.environment}</Badge> : null}</div>
           <p className="min-w-0 break-all font-mono text-sm">{prompt.username ? `${prompt.username}@` : ""}{prompt.endpointHost}:{prompt.endpointPort}</p>
+          {prompt.jumpFor ? <p className="type-caption min-w-0 break-all text-muted-foreground" data-testid="credential-jump-for">Jump host on the way to {prompt.jumpFor}. These credentials are used for the jump host only.</p> : null}
           <FieldGroup>{prompt.fields.map((field, index) => <Field key={field.id} data-disabled={busy || undefined}>
             <FieldLabel htmlFor={`credential-${field.id}`}>{label(field.id)}</FieldLabel>
             <Input id={`credential-${field.id}`} name={field.id} type={field.echo ? "text" : "password"} autoComplete="off" spellCheck={false} autoCapitalize="none"

@@ -85,7 +85,7 @@ test("metadata written by another build reopens in the packaged build; Keychain-
         };
       }, { body: BODY });
       expect(state).toEqual({
-        storage: { status: "ready", schemaVersion: 2 }, host: ["เซิร์ฟเวอร์อัปเกรด/PROD"], rules: ["Upgrade rule"],
+        storage: { status: "ready", schemaVersion: 3 }, host: ["เซิร์ฟเวอร์อัปเกรด/PROD"], rules: ["Upgrade rule"],
         fontSize: 17, runningTunnels: 0, password: "saved", snippet: "saved",
       });
       expect(readdirSync(join(profile, "metadata")).filter((name) => /^catalog\.sqlite\.v1-.+\.backup$/u.test(name)), "a schema-1 backup is kept").toHaveLength(1);

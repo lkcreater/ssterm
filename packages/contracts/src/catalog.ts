@@ -18,6 +18,12 @@ export interface CatalogEffective {
   identityId: string | null;
   authSource: CatalogSource;
 }
+/** A proxy that reaches a host directly; no proxy credentials exist. */
+export interface CatalogProxy {
+  type: "http" | "socks5";
+  host: string;
+  port: number;
+}
 export interface CatalogHost {
   id: string;
   revision: number;
@@ -27,6 +33,10 @@ export interface CatalogHost {
   environment: CatalogEnvironment;
   port: CatalogPort;
   auth: CatalogAuth;
+  /** SST-030: connect through this saved host (its own trust and identity); chained jump hosts give multi-hop. */
+  jumpHostId: string | null;
+  /** SST-030: or through a proxy (only when there is no jump host). */
+  proxy: CatalogProxy | null;
   /** Sorted by tag label. */
   tagIds: string[];
   /** Root first. */
@@ -125,6 +135,8 @@ export interface CatalogHostData {
   environment?: CatalogEnvironment;
   port?: CatalogPort;
   auth?: CatalogAuth;
+  jumpHostId?: string | null;
+  proxy?: CatalogProxy | null;
 }
 export interface CatalogGroupData {
   label: string;
@@ -193,6 +205,10 @@ export type CatalogFieldError =
   | { field: "bindPort" | "destinationPort" | "bindAddress"; code: "invalid" }
   | { field: "destination"; code: "invalid" | "too-long" }
   | { field: "host"; code: "not-found" }
+  /** Jump host: missing, a loop back to this host, more than 3 jump hosts, or (on delete) still used by another host. */
+  | { field: "jump"; code: "not-found" | "cycle" | "too-deep" | "in-use" }
+  /** Proxy: an invalid address, or set together with a jump host. */
+  | { field: "proxy"; code: "invalid" | "with-jump" }
   /** A starting, running or stopping tunnel uses this rule (or a rule of this server); stop it first. */
   | { field: "tunnel"; code: "running" };
 export interface CatalogHostImpact {
@@ -275,9 +291,14 @@ function isEffective(v: unknown): v is CatalogEffective {
     source(v.portSource) && source(v.authSource) &&
     (v.authSelection === "identity" ? isCatalogId(v.identityId) : (v.authSelection === "clear" || v.authSelection === "none") && v.identityId === null);
 }
+function isProxy(v: unknown, max: number): v is CatalogProxy {
+  return exactObject(v, ["type", "host", "port"]) && (v.type === "http" || v.type === "socks5") && raw(v.host, max) &&
+    typeof v.port === "number";
+}
 function isCatalogHost(v: unknown): v is CatalogHost {
-  return exactObject(v, ["id", "revision", "label", "address", "groupId", "environment", "port", "auth", "tagIds", "ancestry", "effective"]) &&
+  return exactObject(v, ["id", "revision", "label", "address", "groupId", "environment", "port", "auth", "jumpHostId", "proxy", "tagIds", "ancestry", "effective"]) &&
     isCatalogId(v.id) && positive(v.revision) && label(v.label) && text(v.address, 253) && nullableId(v.groupId) &&
+    nullableId(v.jumpHostId) && (v.proxy === null || isProxy(v.proxy, 253)) && !(v.jumpHostId !== null && v.proxy !== null) &&
     environment(v.environment) && port(v.port, true) && auth(v.auth) && ids(v.tagIds) &&
     list(v.ancestry, (row): row is { id: string; label: string } => exactObject(row, ["id", "label"]) && isCatalogId(row.id) && label(row.label)) &&
     isEffective(v.effective);
@@ -327,7 +348,7 @@ export function isCatalogState(v: unknown): v is CatalogState {
 
 /** Data keys allowed per kind; `create` requires the listed ones. */
 const dataKeys = {
-  host: { all: ["label", "address", "groupId", "environment", "port", "auth"], required: ["label", "address"] },
+  host: { all: ["label", "address", "groupId", "environment", "port", "auth", "jumpHostId", "proxy"], required: ["label", "address"] },
   group: { all: ["label", "parentId", "port", "auth"], required: ["label"] },
   tag: { all: ["label"], required: ["label"] },
   identity: { all: ["label", "username", "method", "keyId"], required: ["label", "username", "method"] },
@@ -346,6 +367,8 @@ function isData(v: unknown, kind: keyof typeof dataKeys, creating: boolean): boo
   return (!("label" in d) || raw(d.label, 2048)) &&
     (!("address" in d) || raw(d.address, 2048)) &&
     (!("groupId" in d) || nullableId(d.groupId)) && (!("parentId" in d) || nullableId(d.parentId)) &&
+    // Proxy address and port content are field errors from main; the guard bounds type and size.
+    (!("jumpHostId" in d) || nullableId(d.jumpHostId)) && (!("proxy" in d) || d.proxy === null || isProxy(d.proxy, 2048)) &&
     (!("environment" in d) || environment(d.environment)) && (!("port" in d) || port(d.port, false)) &&
     (!("auth" in d) || auth(d.auth)) && (!("username" in d) || raw(d.username, 2048)) &&
     (!("method" in d) || d.method === "password" || d.method === "key" || d.method === "keyboard-interactive") &&
@@ -394,6 +417,7 @@ const fieldCodes: Record<CatalogFieldError["field"], readonly string[]> = {
   parent: ["cycle", "not-found"], group: ["not-found"], identity: ["not-found"], tag: ["not-found"],
   username: ["empty", "too-long", "control"], keyId: ["not-found", "required"],
   bindPort: ["invalid"], destinationPort: ["invalid"], bindAddress: ["invalid"], destination: ["invalid", "too-long"], host: ["not-found"], tunnel: ["running"],
+  jump: ["not-found", "cycle", "too-deep", "in-use"], proxy: ["invalid", "with-jump"],
 };
 function isFieldError(v: unknown): v is CatalogFieldError {
   return exactObject(v, ["field", "code"]) && typeof v.field === "string" && Object.hasOwn(fieldCodes, v.field) &&

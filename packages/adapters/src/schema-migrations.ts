@@ -1,5 +1,5 @@
 import type { MigrationStep } from './migrations.ts';
-import { tunnelColumns } from './schema.ts';
+import { hostChainColumns, tunnelColumns } from './schema.ts';
 
 /**
  * Production migration chain. Each step runs in its own transaction after a verified backup. Steps that do not touch
@@ -20,5 +20,15 @@ export const MIGRATIONS: readonly MigrationStep[] = [{
       DROP TABLE tunnel_rule;
       ALTER TABLE tunnel_rule_v2 RENAME TO tunnel_rule;
       CREATE INDEX tunnel_host_idx ON tunnel_rule(vaultId,hostId);`);
+  },
+}, {
+  from: 2,
+  to: 3,
+  preservesProtection: true,
+  preservesJournal: true,
+  // SST-030: jump host / proxy columns, all NULL for existing hosts (a direct connection, as before).
+  apply(db) {
+    for (const column of hostChainColumns) db.exec(`ALTER TABLE host ADD COLUMN ${column}`);
+    db.exec('CREATE INDEX host_jump_idx ON host(jumpHostId)');
   },
 }];

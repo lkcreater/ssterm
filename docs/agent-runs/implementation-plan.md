@@ -1020,3 +1020,36 @@ The user instructed “ทำงาน SST-029 - SST-038 ให้จบ” and 
 ### Final SST-031 record — 2026-10-17
 
 [Tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031), [delivery](sst-031-delivery.md). typecheck PASS; unit 440/440; build PASS; E2E 64/64; package PASS; packaged 65/65. Review: no critical; the pending-journal upgrade high fixed; mediums and actionable lows fixed.
+
+## SST-030 execution plan — jump host / multi-hop / proxy (2026-10-17)
+
+**Scope (T038):** per-hop authenticated transport chain. A host may name one **jump host** (`jumpHostId`); chaining jump hosts gives multi-hop. A host reached directly may instead use an **HTTP CONNECT or SOCKS5 proxy** without proxy credentials (optional capability; no proxy secrets are stored). Recorded before code.
+
+| ID | Files | Decision |
+|---|---|---|
+| D1 data | `packages/domain` (Host, catalog resolve), `packages/adapters/src/{schema,schema-migrations,validation,records}.ts`, services catalog impact/delete | Schema 3 adds `host.jumpHostId` (FK host, ≠ self), `proxyType http\|socks5`, `proxyHost`, `proxyPort` (all null or all set; proxy only without a jump host) via `ALTER TABLE ADD COLUMN` (host is referenced by other tables, so no rebuild). Graph check: no cycles, chain ≤ 3 jump hosts (4 SSH hops). Deleting a host still used as a jump host is refused (`jump: in-use`) — silently connecting directly instead would change the network path. |
+| D2 resolve | `packages/domain/src/catalog.ts` | `ResolvedHostConfig.jumps` (outermost first, each fully resolved with its own identity/port) and `.proxy` (the outermost hop's). Cycle/depth re-checked at resolve → `invalid-config`. |
+| D3 transport | `packages/adapters/src/{ssh,proxy}.ts` | `createSshConnection({ sock })` uses a supplied stream; intermediate hops open `tunnel` and hand the next hop a `direct-tcpip` stream (`jump-refused` when the jump host refuses). Proxy client: SOCKS5 no-auth CONNECT (names unresolved) / HTTP `CONNECT`, bounded, 15 s, leftover bytes kept (`proxy-failed`). |
+| D4 session | `packages/services/src/{ssh-session,sessions}.ts` | Hops connect in order inside one session generation; each hop verifies its **own** endpoint with the shared known-host policy and authenticates with its **own** identity only (credentials of one hop are never offered to another). Registry: after a hop authenticates, `verifyingHost()` may move Authenticating → VerifyingHost for the next hop. Each hop resource is owned; cancel/lock/failure/timeout tears all down. |
+| D5 prompts/UI | contracts known-hosts/credentials, main projections, trust/credential dialogs, host editor, host detail, error maps | Prompts carry the hop's label/endpoint/user plus `jumpFor` (final target) so a bastion prompt never reads as the target. Host editor “Connect via”: Direct / Jump host / Proxy. New codes `jump-refused`, `proxy-failed` mapped everywhere. |
+| D6 lab | `tests/fixtures/jump/*.cjs`, unit + E2E | Docker: a user-defined network with bastion(s) and a target (`PermitOpen` set per run via `docker exec` + HUP); one hop, two hops, failed intermediate auth, refused forward, cleanup counts. Unit: in-process ssh2 servers for chain/trust/credential isolation; HTTP CONNECT/SOCKS5 proxy clients against test-owned proxies (no proxy Docker E2E). |
+
+**Verification:** typecheck, unit, build, E2E, package, packaged, diff check. **Rollback:** revert; a schema-3 store is refused by older builds; the `catalog.sqlite.v2-*.backup` restores it.
+
+### SST-030 completion run — 2026-10-18
+
+**Authorization:** the user instructed “ทำต่อให้เสร็จ” after the SST-030 status check. Continue the existing implementation through independent TEST → REVIEW → DELIVER and a local commit; no push or publishing. The earlier SST-029–038 authorization and recorded dependency order remain in effect.
+
+**Ownership:** root owns remaining fixes and documentation; independent `tester` owns verification and evidence only; independent `reviewer` owns a read-only correctness/security review. Both inspect the existing uncommitted implementation; overlapping edits remain sequential.
+
+**Checks:** `npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e -- jump-hosts.spec.ts jump-hosts-ui.spec.ts`, `npm run test:e2e`, `npm run package:mac`, `npm run test:packaged`, `git diff --check`. Test only owned loopback/Docker/Keychain fixtures, with credentials excluded from traces and receipts. Preserve migration backups; older builds refuse schema 3. Check upstream route edits, protocol parsing bounds, cancellation and downstream hop failures before delivery.
+
+**Ledger at resumption:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT IN PROGRESS · TEST IN PROGRESS · REVIEW IN PROGRESS · DELIVER PENDING.
+
+**Review fixes:** bounded complete HTTP CONNECT headers as well as partial ones; enforce SOCKS5 RSV and nonempty domain fields; normalize the target before IPv6 encoding; require non-NULL proxy host/port in SQLite CHECKs; validate dependent routes when editing an upstream jump host. New `proxy.test.ts` plus extended host-chain tests cover these regressions. Independent follow-up review found no remaining material issue, including in hop cleanup, credential routing, documentation and screenshot privacy. The additional minimum-window UI check found validation copy at 4.33:1 on the popover; a derived `destructive-text` token fixes invalid field labels and copy without changing state/fill colors.
+
+**SST-030 final ledger:** ANALYZE DONE · DESIGN DONE · PLAN DONE · IMPLEMENT DONE · TEST DONE · REVIEW DONE · DELIVER DONE.
+
+### Final SST-030 record — 2026-10-18
+
+[Jump hosts and proxies](../jump-hosts.md), [delivery](sst-030-delivery.md). Final typecheck PASS; unit 451/451; build PASS; development E2E 66/66, plus post-contrast-fix Jump UI 1/1 and affected catalog/release checks 8/8; package PASS; packaged 67/67 on final source. Independent review: no remaining material findings. Screenshots reviewed at CSS 960×640 / Retina 2× with reduced motion; Keychain/fixture teardown clean. Commit locally; SST-033 is next in the authorized dependency order. Developer ID/notarization and human-operated MVP release checks remain pending.

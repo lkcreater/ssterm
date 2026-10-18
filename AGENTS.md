@@ -12,6 +12,8 @@ SST-001–026 (with DS04) are delivered and committed; SST-027's automated MVP g
 
 ## Read the relevant source of truth
 
+SST-030 jump hosts / multi-hop / proxies are delivered ([behavior](docs/jump-hosts.md), [delivery](docs/agent-runs/sst-030-delivery.md)); SST-033 is next in the already-authorized order. Schema 3 extends host routes, with a verified backup before migration (`catalog.sqlite.v2-*.backup`, or v1 when upgrading directly from v1). Current verification baseline: 451 unit / 66 development E2E / 67 packaged; targeted Jump UI and affected DS05/catalog checks also passed after the validation-text contrast fix. Jump fixtures (`tests/fixtures/jump/ssh.cjs`) create three owned OpenSSH containers and an isolated Docker network; teardown removes all of them. HTTP CONNECT/SOCKS5 proxy tests use owned loopback servers. Proxy authentication is unsupported; chains allow at most three jump hosts. Credential-bearing specs disable automatic traces/screenshots/video; explicit visual evidence is captured before credential entry.
+
 | Topic | Document |
 |---|---|
 | Product brief | [docs/intro.md](docs/intro.md) |

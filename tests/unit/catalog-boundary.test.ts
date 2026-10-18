@@ -135,7 +135,7 @@ test("catalog contracts: shared validators, exact intent subset, caps and reques
 
   const effective = { port: 22, portSource: { kind: "default" }, authSelection: "none", identityId: null, authSource: { kind: "default" } };
   const row = { id: host, revision: 1, label: "Web", address: "web.example", groupId: null, environment: null, port: { mode: "inherit" },
-    auth: { mode: "inherit" }, tagIds: [], ancestry: [], effective };
+    auth: { mode: "inherit" }, jumpHostId: null, proxy: null, tagIds: [], ancestry: [], effective };
   const secretStatus = { availability: "ready", cleanupPending: false };
   const identityRow = { id: identity, revision: 1, label: "L", username: "u", method: "password", passwordSaved: true, keyId: null, pending: false };
   const keyRow = { id: id(), revision: 1, label: "K", algorithm: "ssh-ed25519", fingerprint: `SHA256:${"a".repeat(43)}`,
@@ -148,6 +148,8 @@ test("catalog contracts: shared validators, exact intent subset, caps and reques
     { ...base, hosts: [{ ...row, passwordRef: id() }] },
     { ...base, hosts: [{ ...row, effective: { ...effective, authSelection: "identity" } }] },
     { ...base, hosts: [{ ...row, port: { mode: "value", port: 70_000 } }] },
+    { ...base, hosts: [{ ...row, jumpHostId: id(), proxy: { type: "http", host: "proxy.example", port: 8080 } }] },
+    { ...base, hosts: [{ ...row, proxy: { type: "socks4", host: "proxy.example", port: 1080 } }] },
     { ...base, identities: [{ ...identityRow, passwordRef: null }] },
     { ...base, identities: [{ ...identityRow, method: "key" }] },
     { ...base, identities: [{ ...identityRow, method: "keyboard-interactive", passwordSaved: true }] },
@@ -196,7 +198,7 @@ test("state maps effective port and auth with provenance, group inherited values
   const [alone, inherits, overrides] = state.hosts;
   assert.deepEqual(inherits, {
     id: ids.inherited, revision: 2, label: "Inherits", address: "inherit.example", groupId: ids.child, environment: "PROD",
-    port: { mode: "inherit" }, auth: { mode: "inherit" }, tagIds: [ids.tag],
+    port: { mode: "inherit" }, auth: { mode: "inherit" }, jumpHostId: null, proxy: null, tagIds: [ids.tag],
     ancestry: [{ id: ids.root, label: "ราก Root" }, { id: ids.child, label: "Child" }],
     effective: { port: 2222, portSource: { kind: "group", id: ids.root }, authSelection: "identity", identityId: ids.savedId,
       authSource: { kind: "group", id: ids.root } },

@@ -39,6 +39,8 @@
   --accent: var(--popover);
   --accent-foreground: var(--foreground);
   --destructive: #e87979;
+  /* Validation copy must also pass 4.5:1 on the lighter popover surface. */
+  --destructive-text: #ee8686;
   --destructive-foreground: var(--background);
   --border: #2b3d59;
   /* Existing muted ink gives essential control boundaries >3:1 on every surface. */
@@ -95,6 +97,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);

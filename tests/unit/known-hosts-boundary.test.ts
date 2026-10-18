@@ -247,6 +247,7 @@ test("trust contracts reject nested extra fields, secrets, malformed keys and un
     promptId: "p",
     targetLabel: "lab",
     environment: "PROD",
+    jumpFor: null,
     ...trust,
   };
   const { kind: _kind, ...publicPrompt } = prompt;
@@ -258,6 +259,8 @@ test("trust contracts reject nested extra fields, secrets, malformed keys and un
     { ...base, prompts: [{ ...publicPrompt, status: "changed" }] },
     { ...base, prompts: [{ ...publicPrompt, publicKey: "bad" }] },
     { ...base, prompts: [{ ...publicPrompt, endpointPort: 0 }] },
+    { ...base, prompts: [{ ...publicPrompt, jumpFor: "" }] },
+    { ...base, prompts: [{ ...publicPrompt, jumpFor: "bad\u0000" }] },
     { ...base, sequence: Infinity },
   ])
     assert.equal(isTrustState(bad), false);

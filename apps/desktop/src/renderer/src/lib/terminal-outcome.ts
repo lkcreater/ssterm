@@ -19,6 +19,8 @@ const reasons = {
   "subsystem-unavailable": "the connection could not be started",
   "resource-limit": "a session limit was reached",
   locked: "ssterm is locked",
+  "jump-refused": "a jump host refused to connect onward (check its forwarding settings)",
+  "proxy-failed": "the proxy did not connect",
 } as const satisfies Record<TerminalErrorCode, string>;
 const sftpReasons: Partial<Record<TerminalErrorCode, string>> = {
   "channel-open-failed": "the server did not open a file session",

@@ -621,7 +621,7 @@ export function HostEditor({
     toDraft: hostDraft,
     validate: hostErrors,
     toIntent: hostIntent,
-    order: ["label", "address", "group", "port", "identity"],
+    order: ["label", "address", "group", "jump", "proxy", "port", "identity"],
     selfHostId: hostId,
     onSaved,
     onClose,
@@ -681,6 +681,67 @@ export function HostEditor({
           })
         }
       />
+      <ChoiceField
+        id={field("via" as FieldName)}
+        label="Connect via"
+        value={draft.via}
+        items={[
+          { value: "direct", label: "Direct" },
+          { value: "jump", label: "A jump host (another saved server)" },
+          { value: "proxy", label: "A proxy (SOCKS5 or HTTP)" },
+        ]}
+        description={
+          draft.via === "jump"
+            ? "The jump host signs in with its own identity and host-key check, then opens the connection to this server. Its address is resolved by the jump host."
+            : draft.via === "proxy"
+              ? "The proxy opens the connection to this server. No proxy password is used."
+              : undefined
+        }
+        onChange={(value) => editor.set({ via: value as HostDraft["via"] })}
+      />
+      {draft.via === "jump" ? (
+        <ChoiceField
+          id={field("jump")}
+          label="Jump host"
+          value={draft.jumpHostId ?? "none"}
+          items={[
+            { value: "none", label: "Choose a server" },
+            ...state.hosts
+              .filter((host) => host.id !== hostId)
+              .map((host) => ({ value: host.id, label: host.environment === "PROD" ? `${host.label} · PROD` : host.label })),
+          ]}
+          error={errors.jump}
+          onChange={(value) => editor.set({ jumpHostId: value === "none" ? null : value })}
+        />
+      ) : null}
+      {draft.via === "proxy" ? (
+        <>
+          <ChoiceField
+            id={field("proxyType" as FieldName)}
+            label="Proxy type"
+            value={draft.proxyType}
+            items={[
+              { value: "socks5", label: "SOCKS5 (names resolved by the proxy)" },
+              { value: "http", label: "HTTP CONNECT" },
+            ]}
+            onChange={(value) => editor.set({ proxyType: value as HostDraft["proxyType"] })}
+          />
+          <TextField
+            id={field("proxy")}
+            label="Proxy address"
+            value={draft.proxyHost}
+            error={errors.proxy}
+            description="Host name or IP address of the proxy."
+            onChange={(proxyHost) => editor.set({ proxyHost })}
+          />
+          <TextField
+            id={field("proxyPort" as FieldName)}
+            label="Proxy port"
+            value={draft.proxyPort}
+            onChange={(proxyPort) => editor.set({ proxyPort })}
+          />
+        </>
+      ) : null}
       <PortField editor={editor as Editor<HostDraft>} inherited={inherited} groups={groups} />
       <IdentityField
         editor={editor as Editor<HostDraft>}

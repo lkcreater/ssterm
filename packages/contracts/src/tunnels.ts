@@ -28,12 +28,14 @@ export type TunnelErrorCode =
   | "dns"
   | "network"
   | "channel-open-failed"
+  | "jump-refused"
+  | "proxy-failed"
   | "other";
 export const TUNNEL_ERROR_CODES: readonly TunnelErrorCode[] = [
   "address-in-use", "permission-denied", "address-unavailable", "bind-failed", "remote-bind-refused", "rule-not-found", "already-active",
   "resource-limit", "locked", "invalid-config", "host-key-untrusted", "host-key-changed", "auth-denied", "credentials-required",
   "credentials-unavailable", "invalid-private-key", "unsupported-private-key", "key-mismatch", "prompt-cancelled", "timeout",
-  "dns", "network", "channel-open-failed", "other",
+  "dns", "network", "channel-open-failed", "jump-refused", "proxy-failed", "other",
 ];
 export interface TunnelStatus {
   ruleId: string;

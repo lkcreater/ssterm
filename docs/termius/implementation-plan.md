@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-031: remote and dynamic forwarding `DONE`** — [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031): remote `tcpip-forward` with assigned port, loopback SOCKS5, schema 2 migration with backup; unit 440/440, E2E 64/64, packaged 65/65. Later-scope range SST-029–038 authorized (ทำงาน SST-029 - SST-038 ให้จบ); next SST-030. SST-028 manual checks (T035, DS06/T052), SST-027 manual Thai IME/VoiceOver and Developer ID/notarization remain pending
+**SST-030: jump host / multi-hop / proxy `DONE`** — [jump hosts](../jump-hosts.md), [delivery](../agent-runs/sst-030-delivery.md): per-hop trust/auth and cleanup, up to three jump hosts, HTTP CONNECT/SOCKS5 proxies, schema 3 migration; unit 451/451, development E2E 66/66, packaged 67/67. SST-031 is delivered; SST-029–038 remain authorized with SST-033 next. SST-027/028 manual Thai IME/VoiceOver/menu/TCC checks and Developer ID/notarization remain pending.
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-028 manual/signing ยังค้าง
 

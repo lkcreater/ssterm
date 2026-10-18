@@ -1,5 +1,6 @@
-import type { SecretItem, SecretProvider } from "@ssterm/domain";
-import { createSshConnection, preparePrivateKey, type SshCredential, type PrivateKeyResult, type TerminalBounds, type SshKeepalive } from "@ssterm/adapters/ssh";
+import type { Duplex } from "node:stream";
+import type { ResolvedHostConfig, SecretItem, SecretProvider, TunnelChannel } from "@ssterm/domain";
+import { connectThroughProxy, createSshConnection, preparePrivateKey, type SshCredential, type PrivateKeyResult, type TerminalBounds, type SshKeepalive } from "@ssterm/adapters/ssh";
 import type { KnownHostPolicy } from "./known-hosts.ts";
 import type { SessionAdapter, SessionContext, SessionErrorCode, PromptFieldId } from "./sessions.ts";
 
@@ -15,57 +16,103 @@ export function createSavedHostSshAdapter(options: {
     start(context) {
       const { config, signal } = context;
       if (signal.aborted) return;
-      const identity = config.auth.identity;
-      if (!identity || config.auth.selection !== "identity") {
+      // SST-030: jump hosts (outermost first), then the target. Each hop is a separate SSH connection over the
+      // previous hop's direct-tcpip stream, with its own host-key check and its own identity's credentials only.
+      const hops: readonly ResolvedHostConfig[] = [...(config.jumps ?? []), config];
+      if (hops.some((hop) => !hop.auth.identity || hop.auth.selection !== "identity")) {
         context.failed("credentials-required");
         return;
       }
-      const connection = createSshConnection({
-        host: config.address,
-        port: config.port.value,
-        username: identity.username,
-        signal,
-        async verifyHost(publicKey, initial) {
-          if (signal.aborted || (initial && !context.verifyingHost())) return false;
-          const result = await options.policy.verify({
-            endpointHost: config.address,
-            endpointPort: config.port.value,
-            publicKey,
+      const open = context.kind === "sftp" ? "sftp" : context.kind === "tunnel" ? "tunnel" : "shell";
+      const fail = (code: SessionErrorCode) => { if (!signal.aborted) context.failed(code); };
+      /** Starts one hop; resolves with its tunnel channel for a jump host, `undefined` for the target or on failure. */
+      const connectHop = (hop: ResolvedHostConfig, sock: Duplex | undefined, last: boolean) =>
+        new Promise<TunnelChannel | undefined>((resolve) => {
+          const connection = createSshConnection({
+            host: hop.address,
+            port: hop.port.value,
+            username: hop.auth.identity!.username,
+            ...(sock ? { sock } : {}),
             signal,
-            async requestDecision(challenge) {
-              // Rekeys use shared policy but cannot open a prompt outside VerifyingHost.
-              if (!initial || signal.aborted) return "reject";
-              const { kind: _kind, ...fields } = challenge;
-              const answer = await context.requestPrompt(challenge.kind === "changed" ? {
-                kind: "host-trust", status: "changed", ...fields,
-                previousAlgorithm: challenge.previousAlgorithm,
-                previousFingerprint: challenge.previousFingerprint,
-              } : { kind: "host-trust", status: "unknown", ...fields });
-              return answer.kind === "host-trust" ? answer.decision : "reject";
+            async verifyHost(publicKey, initial) {
+              if (signal.aborted || (initial && !context.verifyingHost())) return false;
+              const result = await options.policy.verify({
+                endpointHost: hop.address,
+                endpointPort: hop.port.value,
+                publicKey,
+                signal,
+                async requestDecision(challenge) {
+                  // Rekeys use shared policy but cannot open a prompt outside VerifyingHost.
+                  if (!initial || signal.aborted) return "reject";
+                  const { kind: _kind, ...fields } = challenge;
+                  const answer = await context.requestPrompt(challenge.kind === "changed" ? {
+                    kind: "host-trust", status: "changed", ...fields,
+                    previousAlgorithm: challenge.previousAlgorithm,
+                    previousFingerprint: challenge.previousFingerprint,
+                  } : { kind: "host-trust", status: "unknown", ...fields });
+                  return answer.kind === "host-trust" ? answer.decision : "reject";
+                },
+              });
+              if (signal.aborted) return false;
+              if (!result.ok) {
+                context.failed(result.error.code === "changed" ? "host-key-changed" : "host-key-untrusted");
+                return false;
+              }
+              return !initial || context.authenticating();
             },
+            authenticate: () => loadCredential(context, options.provider, hop),
+            open: last ? open : "tunnel",
+            ready: last ? (channel) => context.ready(channel) : (channel) => {
+              resolve(channel as TunnelChannel);
+              return !signal.aborted;
+            },
+            failed: (code) => { context.failed(code); resolve(undefined); },
+            // A jump host that closes takes the forwarded stream with it; the target's connection reports that.
+            ended: last ? (end) => context.ended(end) : () => resolve(undefined),
+            terminal: options.terminal,
+            keepalive: options.keepalive,
           });
-          if (signal.aborted) return false;
-          if (!result.ok) {
-            context.failed(result.error.code === "changed" ? "host-key-changed" : "host-key-untrusted");
-            return false;
+          if (context.own(connection) && !signal.aborted) connection.start();
+          else resolve(undefined);
+          if (last) resolve(undefined);
+        });
+      void (async () => {
+        let sock: Duplex | undefined;
+        if (config.proxy) {
+          const outer = hops[0]!;
+          const opened = await connectThroughProxy({
+            type: config.proxy.type, host: config.proxy.host, port: config.proxy.port,
+            target: { host: outer.address, port: outer.port.value }, signal,
+          });
+          if (!opened.ok) {
+            if (opened.code !== "cancelled") fail(opened.code === "proxy-failed" ? "proxy-failed" : opened.code);
+            return;
           }
-          return !initial || context.authenticating();
-        },
-        authenticate: () => loadCredential(context, options.provider),
-        open: context.kind === "sftp" ? "sftp" : context.kind === "tunnel" ? "tunnel" : "shell",
-        ready: (channel) => context.ready(channel),
-        failed: (code) => context.failed(code),
-        ended: (end) => context.ended(end),
-        terminal: options.terminal,
-        keepalive: options.keepalive,
-      });
-      if (context.own(connection) && !signal.aborted) connection.start();
+          const socket = opened.socket;
+          if (!context.own({ dispose: () => socket.destroy() }) || signal.aborted) return void socket.destroy();
+          sock = socket;
+        }
+        for (let index = 0; index < hops.length; index += 1) {
+          const last = index === hops.length - 1;
+          const channel = await connectHop(hops[index]!, sock, last);
+          if (last || !channel || signal.aborted) return;
+          const next = hops[index + 1]!;
+          // The jump host resolves and connects the next hop's address; this Mac never does.
+          const opened = await channel.forward({ address: "127.0.0.1", port: 0 }, { host: next.address, port: next.port.value });
+          if (!opened.ok) {
+            fail(opened.code === "refused" ? "jump-refused" : opened.code === "resource-limit" ? "resource-limit" : "network");
+            return;
+          }
+          sock = opened.stream;
+        }
+      })().catch(() => fail("subsystem-unavailable"));
     },
   };
 }
 
-async function loadCredential(context: SessionContext, provider: SecretProvider): Promise<SshCredential | undefined> {
-  const { signal, config } = context;
+/** Credentials of exactly one hop: its own identity and key; nothing is shared with or offered to another hop. */
+async function loadCredential(context: SessionContext, provider: SecretProvider, config: ResolvedHostConfig): Promise<SshCredential | undefined> {
+  const { signal } = context;
   const identity = config.auth.identity!;
   const buffers = new Set<Buffer>();
   const purge = () => { for (const buffer of buffers) buffer.fill(0); buffers.clear(); };

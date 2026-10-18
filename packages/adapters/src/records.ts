@@ -6,7 +6,7 @@ const overrides = ['portMode', 'portValue', 'authMode', 'identityId'];
 export const tables = {
   vault: ['local_vault', [...common, 'label', 'contentKeyRef', 'protectionFormat']],
   settings: ['app_settings', [...common, 'theme', 'uiFont', 'uiFontSize', 'terminalFont', 'terminalFontSize', 'terminalScrollback', 'terminalPalette', 'terminalCursor', 'terminalCursorBlink', 'reducedMotion']],
-  hosts: ['host', [...common, 'label', 'address', 'groupId', 'environment', ...overrides]],
+  hosts: ['host', [...common, 'label', 'address', 'groupId', 'environment', ...overrides, 'jumpHostId', 'proxyType', 'proxyHost', 'proxyPort']],
   groups: ['host_group', [...common, 'label', 'parentId', ...overrides]],
   identities: ['identity', [...common, 'label', 'username', 'method', 'passwordRef', 'keyId']],
   tags: ['tag', [...common, 'label', 'normalizedName']],
@@ -40,6 +40,12 @@ function decode(row: Record<string, unknown>): Record<string, unknown> {
     delete result.portValue;
     delete result.authMode;
     delete result.identityId;
+  }
+  if ('proxyType' in result) {
+    result.proxy = result.proxyType === null ? null : { type: result.proxyType, host: result.proxyHost, port: result.proxyPort };
+    delete result.proxyType;
+    delete result.proxyHost;
+    delete result.proxyPort;
   }
   if ('terminalCursorBlink' in result) result.terminalCursorBlink = result.terminalCursorBlink === 1;
   return result;
@@ -76,6 +82,12 @@ function encode(raw: unknown, columns: readonly string[]): SQLInputValue[] {
     row.portValue = port.port ?? null;
     row.authMode = auth.mode;
     row.identityId = auth.identityId ?? null;
+  }
+  if ('proxy' in row) {
+    const proxy = row.proxy as { type: string; host: string; port: number } | null;
+    row.proxyType = proxy?.type ?? null;
+    row.proxyHost = proxy?.host ?? null;
+    row.proxyPort = proxy?.port ?? null;
   }
   if ('terminalCursorBlink' in row) row.terminalCursorBlink = row.terminalCursorBlink ? 1 : 0;
   return columns.map(key => row[key] as SQLInputValue);

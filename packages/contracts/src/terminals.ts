@@ -15,6 +15,7 @@ export const TERMINAL_ERROR_CODES = [
   "invalid-config", "host-key-untrusted", "host-key-changed", "auth-denied", "credentials-required",
   "credentials-unavailable", "invalid-private-key", "unsupported-private-key", "key-mismatch", "prompt-cancelled",
   "timeout", "dns", "network", "channel-open-failed", "subsystem-unavailable", "resource-limit", "locked",
+  "jump-refused", "proxy-failed",
 ] as const;
 export type TerminalErrorCode = (typeof TERMINAL_ERROR_CODES)[number];
 export interface TerminalSession {

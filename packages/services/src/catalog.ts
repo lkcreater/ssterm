@@ -142,7 +142,7 @@ const revision = (value: unknown): void => {
     fail("invalid-request");
 };
 const fields = {
-  host: ["label", "address", "groupId", "environment", "port", "auth"],
+  host: ["label", "address", "groupId", "environment", "port", "auth", "jumpHostId", "proxy"],
   group: ["label", "parentId", "port", "auth"],
   identity: ["label", "username", "method", "keyId"],
   tag: ["label"],
@@ -246,6 +246,9 @@ function connection(config: ResolvedHostConfig | null): unknown {
   return {
     address: config.address,
     port: config.port.value,
+    // The network path is part of the connection: a jump host's own settings or a proxy change affect this host.
+    jumps: (config.jumps ?? []).map(connection),
+    proxy: config.proxy ?? null,
     auth: {
       selection: config.auth.selection,
       identity: identity && {

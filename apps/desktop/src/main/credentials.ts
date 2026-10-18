@@ -26,8 +26,12 @@ export function createCredentialsController(options: {
         if (!prompt || prompt.kind !== "credentials" || !snapshot.target) continue;
         const purpose = prompt.purpose ?? (prompt.fields[0]?.id === "password" ? "password" : prompt.fields[0]?.id === "passphrase" ? "passphrase" : "keyboard-interactive");
         prompts.push({ sessionId: snapshot.id, generation: snapshot.generation, promptId: prompt.id,
-          targetLabel: snapshot.target.label, environment: snapshot.target.environment,
-          endpointHost: snapshot.target.address, endpointPort: snapshot.target.port, username: snapshot.target.username,
+          // A jump host's credential prompt names the jump host, its endpoint and its own user (SST-030).
+          ...(prompt.hop
+            ? { targetLabel: prompt.hop.label, environment: prompt.hop.environment, endpointHost: prompt.hop.endpointHost,
+                endpointPort: prompt.hop.endpointPort, username: prompt.hop.username, jumpFor: snapshot.target.label }
+            : { targetLabel: snapshot.target.label, environment: snapshot.target.environment, endpointHost: snapshot.target.address,
+                endpointPort: snapshot.target.port, username: snapshot.target.username, jumpFor: null }),
           purpose, attempt: prompt.attempt ?? 1, fields: prompt.fields.map((field) => ({ ...field })),
         });
       }

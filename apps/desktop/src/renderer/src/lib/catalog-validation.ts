@@ -25,6 +25,12 @@ export interface HostDraft extends CommonDraft {
   address: string;
   groupId: string | null;
   environment: Environment | null;
+  /** SST-030: how the host is reached. */
+  via: "direct" | "jump" | "proxy";
+  jumpHostId: string | null;
+  proxyType: "http" | "socks5";
+  proxyHost: string;
+  proxyPort: string;
 }
 export interface GroupDraft extends CommonDraft {
   parentId: string | null;
@@ -44,6 +50,9 @@ const messages: Record<Exclude<CatalogFieldError["code"], "required"> | "too-lon
   cycle: "A group cannot move inside itself or its subgroups.",
   "not-found": "",
   running: "",
+  "in-use": "",
+  "too-deep": "",
+  "with-jump": "",
 };
 const fieldMessages: Record<Field, string> = {
   label: "Check this name.",
@@ -60,6 +69,8 @@ const fieldMessages: Record<Field, string> = {
   destinationPort: "Enter a destination port from 1 to 65535.",
   destination: "Use a host name or IP address the server can reach, without spaces, user names or paths.",
   host: "That server no longer exists. Choose another.",
+  jump: "Check the jump host.",
+  proxy: "Check the proxy.",
   tunnel: "Stop the tunnel first. A running tunnel keeps the settings it started with.",
 };
 const usernameMessages = {
@@ -67,8 +78,20 @@ const usernameMessages = {
   "too-long": "Use 256 characters or fewer.",
   control: "Remove control characters.",
 };
+const jumpMessages: Record<Extract<CatalogFieldError, { field: "jump" }>["code"], string> = {
+  "not-found": "That jump host no longer exists. Choose another.",
+  cycle: "A host cannot be reached through itself. Choose a jump host that does not lead back here.",
+  "too-deep": "Use at most 3 jump hosts in a row.",
+  "in-use": "Another server connects through this one. Change that server's jump host first.",
+};
+const proxyMessages: Record<Extract<CatalogFieldError, { field: "proxy" }>["code"], string> = {
+  invalid: "Use the proxy's host name or IP address and a port from 1 to 65535.",
+  "with-jump": "Use either a jump host or a proxy, not both.",
+};
 const message = ({ field, code }: CatalogFieldError): string =>
-  field === "username"
+  field === "jump" ? jumpMessages[code as keyof typeof jumpMessages]
+  : field === "proxy" ? proxyMessages[code as keyof typeof proxyMessages]
+  : field === "username"
     ? usernameMessages[code]
     : code === "required"
       ? "Choose a key, or import one."
@@ -121,6 +144,11 @@ export function hostDraft(
     portMode: host?.port.mode ?? "inherit",
     port: host?.port.mode === "value" ? String(host.port.port) : "",
     auth: host ? authChoice(host.auth) : "inherit",
+    via: host?.jumpHostId ? "jump" : host?.proxy ? "proxy" : "direct",
+    jumpHostId: host?.jumpHostId ?? null,
+    proxyType: host?.proxy?.type ?? "socks5",
+    proxyHost: host?.proxy?.host ?? "",
+    proxyPort: host?.proxy ? String(host.proxy.port) : "",
   };
 }
 export function groupDraft(
@@ -141,6 +169,8 @@ export function hostErrors(draft: HostDraft): FieldErrors {
     label: labelError(draft.label),
     address: addressError(draft.address),
     port: draft.portMode === "value" ? portError(draft.port) : undefined,
+    jump: draft.via === "jump" && !draft.jumpHostId ? "Choose the server to connect through." : undefined,
+    proxy: draft.via === "proxy" ? (addressError(draft.proxyHost) ? proxyMessages.invalid : portError(draft.proxyPort) ? proxyMessages.invalid : undefined) : undefined,
   });
 }
 export function groupErrors(draft: GroupDraft): FieldErrors {
@@ -165,6 +195,8 @@ export function hostIntent(
     environment: draft.environment,
     port: portOf(draft),
     auth: authOf(draft.auth),
+    jumpHostId: draft.via === "jump" ? draft.jumpHostId : null,
+    proxy: draft.via === "proxy" ? { type: draft.proxyType, host: draft.proxyHost.trim(), port: Number(draft.proxyPort.trim()) } : null,
   };
   if (!base) return { type: "create-host", data };
   const changed = Object.fromEntries(

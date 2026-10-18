@@ -52,6 +52,8 @@ const messages = {
   "channel-open-failed": "The interactive channel could not be opened.",
   "subsystem-unavailable": "The connection subsystem is unavailable.",
   "resource-limit": "The session resource limit was reached.",
+  "jump-refused": "The jump host refused to connect onward.",
+  "proxy-failed": "The proxy did not connect.",
 } as const;
 export type SessionErrorCode = keyof typeof messages;
 export interface SessionError {
@@ -93,7 +95,20 @@ export type SessionPromptSpec =
       attempt?: 1 | 2 | 3;
       fields: readonly { id: PromptFieldId; echo: boolean }[];
     };
-export type SessionPrompt = SessionPromptSpec & { id: string };
+/**
+ * SST-030: set by the registry (from its own captured configuration) when a prompt belongs to a jump host rather
+ * than the session's target, so trust and credential prompts name the server they are really for.
+ */
+export interface SessionPromptHop {
+  index: number;
+  total: number;
+  label: string;
+  environment: "DEV" | "STAGING" | "PROD" | null;
+  endpointHost: string;
+  endpointPort: number;
+  username: string | null;
+}
+export type SessionPrompt = SessionPromptSpec & { id: string; hop?: SessionPromptHop };
 export type SessionPromptInput =
   | {
       kind: "host-trust";
@@ -204,6 +219,8 @@ interface Generation {
   resources: Set<ResourceEntry>;
   secrets: Set<TransientSecret>;
   connectTimer?: unknown;
+  /** SST-030: SSH hops started (each began with VerifyingHost); the target is hop `jumps.length + 1`. */
+  hops: number;
   cleanup: SessionSnapshot["cleanup"];
   teardown?: Promise<void>;
   teardownDone: boolean;
@@ -702,6 +719,7 @@ export class SessionRegistry {
       controller: new AbortController(),
       resources: new Set(),
       secrets: new Set(),
+      hops: 0,
       cleanup: "none",
       teardownDone: false,
     };
@@ -743,8 +761,15 @@ export class SessionRegistry {
           signal: current.controller.signal,
           config: current.config,
           own: (resource: SessionResource) => this.#own(current, resource),
-          verifyingHost: () =>
-            this.#transition(current, ["Connecting"], "VerifyingHost"),
+          // Each SSH hop (jump hosts, then the target) verifies its own host key: the first from Connecting, the
+          // next ones after the previous hop authenticated. Never more hops than the captured configuration has.
+          verifyingHost: () => {
+            const total = (current.config?.jumps?.length ?? 0) + 1;
+            if (current.hops >= total) return false;
+            const moved = this.#transition(current, current.hops === 0 ? ["Connecting"] : ["Authenticating"], "VerifyingHost");
+            if (moved) current.hops += 1;
+            return moved;
+          },
           authenticating: () =>
             this.#transition(current, ["VerifyingHost"], "Authenticating"),
           requestPrompt: (spec: SessionPromptSpec) =>
@@ -753,7 +778,9 @@ export class SessionRegistry {
             if (
               !this.#live(current) ||
               current.state !== "Authenticating" ||
-              current.prompt
+              current.prompt ||
+              // The channel belongs to the target: every jump host must have been passed first.
+              current.hops !== (current.config?.jumps?.length ?? 0) + 1
             ) {
               this.#discard(current, channel);
               return false;
@@ -818,8 +845,14 @@ export class SessionRegistry {
         () => this.#fail(current, "timeout"),
         this.#limits.promptMs,
       );
+      const jumps = current.config?.jumps ?? [];
+      const jump = current.hops >= 1 && current.hops <= jumps.length ? jumps[current.hops - 1]! : undefined;
+      const hop: SessionPromptHop | undefined = jump && {
+        index: current.hops - 1, total: jumps.length + 1, label: jump.hostRef.label, environment: jump.environment,
+        endpointHost: jump.address, endpointPort: jump.port.value, username: jump.auth.identity?.username ?? null,
+      };
       current.prompt = {
-        spec: { ...spec, id: randomUUID() },
+        spec: { ...spec, id: randomUUID(), ...(hop ? { hop } : {}) },
         resume,
         resolve,
         reject,

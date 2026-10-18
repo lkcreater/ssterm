@@ -30,12 +30,15 @@ interface PromptTarget {
   sessionId: string;
   generation: number;
   promptId: string;
+  /** The server this key belongs to: the target, or (SST-030) a jump host on the way to `jumpFor`. */
   targetLabel: string;
   environment: "DEV" | "STAGING" | "PROD" | null;
   endpointHost: string;
   endpointPort: number;
   algorithm: HostKeyAlgorithm;
   fingerprint: string;
+  /** SST-030: set when this key is a jump host's; the label of the server being connected to. */
+  jumpFor: string | null;
 }
 export type HostTrustPrompt = PromptTarget &
   (
@@ -136,6 +139,7 @@ export function isHostTrustPrompt(v: unknown): v is HostTrustPrompt {
     "endpointPort",
     "algorithm",
     "fingerprint",
+    "jumpFor",
     "status",
   ];
   if (
@@ -151,6 +155,7 @@ export function isHostTrustPrompt(v: unknown): v is HostTrustPrompt {
     positive(v.generation) &&
     identifier(v.promptId) &&
     text(v.targetLabel, 400) &&
+    (v.jumpFor === null || text(v.jumpFor, 400)) &&
     ["DEV", "STAGING", "PROD", null].includes(v.environment as string | null) &&
     endpoint(v) &&
     (v.status === "unknown" ||

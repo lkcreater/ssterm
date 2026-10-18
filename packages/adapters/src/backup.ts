@@ -4,9 +4,21 @@ import { isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DatabaseSync as Sqlite } from 'node:sqlite';
 import type { BackupManifest } from '@ssterm/domain';
-import { readSnapshot } from './records.ts';
 import { canonicalDestination, removeOwned, writable } from './files.ts';
 import { fail } from './errors.ts';
+function manifestFacts(db: DatabaseSync): { schemaVersion: number; catalogRevision: number; vaultId: string; protectionFormats: string[] } {
+  const schemaVersion = db.prepare('PRAGMA user_version').get()?.user_version;
+  const catalogRevision = db.prepare('SELECT revision FROM catalog_state WHERE singleton=1').get()?.revision;
+  const vaults = db.prepare('SELECT id, protectionFormat FROM local_vault').all();
+  if (!Number.isSafeInteger(schemaVersion) || !Number.isSafeInteger(catalogRevision) || vaults.length !== 1 || typeof vaults[0]?.id !== 'string') fail('corrupt');
+  const formats = [vaults[0]!.protectionFormat, ...db.prepare('SELECT DISTINCT protectionFormat FROM snippet').all().map((row) => row.protectionFormat)];
+  return {
+    schemaVersion: schemaVersion as number,
+    catalogRevision: catalogRevision as number,
+    vaultId: vaults[0]!.id as string,
+    protectionFormats: [...new Set(formats.filter((f): f is string => typeof f === 'string'))].sort(),
+  };
+}
 export function reconciled(db: DatabaseSync): void {
   if (db.prepare("SELECT count(*) AS n FROM secret_operation WHERE state<>'complete'").get()?.n !== 0) fail('recovery-required');
 }
@@ -49,20 +61,21 @@ export async function createBackup(db: DatabaseSync, source: string, destination
     const check = new Sqlite(destination, {
       readOnly: true
     });
-    let snapshot;
+    let facts;
     try {
       if (check.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok' || check.prepare('PRAGMA foreign_key_check').all().length) fail('corrupt');
       if (!options.allowPendingJournal) reconciled(check);
-      snapshot = readSnapshot(check);
+      // Read only tables and columns every schema version has: a pre-migration copy keeps the older layout.
+      facts = manifestFacts(check);
     } finally {
       check.close();
     }
     const manifest: BackupManifest = {
       format: 'ssterm-metadata-backup-v1',
-      schemaVersion: snapshot.schemaVersion,
-      catalogRevision: snapshot.catalogRevision,
-      vaultId: snapshot.vault.id,
-      protectionFormats: [...new Set([snapshot.vault.protectionFormat, ...snapshot.snippets.map(s => s.protectionFormat)].filter((f): f is string => f !== null))].sort(),
+      schemaVersion: facts.schemaVersion,
+      catalogRevision: facts.catalogRevision,
+      vaultId: facts.vaultId,
+      protectionFormats: facts.protectionFormats,
       sha256: createHash('sha256').update(readFileSync(destination)).digest('hex'),
       createdAt: new Date().toISOString(),
       includesOsSecrets: false

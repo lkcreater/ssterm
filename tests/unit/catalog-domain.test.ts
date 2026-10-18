@@ -48,6 +48,8 @@ function host(n: number, label: string, groupId: string | null = null): Host {
     label,
     address: `host-${n}.test`,
     groupId,
+    jumpHostId: null,
+    proxy: null,
     environment: null,
     port: { mode: "inherit" },
     auth: { mode: "inherit" },

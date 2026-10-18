@@ -50,12 +50,14 @@ export function createKnownHostsController(options: {
           sessionId: snapshot.id,
           generation: snapshot.generation,
           promptId: prompt.id,
-          targetLabel: snapshot.target.label,
-          environment: snapshot.target.environment,
+          // A jump host's key is labelled as that jump host, never as the target (SST-030).
+          targetLabel: prompt.hop ? prompt.hop.label : snapshot.target.label,
+          environment: prompt.hop ? prompt.hop.environment : snapshot.target.environment,
           endpointHost: prompt.endpointHost,
           endpointPort: prompt.endpointPort,
           algorithm: prompt.algorithm,
           fingerprint: prompt.fingerprint,
+          jumpFor: prompt.hop ? snapshot.target.label : null,
         };
         prompts.push(
           prompt.status === "changed"

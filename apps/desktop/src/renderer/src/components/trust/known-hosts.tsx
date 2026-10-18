@@ -341,6 +341,11 @@ function HostTrustDialog({
               </Badge>
             ) : null}
           </div>
+          {prompt.jumpFor ? (
+            <p className="type-caption min-w-0 break-all text-muted-foreground" data-testid="trust-jump-for">
+              Jump host on the way to {prompt.jumpFor}. This key belongs to the jump host.
+            </p>
+          ) : null}
           <p className="min-w-0 break-all font-mono text-sm">
             {prompt.endpointHost}:{prompt.endpointPort}
           </p>

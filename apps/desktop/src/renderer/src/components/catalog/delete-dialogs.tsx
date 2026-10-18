@@ -46,7 +46,8 @@ export function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefi
       if (stale) return;
       if (!result.ok) setFailure(result.error.code);
       else if (result.value.kind === "preview") setPreview(result.value);
-      else setFailure(result.value.fields.some((field) => field.field === "tunnel") ? "tunnel-running" : "invalid-request");
+      else setFailure(result.value.fields.some((field) => field.field === "tunnel") ? "tunnel-running"
+        : result.value.fields.some((field) => field.field === "jump") ? "jump-in-use" : "invalid-request");
     });
     return () => {
       stale = true;
@@ -81,8 +82,11 @@ export function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefi
   };
 }
 
-/** `tunnel-running`: a server being deleted has a starting, running or stopping tunnel. */
-export type DeleteProblem = ErrorCode | "tunnel-running";
+/**
+ * `tunnel-running`: a server being deleted has a starting, running or stopping tunnel. `jump-in-use`: another server
+ * that stays connects through a server being deleted (SST-030).
+ */
+export type DeleteProblem = ErrorCode | "tunnel-running" | "jump-in-use";
 export function DeleteFailure({ code, retry }: { code: DeleteProblem; retry(): Promise<void> }) {
   return (
     <Alert variant="destructive">
@@ -94,6 +98,8 @@ export function DeleteFailure({ code, retry }: { code: DeleteProblem; retry(): P
         <span>
           {code === "tunnel-running"
             ? "A tunnel on this server is running. Stop it on the Port forwarding page, then delete again."
+            : code === "jump-in-use"
+            ? "Another server connects through this one. Change that server's jump host first, then delete again."
             : code === "conflict"
             ? "Review the updated details, then delete again."
             : code === "busy"

@@ -43,6 +43,12 @@ export interface Group extends Entity {
   port: PortOverride;
   auth: AuthOverride;
 }
+/** A proxy used to reach a host directly (no proxy credentials are stored). */
+export interface HostProxy {
+  type: 'http' | 'socks5';
+  host: string;
+  port: number;
+}
 export interface Host extends Entity {
   label: string;
   address: string;
@@ -50,6 +56,39 @@ export interface Host extends Entity {
   environment: 'DEV' | 'STAGING' | 'PROD' | null;
   port: PortOverride;
   auth: AuthOverride;
+  /** SST-030: reach this host through another saved host (its own trust and identity); chains give multi-hop. */
+  jumpHostId: Id | null;
+  /** SST-030: reach this host through a proxy instead (only without a jump host). */
+  proxy: HostProxy | null;
+}
+/** At most this many jump hosts in front of a target (so at most four SSH hops). */
+export const MAX_JUMP_HOSTS = 3;
+export type HostChainProblem = 'jump-missing' | 'jump-self' | 'jump-cycle' | 'jump-depth' | 'jump-and-proxy' | 'proxy';
+/** Checks one host's jump/proxy settings against the catalog: existing, acyclic, bounded, exclusive with a proxy. */
+export function hostChainProblem(host: Pick<Host, 'id' | 'jumpHostId' | 'proxy'>, hosts: ReadonlyMap<Id, Pick<Host, 'id' | 'jumpHostId' | 'proxy'>>): HostChainProblem | null {
+  // Absent fields (records written before schema 3, test fixtures) mean a direct connection.
+  const proxy = host.proxy ?? null;
+  const jumpHostId = host.jumpHostId ?? null;
+  if (proxy !== null) {
+    if (jumpHostId !== null) return 'jump-and-proxy';
+    if (!proxy || (proxy.type !== 'http' && proxy.type !== 'socks5') || typeof proxy.host !== 'string' || !proxy.host.length ||
+      !Number.isInteger(proxy.port) || proxy.port < 1 || proxy.port > 65535) return 'proxy';
+  }
+  if (jumpHostId === null) return null;
+  if (jumpHostId === host.id) return 'jump-self';
+  const seen = new Set<Id>([host.id]);
+  let current = hosts.get(jumpHostId);
+  let depth = 0;
+  while (current) {
+    if (seen.has(current.id)) return 'jump-cycle';
+    seen.add(current.id);
+    depth += 1;
+    if (depth > MAX_JUMP_HOSTS) return 'jump-depth';
+    const next = current.jumpHostId ?? null;
+    if (next === null) return null;
+    current = hosts.get(next);
+  }
+  return 'jump-missing';
 }
 export interface Identity extends Entity {
   label: string;

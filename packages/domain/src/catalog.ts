@@ -3,6 +3,7 @@ import type {
   Entity,
   Group,
   Host,
+  HostProxy,
   Id,
   Identity,
   KeyMetadata,
@@ -12,6 +13,7 @@ import type {
   StoreResult,
   Tag,
 } from "./index.ts";
+import { hostChainProblem } from "./index.ts";
 
 export type ConfigSource =
   | { kind: "default" }
@@ -29,6 +31,13 @@ export interface ResolvedHostConfig {
   };
   ancestry: readonly { id: Id; revision: number; label: string }[];
   catalogRevision: number;
+  /**
+   * SST-030: jump hosts to pass through, outermost first; each is resolved on its own (address, port, identity) and
+   * has no `jumps` of its own. Absent for a direct connection (so direct configurations are unchanged).
+   */
+  jumps?: readonly ResolvedHostConfig[];
+  /** The proxy used for the outermost hop (the first jump host, or this host when direct); absent when none. */
+  proxy?: Readonly<HostProxy>;
 }
 export interface CatalogHostView {
   host: Readonly<Host>;
@@ -161,6 +170,8 @@ function copyHost(value: Host): Host {
     environment: value.environment,
     port: copyPort(value.port),
     auth: copyAuth(value.auth),
+    jumpHostId: value.jumpHostId ?? null,
+    proxy: value.proxy ? { type: value.proxy.type, host: value.proxy.host, port: value.proxy.port } : null,
   };
 }
 function copyGroup(value: Group): Group {
@@ -289,6 +300,7 @@ function catalog(snapshot: MetadataSnapshot) {
     requireValue(
       host.auth.mode !== "value" || identities.has(host.auth.identityId),
     );
+    requireValue(hostChainProblem(host, hosts) === null);
   }
   for (const identity of identities.values()) {
     requireValue(
@@ -405,6 +417,26 @@ function effective(index: Catalog, candidates: Candidate[]): GroupDefaults {
   return { port, auth };
 }
 function resolve(
+  snapshot: MetadataSnapshot,
+  index: Catalog,
+  host: Host,
+): ResolvedHostConfig {
+  const target = resolveHop(snapshot, index, host);
+  // Bounded and acyclic: `catalog()` already checked every host with hostChainProblem.
+  const jumps: ResolvedHostConfig[] = [];
+  for (let id = host.jumpHostId ?? null; id !== null; ) {
+    const jump = index.hosts.get(id)!;
+    jumps.unshift(resolveHop(snapshot, index, jump));
+    id = jump.jumpHostId ?? null;
+  }
+  const outermost = jumps.length ? index.hosts.get(jumps[0]!.hostRef.id)! : host;
+  return {
+    ...target,
+    ...(jumps.length ? { jumps } : {}),
+    ...(outermost.proxy ? { proxy: { type: outermost.proxy.type, host: outermost.proxy.host, port: outermost.proxy.port } } : {}),
+  };
+}
+function resolveHop(
   snapshot: MetadataSnapshot,
   index: Catalog,
   host: Host,

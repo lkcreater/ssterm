@@ -7,7 +7,7 @@ import {
   type PrepareCatalogChangeRequest, type Result,
 } from "@ssterm/contracts";
 import {
-  normalizeEndpoint, normalizeTag, queryCatalogHosts, resolveGroupDefaults,
+  hostChainProblem, normalizeEndpoint, normalizeTag, queryCatalogHosts, resolveGroupDefaults,
   type ConfigSource, type GroupDefaults, type MetadataRepository, type MetadataSnapshot, type SecretOperation,
 } from "@ssterm/domain";
 import type { CatalogModule } from "@ssterm/services";
@@ -72,7 +72,8 @@ function project(snapshot: MetadataSnapshot, secretStore: boolean, now: number, 
     truncated: counts.some((count) => count > MAX_CATALOG_ITEMS),
     hosts: views.value.slice(0, MAX_CATALOG_ITEMS).map(({ host, tags, config }) => ({
       id: host.id, revision: host.revision, label: host.label, address: host.address, groupId: host.groupId,
-      environment: host.environment, port: port(host.port), auth: auth(host.auth), tagIds: tags.map((tag) => tag.id),
+      environment: host.environment, port: port(host.port), auth: auth(host.auth),
+      jumpHostId: host.jumpHostId ?? null, proxy: host.proxy ? { ...host.proxy } : null, tagIds: tags.map((tag) => tag.id),
       ancestry: config.ancestry.map((group) => ({ id: group.id, label: group.label })), effective: effective(config),
     })),
     groups: byLabel(snapshot.groups.map((group) => ({
@@ -204,6 +205,35 @@ function check(snapshot: MetadataSnapshot, intent: CatalogChangeIntent, active: 
   }
   if (typeof data.groupId === "string" && !snapshot.groups.some((row) => row.id === data.groupId))
     fields.push({ field: "group", code: "not-found" });
+  if (intent.type === "create-host" || intent.type === "update-host") {
+    // The host as it would be stored, checked against the catalog with the shared chain rules.
+    const before = intent.type === "update-host" ? snapshot.hosts.find((row) => row.id === intent.id) : undefined;
+    const id = intent.type === "update-host" ? intent.id : "00000000-0000-4000-8000-000000000000";
+    const merged = {
+      id,
+      jumpHostId: intent.data.jumpHostId !== undefined ? intent.data.jumpHostId : before?.jumpHostId ?? null,
+      proxy: intent.data.proxy !== undefined ? intent.data.proxy : before?.proxy ?? null,
+    };
+    const hosts = new Map(snapshot.hosts.map((row) => [row.id, row as Pick<typeof row, "id" | "jumpHostId" | "proxy">]));
+    hosts.set(id, merged);
+    // An upstream edit can also lengthen the route of servers that already depend on this host.
+    const problem = hostChainProblem(merged, hosts) ??
+      [...hosts.values()].map((host) => hostChainProblem(host, hosts)).find((issue) => issue !== null) ?? null;
+    if (problem === "jump-missing") fields.push({ field: "jump", code: "not-found" });
+    if (problem === "jump-self" || problem === "jump-cycle") fields.push({ field: "jump", code: "cycle" });
+    if (problem === "jump-depth") fields.push({ field: "jump", code: "too-deep" });
+    if (problem === "jump-and-proxy") fields.push({ field: "proxy", code: "with-jump" });
+    if (problem === "proxy") fields.push({ field: "proxy", code: "invalid" });
+    if (intent.data.proxy && problem !== "jump-and-proxy") {
+      try { normalizeEndpoint(intent.data.proxy.host); } catch { if (problem !== "proxy") fields.push({ field: "proxy", code: "invalid" }); }
+    }
+  }
+  // Deleting a host another host connects through would silently change that host's network path: refuse it.
+  if (intent.type === "delete-host" || intent.type === "delete-group") {
+    const removed = new Set(removedHosts(snapshot, intent));
+    if (snapshot.hosts.some((row) => !removed.has(row.id) && row.jumpHostId && removed.has(row.jumpHostId)))
+      fields.push({ field: "jump", code: "in-use" });
+  }
   const parentId = intent.type === "delete-group"
     ? (intent.disposition.mode === "reparent" ? intent.disposition.parentId : null)
     : typeof data.parentId === "string" ? data.parentId : null;

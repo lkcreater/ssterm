@@ -30,7 +30,7 @@ const entity = (n: number, revision = 1): Entity => ({ id: id(n), vaultId: id(1)
 const group = (n: number, label: string, parentId: string | null = null, port: Group["port"] = { mode: "inherit" }): Group =>
   ({ ...entity(n), label, parentId, port, auth: { mode: "inherit" } });
 const host = (n: number, label: string, groupId: string | null, address = `host-${n}.test`, extra: Partial<Host> = {}): Host =>
-  ({ ...entity(n), label, address, groupId, environment: null, port: { mode: "inherit" }, auth: { mode: "inherit" }, ...extra });
+  ({ ...entity(n), label, address, groupId, environment: null, port: { mode: "inherit" }, auth: { mode: "inherit" }, jumpHostId: null, proxy: null, ...extra });
 const tag = (n: number, label: string): Tag => ({ ...entity(n), label, normalizedName: label.trim().normalize("NFC").toLowerCase() });
 
 function snapshot(): MetadataSnapshot {
@@ -87,7 +87,7 @@ function project(meta: MetadataSnapshot): Pick<CatalogState, "hosts" | "tags" | 
   assert.ok(views.ok);
   const hosts: CatalogHost[] = views.value.map(({ host, tags, config }) => ({
     id: host.id, revision: host.revision, label: host.label, address: host.address, groupId: host.groupId,
-    environment: host.environment, port: host.port, auth: host.auth, tagIds: tags.map((t) => t.id),
+    environment: host.environment, port: host.port, auth: host.auth, jumpHostId: host.jumpHostId, proxy: host.proxy, tagIds: tags.map((t) => t.id),
     ancestry: config.ancestry.map(({ id, label }) => ({ id, label })),
     effective: {
       port: config.port.value, portSource: source(config.port.source), authSelection: config.auth.selection,
@@ -207,12 +207,12 @@ test("draft → intent sends trimmed creates and only changed fields on update",
     type: "create-host",
     data: {
       label: "web", address: "web.test", groupId: id(10), environment: "PROD",
-      port: { mode: "inherit" }, auth: { mode: "value", identityId: id(40) },
+      port: { mode: "inherit" }, auth: { mode: "value", identityId: id(40) }, jumpHostId: null, proxy: null,
     },
   });
   const base: CatalogHost = {
     id: id(20), revision: 4, label: "web", address: "web.test", groupId: null, environment: null,
-    port: { mode: "value", port: 2022 }, auth: { mode: "clear" }, tagIds: [], ancestry: [],
+    port: { mode: "value", port: 2022 }, auth: { mode: "clear" }, jumpHostId: null, proxy: null, tagIds: [], ancestry: [],
     effective: { port: 2022, portSource: { kind: "host" }, authSelection: "clear", identityId: null, authSource: { kind: "host" } },
   };
   const unchanged = hostDraft(base);

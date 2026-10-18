@@ -310,6 +310,23 @@ export function HostsPage({
   );
 }
 
+/** SST-030: the path outermost first, e.g. "Bastion → Inner → this server", or the proxy, or "Direct". */
+function routeText(host: CatalogHost, state: CatalogState): string {
+  if (host.proxy) return `${host.proxy.type === "http" ? "HTTP" : "SOCKS5"} proxy ${host.proxy.host}:${host.proxy.port}`;
+  if (!host.jumpHostId) return "Direct";
+  const byId = new Map(state.hosts.map((row) => [row.id, row]));
+  const path: string[] = [];
+  const seen = new Set<string>([host.id]);
+  for (let id: string | null = host.jumpHostId; id && !seen.has(id) && path.length < 4; ) {
+    seen.add(id);
+    const jump = byId.get(id);
+    if (!jump) { path.unshift("Missing server"); break; }
+    path.unshift(jump.environment === "PROD" ? `${jump.label} (PROD)` : jump.label);
+    id = jump.jumpHostId;
+  }
+  return `${path.join(" → ")} → this server`;
+}
+
 function HostDetail({
   catalog,
   state,
@@ -409,6 +426,8 @@ function HostDetail({
         </dd>
         <dt>Environment</dt>
         <dd>{host.environment ?? "None"}</dd>
+        <dt>Connect via</dt>
+        <dd className="break-all" data-testid="host-route">{routeText(host, state)}</dd>
       </dl>
       <HostTags catalog={catalog} state={state} host={host} busy={tagsBusy} setBusy={setTagsBusy} />
     </section>

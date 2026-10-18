@@ -5,11 +5,14 @@ export interface CredentialPrompt {
   sessionId: string;
   generation: number;
   promptId: string;
+  /** The server this prompt is for: the target, or (SST-030) a jump host on the way to `jumpFor`. */
   targetLabel: string;
   environment: "DEV" | "STAGING" | "PROD" | null;
   endpointHost: string;
   endpointPort: number;
   username: string | null;
+  /** SST-030: set when this prompt is for a jump host; the label of the server being connected to. */
+  jumpFor: string | null;
   purpose: "password" | "passphrase" | "keyboard-interactive";
   attempt: 1 | 2 | 3;
   fields: { id: CredentialFieldId; echo: boolean }[];
@@ -36,7 +39,8 @@ const positive = (v: unknown): v is number => isCounter(v) && v > 0;
 const text = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 0 && v.length <= max && !/[\u0000-\u001f\u007f]/.test(v);
 export const isCredentialFieldId = (v: unknown): v is CredentialFieldId => typeof v === "string" && /^(password|passphrase|response-[1-8])$/.test(v);
 export function isCredentialPrompt(v: unknown): v is CredentialPrompt {
-  return exactObject(v, ["sessionId", "generation", "promptId", "targetLabel", "environment", "endpointHost", "endpointPort", "username", "purpose", "attempt", "fields"]) &&
+  return exactObject(v, ["sessionId", "generation", "promptId", "targetLabel", "environment", "endpointHost", "endpointPort", "username", "jumpFor", "purpose", "attempt", "fields"]) &&
+    (v.jumpFor === null || text(v.jumpFor, 400)) &&
     identifier(v.sessionId) && positive(v.generation) && identifier(v.promptId) && text(v.targetLabel, 400) &&
     ["DEV", "STAGING", "PROD", null].includes(v.environment as string | null) && text(v.endpointHost, 253) && positive(v.endpointPort) && v.endpointPort <= 65535 &&
     (v.username === null || text(v.username, 256)) && ["password", "passphrase", "keyboard-interactive"].includes(v.purpose as string) && [1, 2, 3].includes(v.attempt as number) &&

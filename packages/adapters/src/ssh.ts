@@ -1,3 +1,4 @@
+import type { Duplex } from "node:stream";
 import ssh2, { type AnyAuthMethod, type ClientChannel, type ParsedKey, type TerminalModes } from "ssh2";
 import type { HostKeyIdentity, SftpChannel, TerminalChannel, TerminalEnd, TunnelChannel } from "@ssterm/domain";
 import { createTunnelChannel } from "./tunnel.ts";
@@ -115,6 +116,11 @@ export function createSshConnection(options: {
   host: string;
   port: number;
   username: string;
+  /**
+   * SST-030: an already-open byte stream to the server (a jump host's `direct-tcpip` channel or a proxy tunnel)
+   * instead of a TCP connection to host:port. The connection owns it and destroys it on dispose.
+   */
+  sock?: Duplex;
   signal: AbortSignal;
   verifyHost(publicKey: Uint8Array, initial: boolean): Promise<boolean>;
   authenticate(): Promise<SshCredential | undefined>;
@@ -154,6 +160,7 @@ export function createSshConnection(options: {
       sftp?.dispose();
       tunnel?.dispose();
       client.destroy();
+      options.sock?.destroy();
       // ssh2 emits no close if connect has never allocated a socket.
       if (!started) resolveDrain();
     },
@@ -164,6 +171,7 @@ export function createSshConnection(options: {
         client.connect({
           host: options.host,
           port: options.port,
+          ...(options.sock ? { sock: options.sock } : {}),
           username: options.username,
           readyTimeout: 120_000,
           // A silently dropped path (paused peer, lost network behind an ACKing proxy) sends no FIN/RST;
@@ -450,3 +458,4 @@ function exitOf(code: unknown, signal: unknown): TerminalEnd {
   if (typeof signal === "string" && /^SIG[A-Z0-9]{1,16}$/u.test(signal)) return { kind: "signal", signal };
   return { kind: "eof" };
 }
+export { connectThroughProxy, PROXY_HANDSHAKE_MS, type ProxyResult } from "./proxy.ts";
