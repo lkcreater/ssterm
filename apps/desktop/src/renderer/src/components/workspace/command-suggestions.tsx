@@ -7,7 +7,8 @@ const MODIFIERS = new Set(["Shift", "Meta", "Control", "Alt", "CapsLock", "Fn"])
 /**
  * ⌘; suggestions (SST-034): a transient listbox over the terminal frame, so it never resizes the PTY. While it is
  * mounted the workspace chord guard suspends shortcuts. ↑/↓ select, Return inserts (never Enter), Esc closes and
- * ⇧⌫ forgets; any other key closes without reaching the shell. Focus returns to the terminal when it closes.
+ * ⇧⌫ forgets; any other key closes without reaching the shell. Keyboard closes return focus to the terminal; a click
+ * elsewhere closes it and leaves focus where the user clicked.
  */
 export function CommandSuggestions({
   label,
@@ -20,7 +21,7 @@ export function CommandSuggestions({
   items: readonly string[];
   onAccept(item: string): void;
   onForget(item: string): void;
-  onClose(): void;
+  onClose(restoreFocus?: boolean): void;
 }) {
   const id = useId();
   const list = useRef<HTMLUListElement>(null);
@@ -43,7 +44,7 @@ export function CommandSuggestions({
     <div
       className="command-suggestions"
       data-testid="command-suggestions"
-      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onClose(); }}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onClose(false); }}
     >
       <ul
         ref={list}

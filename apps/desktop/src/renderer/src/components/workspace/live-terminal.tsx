@@ -622,9 +622,10 @@ export function LiveTerminal({
     if (direction === "previous") search.findPrevious(query, options);
     else search.findNext(query, options);
   };
-  const closeSuggestions = () => {
+  // Focusing the terminal from a blur handler would cancel the user's click elsewhere and send their typing here.
+  const closeSuggestions = (restoreFocus = true) => {
     setSuggestions(undefined);
-    controls.current?.term.focus();
+    if (restoreFocus) controls.current?.term.focus();
   };
   /** Inserts only the rest of the command after what is typed now; a changed command line inserts nothing. */
   const acceptSuggestion = (item: string) => {

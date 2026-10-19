@@ -359,6 +359,13 @@ test("recording on local zsh: the LOCAL pane records, suggests the command it ju
     await expect(cursorRow(pane)).toContainText("echo LOC");
     await page.keyboard.press("Meta+Semicolon");
     await expect(list.getByRole("option")).toHaveText([command]);
+    const elsewhere = page.getByRole("button", { name: /^Terminals/u });
+    await elsewhere.click();
+    await expect(list, "clicking away closes the list").toHaveCount(0);
+    await expect(elsewhere, "clicking away keeps focus where the user clicked, not in the shell").toBeFocused();
+    await pane.locator(".xterm-screen").click();
+    await page.keyboard.press("Meta+Semicolon");
+    await expect(list.getByRole("option")).toHaveText([command]);
     await page.keyboard.press("Shift+Backspace");
     await expect(list).toHaveCount(0);
     await expect(pane.getByTestId("terminal-feedback")).toContainText("Removed from this target's command history.");
