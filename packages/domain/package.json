@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./workspace-templates": "./src/workspace-templates.ts",
-    "./remote-edit": "./src/remote-edit.ts"
+    "./remote-edit": "./src/remote-edit.ts",
+    "./recording": "./src/recording.ts"
   }
 }

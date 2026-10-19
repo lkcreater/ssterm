@@ -358,6 +358,26 @@ export interface TerminalChannel extends TerminalStream {
   dispose(): void;
   readonly drained: Promise<void>;
 }
+/** The captured target of one terminal generation at Ready, as the registry tells a main-only observer. */
+export interface ObservedTerminal {
+  ownerId: string;
+  sessionId: string;
+  generation: number;
+  /** Null for a local terminal. */
+  hostId: string | null;
+  local: boolean;
+  label: string;
+  /** `user@host:port` for SSH, the shell path for a local terminal. */
+  endpoint: string | null;
+  environment: 'DEV' | 'STAGING' | 'PROD' | null;
+}
+/** Main-only tee of one terminal generation. Both members run synchronously inside the stream and must not throw. */
+export interface TerminalObserver {
+  /** Exactly the frames handed to the view's consumer, in order, after it. The chunk must not be kept. */
+  output(chunk: Uint8Array): void;
+  /** Exactly once, from the registry's resource disposal, on every teardown path. No output follows. */
+  end(): void;
+}
 export * from './sftp-types.ts';
 /** `refused`: the server would not open the destination (no server text is kept). */
 export type TunnelForward =

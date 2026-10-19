@@ -11,7 +11,7 @@ import { ENVELOPE_VERSION, PROTECTION_FORMAT } from './protection.ts';
 import { privateStore, writable } from './files.ts';
 import { runMigrations } from './migrations.ts';
 import { MIGRATIONS } from './schema-migrations.ts';
-export { seal, open, ProtectionFault, PROTECTION_FORMAT, ENVELOPE_VERSION, CONTENT_KEY_BYTES, MAX_BODY } from './protection.ts';
+export { seal, open, sealSegment, openSegment, ProtectionFault, PROTECTION_FORMAT, ENVELOPE_VERSION, CONTENT_KEY_BYTES, ENVELOPE_OVERHEAD, MAX_BODY, SEGMENT_HEADER, SEGMENT_SEALED_MAX, SEGMENT_PLAINTEXT_MAX, type ProtectedField } from './protection.ts';
 export type { MetadataRepository, MetadataSnapshot, MetadataChange, StoreResult, StorageErrorCode, BackupManifest } from '@ssterm/domain';
 function foreignKeys(db: DatabaseSync): void {
   db.exec('PRAGMA foreign_keys=ON');
