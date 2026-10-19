@@ -15,14 +15,16 @@ export const TERMINAL_ERROR_CODES = [
   "invalid-config", "host-key-untrusted", "host-key-changed", "auth-denied", "credentials-required",
   "credentials-unavailable", "invalid-private-key", "unsupported-private-key", "key-mismatch", "prompt-cancelled",
   "timeout", "dns", "network", "channel-open-failed", "subsystem-unavailable", "resource-limit", "locked",
-  "jump-refused", "proxy-failed",
+  "jump-refused", "proxy-failed", "local-spawn-failed", "local-unsupported",
 ] as const;
 export type TerminalErrorCode = (typeof TERMINAL_ERROR_CODES)[number];
 export interface TerminalSession {
   sessionId: string;
   generation: number;
   /** The saved host this session connects to. */
-  hostId: string;
+  hostId: string | null;
+  /** Main-authored local metadata; present exactly when hostId and target are null. */
+  local?: { shell: string; platform: "darwin" };
   phase: TerminalPhase;
   target: {
     label: string;
@@ -38,6 +40,8 @@ export interface TerminalSession {
 }
 export interface TerminalState { owner: Owner; sequence: number; sessions: TerminalSession[] }
 export interface TerminalStateRequest { owner: Owner }
+/** Local launch policy is main-owned; no executable, arguments, cwd or environment crosses this request. */
+export interface StartLocalTerminalRequest { owner: Owner }
 export interface TerminalTarget { owner: Owner; sessionId: string; generation: number }
 /** Operation cancellation may close a captured generation only while it is still connecting. */
 export interface CloseTerminalRequest extends TerminalTarget { onlyConnecting?: true }
@@ -65,8 +69,12 @@ function isTerminalSessionTarget(v: unknown): v is NonNullable<TerminalSession["
     between(v.endpointPort, 65_535) && (v.username === null || text(v.username, 1024));
 }
 export function isTerminalSession(v: unknown): v is TerminalSession {
-  return exactObject(v, ["sessionId", "generation", "hostId", "phase", "target", "end", "error"]) && identifier(v.sessionId) && positive(v.generation) &&
-    identifier(v.hostId) &&
+  const fields = ["sessionId", "generation", "hostId", "phase", "target", "end", "error"];
+  if (!(exactObject(v, fields) || exactObject(v, [...fields, "local"]))) return false;
+  const local = Object.hasOwn(v, "local");
+  return identifier(v.sessionId) && positive(v.generation) &&
+    (local ? v.hostId === null && v.target === null && exactObject(v.local, ["shell", "platform"]) &&
+      text(v.local.shell, 256) && v.local.shell.startsWith("/") && v.local.platform === "darwin" : identifier(v.hostId)) &&
     ["connecting", "ready", "closed", "failed"].includes(v.phase as string) &&
     (v.target === null || isTerminalSessionTarget(v.target)) && (v.end === null || isTerminalEnd(v.end)) &&
     (v.error === null || (TERMINAL_ERROR_CODES as readonly unknown[]).includes(v.error));
@@ -76,6 +84,7 @@ export function isTerminalState(v: unknown): v is TerminalState {
     Array.isArray(v.sessions) && v.sessions.length <= 32 && v.sessions.every(isTerminalSession);
 }
 export function isTerminalStateRequest(v: unknown): v is TerminalStateRequest { return exactObject(v, ["owner"]) && isOwner(v.owner); }
+export function isStartLocalTerminalRequest(v: unknown): v is StartLocalTerminalRequest { return exactObject(v, ["owner"]) && isOwner(v.owner); }
 export function isTerminalTarget(v: unknown): v is TerminalTarget {
   return exactObject(v, ["owner", "sessionId", "generation"]) && target(v);
 }

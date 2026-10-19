@@ -197,3 +197,7 @@ Schema 4 adds `workspace_template` as a versioned metadata entity. It stores a l
 ## Temporary remote-edit content — SST-032
 
 [Remote editing](../remote-edit.md) keeps schema 4 unchanged. Document bytes stay in main-owned private working copies/snapshots and the SFTP stream; IPC carries only bounded metadata, revision and approval identifiers. Explicit external-editor consent shares a plaintext copy with TextEdit, whose independent retention cannot be revoked by app cleanup. Lifecycle cleanup is confined to marked owned directories, with retryable failure accounting and verified orphan handling. Snippet-body authenticated protection remains enforced independently. [Verification and limits](../agent-runs/sst-032-delivery.md).
+
+### Local terminal projection — SST-029
+
+A local generation is transient and has `hostId:null`, no SSH target and main-authored `local:{shell,platform:'darwin'}` metadata. It never calls the saved-host resolver, prompts for SSH credentials or grants SFTP/tunnel capabilities. The single registry still owns local and SSH records/resources, owner/generation fencing, lock/suspend/revoke/quit and native disposal. Start/restart/split never restore commands, process IDs, environment or cwd from metadata. No table, schema migration, local profile, terminal output or shell-history persistence is added (schema 4). See [local terminal](../local-terminal.md) for shell-owned history and child-cleanup limits.

@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-032: remote editing `DONE` (automated)** — [remote editing](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md): private text copies, explicit TextEdit/snapshot upload consent, SHA-256 stale checks, owned cleanup and captured SFTP targets. Unit 514/514, development E2E 72/72, packaged 73/73; schema remains 4. Resume and remote↔remote remain unsupported optional capabilities. SST-029 is next in the authorized order. Native TextEdit UI/autosave and prior manual release/signing gates remain pending.
+**SST-029: local terminal `DONE` (automated)** — [local terminal](../local-terminal.md), [platform ADR](../adr/0005-local-terminal-platforms.md), [delivery](../agent-runs/sst-029-delivery.md): macOS arm64 local PTY with explicit LOCAL targets, bounded native IO and owned-job cleanup. Unit 537/537, development E2E 75/75, packaged 76/76; final license-refresh smoke 7/7. Schema remains 4. Windows/Linux/macOS x64 remain unsupported/unverified; no untested builds. SST-034 is next in the authorized order. Existing manual release/signing gates remain pending.
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -76,9 +76,11 @@
 
 - [x] **T053 / SST-039:** local app lock — password or Google (loopback OAuth), recovery code, main-side IPC gate, Settings
 
-## Later — ยังไม่รวมใน MVP confirmation
+## Later scope — authorized separately from MVP
 
-- [ ] **T037 / SST-029:** local PTY and additional OS capability/packaging matrix
+SST-029–038 follow the [recorded authorization and choices](../agent-runs/implementation-plan.md#later-scope-authorization--sst-029-to-sst-038-2026-10-17); no per-ticket approval is needed within that scope.
+
+- [x] **T037 / SST-029:** macOS arm64 local PTY and declared additional-OS capability/packaging matrix — automated DONE ([behavior](../local-terminal.md), [delivery](../agent-runs/sst-029-delivery.md)); other platforms remain unsupported/unverified
 - [x] **T038 / SST-030:** jump host/multi-hop/proxy resolver, per-hop auth/trust/cleanup — DONE ([jump hosts](../jump-hosts.md), [delivery](../agent-runs/sst-030-delivery.md))
 - [x] **T039 / SST-031:** remote/dynamic tunnel capabilities and UI — DONE ([tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031), [delivery](../agent-runs/sst-031-delivery.md))
 - [x] **T040 / SST-032:** remote editing/stale version/temp cleanup/advanced transfers — automated DONE ([behavior](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md)); native TextEdit manual check pending; resume/remote↔remote unsupported

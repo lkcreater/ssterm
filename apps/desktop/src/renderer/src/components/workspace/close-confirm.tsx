@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { endpointText } from "@/lib/catalog-filter";
+import { terminalIdentity } from "@/lib/terminal-target";
 
 /** The sessions a pane or tab close would end, captured when Close was chosen. */
 export interface CloseRequest {
@@ -36,7 +36,7 @@ export function CloseConfirm({
   const connected = request?.sessions.filter((session) => session.phase === "ready") ?? [];
   const single = request?.sessions.length === 1 ? request.sessions[0] : undefined;
   const title = single
-    ? `Disconnect and close ${single.target?.label ?? "this session"}?`
+    ? single.local ? `End local shell on This Mac?` : `Disconnect and close ${terminalIdentity(single).label}?`
     : `Close this tab and disconnect ${connected.length} ${connected.length === 1 ? "session" : "sessions"}?`;
   return (
     <AlertDialog
@@ -58,19 +58,20 @@ export function CloseConfirm({
             <AlertDialogHeader>
               <AlertDialogTitle className="min-w-0 break-words">{title}</AlertDialogTitle>
               <AlertDialogDescription>
-                Connected sessions end now. Nothing typed earlier is sent again if you reconnect later.
+                Sessions and local processes end now. Unsaved work in a running process may be lost. Nothing typed earlier is sent again if you reconnect later.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <ul className="grid min-w-0 gap-2" aria-label="Sessions that will close">
               {request.sessions.map((session) => (
                 <li key={session.sessionId} className="grid min-w-0 gap-0.5">
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="min-w-0 font-medium break-all">{session.target?.label ?? "Unknown target"}</span>
+                    <span className="min-w-0 font-medium break-all">{terminalIdentity(session).label}</span>
+                    {session.local ? <Badge variant="secondary">LOCAL</Badge> : null}
                     {session.target?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
                   </span>
-                  {session.target ? (
+                  {terminalIdentity(session).endpoint ? (
                     <span className="font-mono text-sm break-all text-muted-foreground">
-                      {endpointText(session.target.endpointHost, session.target.endpointPort, session.target.username)}
+                      {terminalIdentity(session).endpoint}
                     </span>
                   ) : null}
                 </li>

@@ -227,16 +227,16 @@ export function WorkspaceTools({ owner, catalog, controller, onClose }: {
     setSelected((current) => checked ? [...new Set([...current, value])] : current.filter((entry) => entry !== value));
   }
   const lockedSelection = busy || prepared !== null;
-  const readySessions = controller.sessions.filter((session) => session.phase === "ready");
+  const readySessions = controller.sessions.filter((session) => session.phase === "ready" && !session.local && !!session.hostId && !!session.target);
   const choices = mode === "existing" ? readySessions.map((session) => ({ id: session.sessionId, label: `${session.target?.label ?? "Unknown target"} · Session ${session.sessionId.slice(-8)}` })) : catalog.hosts.map((host) => ({ id: host.id, label: host.label }));
   return <Dialog open onOpenChange={(open) => { if (!open) { abortOperation(); onClose(); } }}>
     <DialogContent className="workspace-tools motion-reduce:animate-none" data-testid="workspace-tools"
       finalFocus={() => document.querySelector<HTMLElement>('.terminal-workspace section[data-active="true"] .xterm-helper-textarea') ?? true}>
-      <DialogHeader><DialogTitle>Workspace tools</DialogTitle><DialogDescription>Save layouts and prepare explicit multi-target input. Ordinary terminal typing always stays local.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>Workspace tools</DialogTitle><DialogDescription>Save layouts and prepare explicit multi-target input for saved SSH hosts only. Local panes are excluded. Ordinary terminal typing stays in its pane.</DialogDescription></DialogHeader>
       <div className="workspace-tools-scroll">
         <section className="grid gap-3" aria-label="Workspace templates">
           <h2 className="type-label">Workspace templates</h2>
-          <p className="text-sm text-muted-foreground">Templates restore fresh sessions using current saved-host settings. They do not restore terminal history or running processes.</p>
+          <p className="text-sm text-muted-foreground">Templates save SSH panes only and restore fresh sessions using current saved-host settings. Local panes, terminal history and running processes are excluded.</p>
           <Field><FieldLabel htmlFor={`${id}-name`}>Template name</FieldLabel><Input id={`${id}-name`} value={name} maxLength={200} disabled={busy} onChange={(event) => setName(event.target.value)} /></Field>
           <Field><FieldLabel htmlFor={`${id}-saved-snippet`}>Saved snippet</FieldLabel><Select items={[{ value: "", label: "None" }, ...catalog.snippets.map((snippet) => ({ value: snippet.id, label: snippet.label }))]} value={savedSnippet} disabled={busy} onValueChange={(value) => { if (typeof value === "string") setSavedSnippet(value); }}><SelectTrigger id={`${id}-saved-snippet`} className="w-full"><SelectValue /></SelectTrigger><SelectContent alignItemWithTrigger={false}><SelectGroup><SelectItem value="">None</SelectItem>{catalog.snippets.map((snippet) => <SelectItem key={snippet.id} value={snippet.id}>{snippet.label}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
           <Button variant="outline" disabled={busy || !name.trim()} onClick={() => void saveTemplate()}>Save workspace template</Button>

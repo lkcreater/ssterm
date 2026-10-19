@@ -13,7 +13,7 @@ export function captureWorkspaceTemplate(
   sessions: readonly TerminalSession[],
   snippetId: string | null = null,
 ): WorkspaceTemplateConfiguration | null {
-  const hosts = new Map(sessions.map((session) => [session.sessionId, session.hostId]));
+  const hosts = new Map(sessions.filter((session) => !session.local).map((session) => [session.sessionId, session.hostId]));
   const slots = new Map<string, string>();
   let serial = 0;
   function capture(node: LayoutNode): WorkspaceTemplateNode | null {

@@ -31,3 +31,7 @@ Not exercised by automated tests: the EOF-without-status outcome text and the â€
 ## Boundaries and rollback
 
 There is no renderer connect command; E2E starts sessions from main through the shipped production adapter. A session that no view opens stays paused and its remote exit is not observed until it is viewed. One acknowledgement IPC call per chunk and the fixed 256 KiB bounds are SST-014 inputs. Rollback removes the terminal controller/handlers and renderer pane, restores the paused-channel adapter and drops the xterm pins; there is no schema or user-data change.
+
+## Local terminal â€” SST-029
+
+The explicit [local terminal](local-terminal.md) uses the same framed byte stream and owner/generation fences through a main-only node-pty adapter. It identifies LOCAL / This Mac without a saved host or SSH endpoint. Native flow/exit/job cleanup and platform support are separate gates from SSH; see [ADR 0005](adr/0005-local-terminal-platforms.md).

@@ -220,7 +220,7 @@ test("terminal IPC authorizes sender and owner, requires one argument and wipes 
   const wiped = (request: { bytes: Uint8Array }) => request.bytes.every((byte) => byte === 0);
   try {
     assert.deepEqual([...handlers.keys()].sort(), [channels.ackTerminal, channels.openTerminal, channels.resizeTerminal, channels.terminalState,
-      channels.writeTerminal, channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal, channels.connectHost].sort());
+      channels.writeTerminal, channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal, channels.connectHost, channels.startLocalTerminal].sort());
     assert.deepEqual([...terminalChannels].sort(), [...handlers.keys()].sort());
     for (const forged of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { url: mainFrame.url } }, { sender, senderFrame: null }]) {
       const request = write();

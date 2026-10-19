@@ -17,18 +17,12 @@ import { ConnectionStatus } from "@/components/connection/connection-status";
 import { call } from "@/components/identities/secret-input";
 import { protectionNotice, requestNotice } from "@/components/snippets/snippets-page";
 import { TerminalInputsContext } from "@/components/workspace/terminal-inputs";
-import { endpointText } from "@/lib/catalog-filter";
+import { captureTerminalTarget, terminalIdentity } from "@/lib/terminal-target";
 import { filterSnippets } from "@/lib/snippet-filter";
 import { linesText, planDispatch, type ConfirmReason, type DispatchMode, type DispatchPlan } from "@/lib/snippet-dispatch";
 
 /** The session an action was invoked for; later focus changes never redirect it. */
-interface Captured {
-  sessionId: string;
-  generation: number;
-  label: string;
-  production: boolean;
-  endpoint: string | null;
-}
+type Captured = NonNullable<ReturnType<typeof captureTerminalTarget>>;
 type SendPlan = Extract<DispatchPlan, { bytes: Uint8Array }>;
 type Feedback = { tone: "sent" | "problem"; text: string };
 type Confirm = { captured: Captured; text: string; mode: DispatchMode; plan: SendPlan; fromComposer: boolean };
@@ -41,28 +35,15 @@ const reasonText: Record<ConfirmReason, string> = {
   "line-by-line": "The shell is not in bracketed-paste mode, so each line runs as soon as it arrives.",
 };
 
-function capture(session: TerminalSession | undefined): Captured | undefined {
-  if (!session || session.phase !== "ready") return undefined;
-  const target = session.target;
-  return {
-    sessionId: session.sessionId,
-    generation: session.generation,
-    label: target?.label ?? "Unknown target",
-    production: target?.environment === "PROD",
-    endpoint: target ? endpointText(target.endpointHost, target.endpointPort, target.username) : null,
-  };
-}
-
 function Target({ session, captured }: { session?: TerminalSession; captured?: Captured }) {
-  const label = captured?.label ?? session?.target?.label;
-  const production = captured ? captured.production : session?.target?.environment === "PROD";
-  const endpoint = captured?.endpoint ??
-    (session?.target ? endpointText(session.target.endpointHost, session.target.endpointPort, session.target.username) : null);
+  const identity = captured ?? (session ? terminalIdentity(session) : undefined);
+  const { label, production, endpoint, local } = identity ?? {};
   if (!label) return <span className="text-sm text-muted-foreground">No active terminal</span>;
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
       {session ? <ConnectionStatus state={phases[session.phase]} /> : null}
       <span className="min-w-0 truncate font-medium" title={label}>{label}</span>
+      {local ? <Badge variant="secondary">LOCAL</Badge> : null}
       {production ? <Badge variant="production">PROD</Badge> : null}
       {endpoint ? <span className="host-target min-w-0 truncate" title={endpoint}>{endpoint}</span> : null}
     </span>
@@ -174,7 +155,7 @@ export function SnippetPanel({
   async function act(snippet: CatalogSnippet, mode: "paste" | "run") {
     if (busy) return;
     // Captured now: switching panes while the body decrypts cannot redirect it.
-    const captured = capture(activeRef.current);
+    const captured = captureTerminalTarget(activeRef.current);
     if (!captured) return problem(NO_TARGET);
     setBusy(`${snippet.id}:${mode}`);
     setFeedback(undefined);

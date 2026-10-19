@@ -32,6 +32,16 @@ test("captured targets are immutable snapshots; duplicate, unready and over-eigh
   assert.throws(() => captureTargets([live, live]));
   assert.throws(() => captureTargets(Array.from({ length: 9 }, (_, index) => session(String(index)))), RangeError);
 });
+test("local panes cannot join SSH broadcast or receive bytes through a stale captured SSH target", async () => {
+  const { options, sessions, sent } = setup();
+  const local: TerminalSession = { ...session("a"), hostId: null, target: null, local: { shell: "zsh", platform: "darwin" } };
+  assert.equal(captureTarget(local), null);
+  assert.throws(() => captureTargets([local]));
+  sessions.set("a", local);
+  const result = await dispatchTargets({ ...options, text: "uptime" });
+  assert.equal(result[0]!.status, "refused");
+  assert.equal(sent.length, 0);
+});
 test("mixed bracket modes and PROD get independent consent and destination bytes", async () => {
   const { options, sent } = setup();
   const preflight = inspectTargets(options);

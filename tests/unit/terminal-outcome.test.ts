@@ -17,6 +17,12 @@ test("remote ends are reported as remote outcomes, whatever the local state", ()
   assert.equal(terminalOutcome({ phase: "closed", end: { kind: "signal", signal: "SIGKILL" }, error: null }, true), "Remote process was terminated by SIGKILL");
   assert.equal(terminalOutcome({ phase: "closed", end: { kind: "eof" }, error: null }, true), "The remote end closed the session");
 });
+test("local exits and launch failures use local wording without claiming an SSH connection", () => {
+  assert.equal(terminalOutcome({ phase: "closed", end: { kind: "exit", code: 7 }, error: null }, true, "local"), "Local process exited with status 7");
+  assert.equal(terminalOutcome({ phase: "closed", end: { kind: "signal", signal: "SIGTERM" }, error: null }, true, "local"), "Local process was terminated by SIGTERM");
+  assert.equal(terminalOutcome(failed("local-spawn-failed"), false, "local"), "Couldn't start local shell: the local shell could not be started");
+  assert.equal(terminalOutcome(failed("resource-limit"), true, "local"), "Local session failed: output exceeded the safety limit");
+});
 
 test("a network or timeout failure after Ready is a lost connection; before Ready it is a failed attempt", () => {
   for (const error of ["network", "timeout"] as const) {

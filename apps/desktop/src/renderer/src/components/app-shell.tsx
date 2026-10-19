@@ -51,6 +51,8 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/components/ui/toast";
+import { terminalIdentity } from "@/lib/terminal-target";
 import { useDesktopState } from "@/hooks/use-desktop-state";
 import { useCredentials } from "@/hooks/use-credentials";
 import { CredentialPrompts } from "@/components/auth/credential-prompts";
@@ -94,7 +96,6 @@ import {
   groupTree,
   type CatalogScope,
 } from "@/lib/catalog-filter";
-import { endpointText } from "@/lib/catalog-filter";
 import iconLogo from "@/assets/icon-logo.png";
 
 
@@ -196,6 +197,8 @@ export function AppShell() {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [dialog, setDialog] = useState<CatalogDialog>();
   const [connectFailure, setConnectFailure] = useState<ConnectFailure>();
+  const [startingLocal, setStartingLocal] = useState(false);
+  const localLaunch = useRef(false);
   const [overlay, setOverlay] = useState<"settings" | "shortcuts">();
   const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -282,6 +285,27 @@ export function AppShell() {
     });
   }
 
+  async function startLocal() {
+    const bridge = window.ssterm;
+    if (!owner || !bridge || localLaunch.current) return;
+    localLaunch.current = true;
+    setStartingLocal(true);
+    setPage("terminals");
+    try {
+      const result = await bridge.startLocalTerminal({ owner });
+      if (result.ok) controller.reveal(result.value.sessionId);
+      else toast.add({ title: "Couldn't open a local terminal", description: result.error.code === "busy"
+        ? "Close an ended pane and try again."
+        : result.error.code === "stale-owner" ? "This window is out of date; reopen it to continue."
+        : "The local terminal is unavailable. Check the workspace state and try again.", type: "error" });
+    } catch {
+      toast.add({ title: "Couldn't open a local terminal", description: "The local shell could not start. Try again.", type: "error" });
+    } finally {
+      localLaunch.current = false;
+      setStartingLocal(false);
+    }
+  }
+
   /** One remote browser per window: another host replaces the current one (browse-only, no prompt). */
   const openSftp = (hostId: string) => {
     setPage("files");
@@ -309,6 +333,8 @@ export function AppShell() {
   const remote = sftp.session;
   const statusSession = terminalsShown ? active : filesShown ? remote : undefined;
   const statusTarget = statusSession?.target;
+  const statusIdentity = statusSession ? terminalIdentity(statusSession) : undefined;
+  const statusLocal = terminalsShown && !!active?.local;
 
   const showHosts = (next?: CatalogScope) => {
     setPage("hosts");
@@ -354,6 +380,16 @@ export function AppShell() {
             <span className="titlebar-title">ssterm</span>
           )}
         </div>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="New local terminal"
+          title="New local terminal · This Mac"
+          disabled={!owner || startingLocal}
+          onClick={() => void startLocal()}
+        >
+          {startingLocal ? <Spinner /> : <SquareTerminalIcon aria-hidden="true" />}
+        </Button>
         <Button
           size="icon-sm"
           variant="ghost"
@@ -596,10 +632,13 @@ export function AppShell() {
                         <EmptyHeader>
                           <EmptyTitle>No open terminals</EmptyTitle>
                           <EmptyDescription>
-                            Connect to a saved server to open a terminal here.
+                            Open a local shell on this Mac, or connect to a saved SSH server.
                           </EmptyDescription>
                         </EmptyHeader>
                         <EmptyContent>
+                          <Button disabled={!owner || startingLocal} onClick={() => void startLocal()}>
+                            <SquareTerminalIcon data-icon="inline-start" /> New local terminal
+                          </Button>
                           <Button variant="outline" onClick={() => showHosts()}>
                             <ServerIcon data-icon="inline-start" /> Show servers
                           </Button>
@@ -772,13 +811,14 @@ export function AppShell() {
             className="statusbar-target"
           >
             <ConnectionStatus state={phaseStates[statusSession.phase]} />
-            <span className="statusbar-label truncate" title={statusTarget?.label}>
-              {statusTarget?.label ?? "Unknown target"}
+            <span className="statusbar-label truncate" title={statusIdentity?.label}>
+              {statusIdentity?.label ?? "Unknown target"}
             </span>
+            {statusLocal ? <Badge variant="secondary">LOCAL</Badge> : null}
             {statusTarget?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
-            {statusTarget ? (
+            {statusIdentity?.endpoint ? (
               <span className="host-target truncate">
-                {endpointText(statusTarget.endpointHost, statusTarget.endpointPort, statusTarget.username)}
+                {statusIdentity.endpoint}
               </span>
             ) : null}
           </div>

@@ -41,6 +41,16 @@ test("capture prunes closing/unlisted panes and refuses empty or over-eight conf
   const ids = Array.from({ length: 9 }, (_, index) => `s${index}`);
   assert.equal(captureWorkspaceTemplate(apply(emptyWorkspace, { type: "reconcile", sessions: ids }), ids.map(session)), null);
 });
+test("template capture excludes local panes and collapses their split without saving process data", () => {
+  const workspace = apply(emptyWorkspace, { type: "reconcile", sessions: ["ssh", "local"] }, { type: "merge", source: "local", target: "ssh" });
+  const local: TerminalSession = { ...session("local"), hostId: null, local: { shell: "zsh", platform: "darwin" } };
+  const captured = captureWorkspaceTemplate(workspace, [session("ssh"), local])!;
+  assert.equal(captured.tabs.length, 1);
+  assert.deepEqual(captured.tabs[0]!.root, { kind: "pane", slotId: "slot-1", hostId: host });
+  assert.equal(captured.tabs[0]!.activeSlot, "slot-1");
+  assert.ok(!JSON.stringify(captured).includes("zsh"));
+  assert.equal(captureWorkspaceTemplate(workspace, [local]), null);
+});
 test("materialization prunes failed allocations, keeps surviving focus/ratios, and never duplicates a session", () => {
   const full = materializeWorkspaceTemplate(template(), new Map([["one", "a"], ["two", "b"], ["three", "c"]]));
   assert.equal(full.tabs[0]!.mode, "focus");

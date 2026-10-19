@@ -1,5 +1,5 @@
 import { packager } from "@electron/packager";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +31,7 @@ try {
     recursive: true,
     filter: (path) => !/third-party-modules-[a-z]+\.json$/u.test(path),
   });
-  // External runtime dependencies: Keychain prebuilt and the pinned SSH parser's JS closure.
+  // External runtime dependencies: Keychain prebuilt, pinned SSH parser and the macOS PTY closure.
   // No optional CPU detection or SSH native acceleration is built or staged.
   const staged = [
     "@napi-rs/keyring",
@@ -41,15 +41,25 @@ try {
     "safer-buffer",
     "bcrypt-pbkdf",
     "tweetnacl",
+    "node-pty",
   ];
   for (const name of staged) {
     await cp(join(root, "node_modules", name), join(stage, "node_modules", name), {
       recursive: true,
       // ssh2's upstream tests/examples are not runtime code and include private-key fixtures; pagent.exe is the
       // Windows Pageant helper, never used on macOS.
-      filter: (path) => !/\/ssh2\/(test|examples)(\/|$)/u.test(path) && !/\/ssh2\/util\/(pagent|build_pagent)/u.test(path),
+      filter: (path) => {
+        if (/\/ssh2\/(test|examples)(\/|$)/u.test(path) || /\/ssh2\/util\/(pagent|build_pagent)/u.test(path)) return false;
+        const part = path.split("/node-pty/")[1];
+        // Only the selected macOS runtime closure: no other-platform binaries, source/test trees or maps.
+        if (part !== undefined) return /^(package\.json|LICENSE|lib(?:\/|$)|prebuilds(?:\/|$))/u.test(part) &&
+          !/\.map$|\.test\.js$|^prebuilds\/(?!darwin-arm64(?:\/|$))/u.test(part);
+        return true;
+      },
     });
   }
+  // The upstream npm archive ships this executable without execute bits; stage it explicitly.
+  await chmod(join(stage, "node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"), 0o755);
   // Notices, Electron/Chromium licences and the derived app icon travel as Contents/Resources files.
   const resources = join(stage, "resources");
   await mkdir(resources, { recursive: true });
@@ -116,7 +126,7 @@ try {
     electronVersion: "44.7.2",
     electronZipDir,
     // Native addons cannot be dlopen()ed from inside the archive.
-    asar: { unpack: "**/*.node" },
+    asar: { unpack: "**/{*.node,spawn-helper}" },
     overwrite: true,
     prune: false,
   });

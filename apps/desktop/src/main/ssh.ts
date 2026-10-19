@@ -4,6 +4,7 @@ import { resolveHostConfig } from "@ssterm/domain";
 import { KnownHostPolicy, createSavedHostSshAdapter, type TransientSecrets, type SessionLimits } from "@ssterm/services";
 import { MAX_TERMINAL_WRITE } from "@ssterm/contracts";
 import { sshKeepalive, terminalBounds, type SshKeepalive, type TerminalBounds } from "@ssterm/adapters/ssh";
+import { createLocalPtyAdapter } from "@ssterm/adapters/local-pty";
 import { createDesktopSessions, type SessionPowerEvents } from "./session-runtime";
 
 const unavailable = { status: "unavailable" } as const;
@@ -33,6 +34,7 @@ export function createSavedHostSessions(options: {
     transient: options.transient,
     power: options.power,
     limits: options.limits,
+    localAdapter: createLocalPtyAdapter(),
     resolve: (hostId) => {
       const snapshot = options.repository.snapshot();
       return snapshot.ok ? resolveHostConfig(snapshot.value, hostId) : snapshot;
@@ -64,6 +66,8 @@ export { createIdentitiesController, registerIdentityHandlers, identityChannels,
 export { registerLinkHandlers, validateExternalUrl } from "./links";
 export { WindowBoundary } from "./boundary";
 export { sessionOwnerId } from "./session-runtime";
+export { createDesktopSessions } from "./session-runtime";
+export { createLocalPtyAdapter } from "@ssterm/adapters/local-pty";
 export { channels } from "@ssterm/contracts";
 
 export { createTransferController, registerTransferHandlers, transferChannels } from "./transfers";

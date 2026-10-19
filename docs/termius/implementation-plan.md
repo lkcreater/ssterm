@@ -1,6 +1,6 @@
 # Implementation plan
 
-**SST-032: remote editing `DONE` (automated)** — [remote editing](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md): private text copies, explicit TextEdit/snapshot upload consent, SHA-256 stale checks, owned cleanup and captured SFTP targets. Unit 514/514, development E2E 72/72, packaged 73/73; schema remains 4. Resume and remote↔remote remain unsupported optional capabilities. SST-029 is next in the authorized order. Native TextEdit UI/autosave and prior manual release/signing gates remain pending.
+**SST-029: local terminal `DONE` (automated)** — [local terminal](../local-terminal.md), [platform ADR](../adr/0005-local-terminal-platforms.md), [delivery](../agent-runs/sst-029-delivery.md): macOS arm64 local PTY with explicit LOCAL targets, bounded native IO and owned-job cleanup. Unit 537/537, development E2E 75/75, packaged 76/76; final license-refresh smoke 7/7. Schema remains 4. Windows/Linux/macOS x64 remain unsupported/unverified; no untested builds. SST-034 is next in the authorized order. Existing manual release/signing gates remain pending.
 
 **สถานะ: `M0_COMPLETE` ณ 2026-10-15.** SST-001 ADR และ SST-002 isolated SSH/SFTP/tunnel compatibility spike ผ่าน pipeline รวม delivery; commit SST-001 (`ad9ed51`) ก่อนเริ่ม SST-002 ตามที่อนุมัติ [Runtime evidence](../spikes/ssh-compatibility.md) ไม่ใช่ production app bootstrap; SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; SST-028 manual/signing ยังค้าง
 
@@ -14,7 +14,7 @@
 
 Logo/icon ใช้ supplied SST-style artwork ใน [docs/logo](../logo/README.md) เป็น reference: `brand-logo.png` สำหรับ brand lockup, `icon-logo.png` สำหรับ derived app icons และ `design-logo.png` สำหรับ presentation; exports/alpha-edge QA/macOS packaging อยู่ DS06/T052 ยังไม่เริ่มทำ
 
-**Later SST-029–038:** local PTY/additional OS, host chaining/proxy, remote/dynamic forwarding, advanced SFTP, templates/broadcast/multi-host snippets, logs/autocomplete/AI, own cloud sync/teams/crypto และ Mosh/FIDO แยก scope confirmation เพิ่ม
+**Later SST-029–038 (authorized separately from MVP):** follow the [recorded choices and dependency order](../agent-runs/implementation-plan.md#later-scope-authorization--sst-029-to-sst-038-2026-10-17). macOS local PTY and a declared additional-OS matrix, host chaining/proxy, forwarding, remote editing and workspace tools are delivered through automated gates; SST-034 is next. AI remains a privacy spec only, sync remains self-hosted without deployment, and FIDO remains ADR-only within the authorized range.
 
 MVP ใช้ original UI/branding ของ ssterm; published workflow เป็น reference และ proposals อาจต่างจาก Termius เช่น explicit save และ Paste composer; ไม่รับประกัน pixel match, database/API/cloud compatibility หรือ remote process continuity
 

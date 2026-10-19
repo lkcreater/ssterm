@@ -66,6 +66,7 @@ import {
   type Tab,
 } from "@/lib/workspace-layout";
 import { workspaceShortcut, type WorkspaceShortcut } from "@/lib/workspace-shortcuts";
+import { startSiblingTerminal, terminalIdentity } from "@/lib/terminal-target";
 
 export type WorkspaceCommand = "toggle-sidebar" | "settings" | "shortcuts";
 export type CloseTarget = { sessionId: string } | { tabId: string };
@@ -102,6 +103,7 @@ export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession
   const [closeRequest, setCloseRequest] = useState<CloseRequest>();
   // A new session to focus once it is placed and Ready, unless the user has moved on.
   const focusWhenReady = useRef<string>(undefined);
+  const focusOrigin = useRef<Element | null>(null);
   const splitting = useRef(false);
   const windowId = owner?.windowId;
   const generation = owner?.generation;
@@ -110,6 +112,7 @@ export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession
     dispatch({ type: "owner-reset" });
     setCloseRequest(undefined);
     focusWhenReady.current = undefined;
+    focusOrigin.current = null;
   }, [windowId, generation]);
   const ids = sessions.map((session) => session.sessionId).join(" ");
   useEffect(() => {
@@ -124,7 +127,8 @@ export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession
     focusWhenReady.current = undefined;
     const focused = document.activeElement;
     if (session.phase !== "ready" || activeTab(workspace)?.active !== id) return;
-    if (focused && focused !== document.body && !focused.closest(".terminal-workspace")) return;
+    if (focused && focused !== document.body && focused !== focusOrigin.current && !focused.closest(".terminal-workspace")) return;
+    focusOrigin.current = null;
     focusActivePane();
   }, [workspace, sessions]);
 
@@ -149,7 +153,7 @@ export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession
           if (ok) return;
           dispatch({ type: "restore", sessionId: session.sessionId });
           toast.add({
-            title: `${session.target?.label ?? "The pane"} could not be closed`,
+            title: `${terminalIdentity(session).label} could not be closed`,
             description: "It is shown again in its own tab. Try closing it once more.",
             type: "error",
           });
@@ -170,10 +174,11 @@ export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession
     reveal(sessionId: string) {
       dispatch({ type: "reveal", sessionId });
       focusWhenReady.current = sessionId;
+      focusOrigin.current = document.activeElement;
     },
     /** Moves keyboard focus to the active pane once this update has rendered. */
     focusActive: focusActivePane,
-    /** Opens a new session to the same saved host beside the pane. */
+    /** Opens a fresh local process or a session to the same saved host beside the pane. */
     async split(direction: SplitDirection, targetId = tab?.active) {
       const bridge = window.ssterm;
       const owner = ownerOf();
@@ -189,7 +194,7 @@ export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession
       }
       splitting.current = true;
       try {
-        const result = await bridge.connectHost({ owner, hostId: target.hostId }).catch(() => undefined);
+        const result = await startSiblingTerminal(bridge, owner, target).catch(() => undefined);
         if (!result?.ok) {
           toast.add({
             title: "Couldn't open another session",
@@ -601,7 +606,8 @@ function PaneMenu({
                     key={other.sessionId}
                     onClick={() => dispatch({ type: "merge", source: other.sessionId, target: sessionId })}
                   >
-                    <span className="min-w-0 truncate">{other.target?.label ?? "Unknown target"}</span>
+                    <span className="min-w-0 truncate">{terminalIdentity(other).label}</span>
+                    {other.local ? <Badge variant="secondary">LOCAL</Badge> : null}
                     {other.target?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
                   </DropdownMenuItem>
                 ))}
@@ -635,8 +641,8 @@ function PaneMenu({
               <LayersIcon /> Snippets… <DropdownMenuShortcut>⇧⌘S</DropdownMenuShortcut>
             </DropdownMenuItem>
           ) : null}
-          {onOpenSftp ? (
-            <DropdownMenuItem onClick={() => onOpenSftp(session.hostId)}>
+          {onOpenSftp && session.hostId && !session.local ? (
+            <DropdownMenuItem onClick={() => { if (session.hostId) onOpenSftp(session.hostId); }}>
               <FolderOpenIcon /> Open in SFTP
             </DropdownMenuItem>
           ) : null}

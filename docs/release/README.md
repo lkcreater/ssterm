@@ -28,7 +28,7 @@ cd artifacts/release && shasum -a 256 -c SHA256SUMS
 2. Because the app is not notarized, Gatekeeper blocks the first launch of a downloaded copy. On macOS 15 or later: try to open it, then choose **System Settings → Privacy & Security → Open Anyway** and confirm. On macOS 13–14: Control-click → **Open** → **Open**. Alternatively, after verifying the checksum, remove the quarantine flag: `xattr -dr com.apple.quarantine /Applications/SSTerm.app`.
 3. Requirements: Apple silicon, macOS 13 or later (Electron 44's minimum, `LSMinimumSystemVersion`). Tested on macOS 15.7 arm64 only.
 
-ssterm needs no account and makes no network requests except SSH connections you start. The first time you open Desktop, Documents, Downloads, a network or a removable volume in **Files**, macOS asks for access with ssterm's own explanation.
+ssterm needs no hosted account. App-managed connections are the SSH connections you start and optional Google sign-in for the local app lock; programs you explicitly run in a [local terminal](../local-terminal.md) can make their own network requests. The first time you open Desktop, Documents, Downloads, a network or a removable volume in **Files**, macOS asks for access with ssterm's own explanation.
 
 ## Where data lives
 
@@ -36,6 +36,7 @@ ssterm needs no account and makes no network requests except SSH connections you
 |---|---|---|
 | Hosts, groups, tags, identities (metadata), known hosts, snippets (ciphertext), tunnel rules, workspace templates, settings | `~/Library/Application Support/ssterm/metadata/catalog.sqlite` (+ `-wal`, `-shm`) | SQLite, schema version 4; directory `0700`. Snippet bodies are AES-256-GCM ciphertext. The folder name is fixed in code (`appData/ssterm`) |
 | Remote-edit working copies and immutable upload snapshots | `~/Library/Application Support/ssterm/remote-edit-temp/` | Plaintext, private `0700` directories and `0600` document/`0400` snapshot files. Explicit discard and lifecycle cleanup remove only owned copies; verified marked leftovers are retried on startup. TextEdit's independent copies are outside this cleanup |
+| Local terminal sessions/output | Process memory; numeric guardian status only in OS-temp `ssterm-local-session-*/exit-status` | Output is not restored or stored by ssterm; the private status-only file is removed on confirmed disposal, but OS-forced exits can leave it. The selected shell's startup files/history and files or network effects created by user commands belong to that shell/user and are outside app data cleanup |
 | Passwords, private keys, passphrases, the snippet content key | login Keychain, generic passwords with service `dev.ssterm.desktop.secrets` | Never in the database. Item access is bound to the app's code signature |
 | Chromium data (caches, local state) | `~/Library/Application Support/ssterm/` beside `metadata/`; possibly `~/Library/Caches/SSTerm` | No credentials |
 | Logs, telemetry | none | ssterm writes no logs and sends no telemetry |
@@ -60,7 +61,7 @@ A newer database schema is refused by an older app ("A newer ssterm version is r
 | Item | Status |
 |---|---|
 | Packaged artifact on macOS arm64 with a clean profile | PASS — every packaged E2E launches a fresh temporary profile (63 tests incl. SSH, SFTP, tunnels on the owned OpenSSH fixture, artifact review, upgrade fixture) |
-| Native bindings load packaged | PASS — Keychain round trips and `keyring.darwin-arm64.node` unpacked |
+| Native bindings load packaged | PASS — Keychain round trips and unpacked keyring; SST-029 adds verified arm64 PTY addon/executable helper, signatures and node-pty/node-addon-api notices. Full packaged suite 76/76; license-only refresh smoke 7/7 |
 | Storage/secret identifiers stable | PASS for identifiers: metadata written by another build reopens unchanged; Keychain items survive relaunch of the same signed build. Cross-build Keychain access (re-signed upgrade) is prompt-dependent and unverified (documented above) |
 | Version, checksums, notes, manifest | PASS — `release:local` |
 | Offline fonts, notices, licences | PASS — local woff2, `THIRD_PARTY_NOTICES.txt`, Electron/Chromium licences in `Contents/Resources` |

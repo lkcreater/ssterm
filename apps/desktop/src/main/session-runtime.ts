@@ -17,6 +17,7 @@ export function sessionOwnerId(owner: Owner): string {
 export function createDesktopSessions(options: {
   resolve: RegistryOptions["resolve"];
   adapter?: RegistryOptions["adapter"];
+  localAdapter?: RegistryOptions["localAdapter"];
   transient: TransientSecrets;
   power: SessionPowerEvents;
   limits?: RegistryOptions["limits"];
@@ -25,6 +26,7 @@ export function createDesktopSessions(options: {
     resolve: options.resolve,
     transient: options.transient,
     limits: options.limits,
+    localAdapter: options.localAdapter,
     // Storage/provider failures and callers without an adapter remain fail closed.
     adapter: options.adapter ?? {
       start: (context) => context.failed("subsystem-unavailable"),

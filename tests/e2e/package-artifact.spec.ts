@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -50,11 +50,20 @@ test("package contents: offline fonts, notices and licences, native keyring unpa
   const forbidden = files.filter((file) => /pagent|\/ssh2\/(test|examples)\/|third-party-modules|\.map$|showcase\/fixtures/u.test(file));
   expect(forbidden).toEqual([]);
   expect(existsSync(join(bundle, "Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-arm64/keyring.darwin-arm64.node"))).toBe(true);
+  const native = join(bundle, "Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-arm64");
+  for (const name of ["pty.node", "spawn-helper"]) {
+    expect(existsSync(join(native, name)), name).toBe(true);
+    expect(execFileSync("/usr/bin/file", [join(native, name)], { encoding: "utf8" })).toContain("arm64");
+    execFileSync("/usr/bin/codesign", ["--verify", "--strict", join(native, name)]);
+  }
+  expect(statSync(join(native, "spawn-helper")).mode & 0o111).toBe(0o111);
+  expect(files.filter(file => /node-pty\/(?:deps|src|test|third_party)(?:\/|$)|node-pty\/prebuilds\/(?!darwin-arm64(?:\/|$))/u.test(file))).toEqual([]);
   const notices = readFileSync(join(bundle, "Contents/Resources/THIRD_PARTY_NOTICES.txt"), "utf8");
-  for (const name of ["@xterm/xterm@", "ssh2@", "@napi-rs/keyring@", "react@", "@fontsource-variable/noto-sans-thai@", "tweetnacl@"])
+  for (const name of ["@xterm/xterm@", "ssh2@", "node-pty@1.1.0", "@napi-rs/keyring@", "react@", "@fontsource-variable/noto-sans-thai@", "tweetnacl@"])
     expect(notices, name).toContain(name);
   expect(notices).not.toContain("(UNKNOWN)");
   expect(notices).toContain("SIL OPEN FONT LICENSE");
+  expect(notices).toContain("Node.js API collaborators");
   for (const file of ["LICENSE.electron.txt", "LICENSES.chromium.html"]) expect(existsSync(join(bundle, "Contents/Resources", file)), file).toBe(true);
   // No build-machine paths or user names inside the shipped JavaScript.
   const home = process.env.HOME ?? "/Users/";

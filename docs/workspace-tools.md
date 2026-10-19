@@ -52,3 +52,5 @@ The pure configuration subpath is bundled into sandboxed preload; no Node-enable
 Focused unit tests cover exact bounds and extra-field rejection, persistence/revisions/reference deletion, protected schema-3 migration and backup, owner/frame/app-lock fencing, atomic conditional cancellation, layout remapping and delayed state, mixed paste modes, immutable targets, partial results, cancellation in flight and buffer lifetimes. Real Electron development and packaged tests use two owned OpenSSH fixtures, isolated profiles and test Keychain namespaces. Credential-bearing automatic traces/screenshots/video are disabled; visual evidence uses safe fixture content.
 
 Native Thai IME/VoiceOver/menu/TCC release walkthroughs and Developer ID signing/notarization remain separate pending gates.
+
+SST-029 adds local terminals, but saved templates and multi-target input continue to include **saved SSH panes only**. Local panes have no saved-host reference and are excluded explicitly. Splitting a local pane starts a fresh local shell; active-session snippets still capture that local generation and show LOCAL / This Mac. See [local terminal](local-terminal.md).

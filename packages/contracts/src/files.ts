@@ -77,7 +77,7 @@ export function isResolvePathRequest(v: unknown): v is FilePathRequest {
 export function isSftpSessionView(v: unknown): v is SftpSessionView {
   if (!exactObject(v, ["sessionId", "generation", "hostId", "phase", "target", "error", "home"])) return false;
   const { home, ...session } = v;
-  return (home === null || isFilePath(home)) && isTerminalSession({ ...session, end: null });
+  return typeof session.hostId === "string" && (home === null || isFilePath(home)) && isTerminalSession({ ...session, end: null });
 }
 export function isSftpState(v: unknown): v is SftpState {
   return exactObject(v, ["owner", "sequence", "sessions"]) && isOwner(v.owner) && isCounter(v.sequence) &&

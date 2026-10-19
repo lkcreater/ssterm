@@ -2,6 +2,7 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import {
   channels, failure, isTerminalOutput, isTerminalState, isTerminalStateRequest, isTerminalTarget, isCloseTerminalRequest,
   isWriteTerminalRequest, isResizeTerminalRequest, isAckTerminalRequest, isConnectHostRequest,
+  isStartLocalTerminalRequest, type StartLocalTerminalRequest,
   type Owner, type Result, type TerminalState, type TerminalSession, type TerminalOutput, type TerminalPhase,
   type TerminalTarget, type CloseTerminalRequest, type TerminalActionResponse, type WriteTerminalRequest, type ResizeTerminalRequest,
   type AckTerminalRequest, type TerminalErrorCode, type ConnectHostRequest, type ConnectHostResponse,
@@ -31,6 +32,7 @@ export const errors = {
   "key-mismatch": "key-mismatch", "prompt-cancelled": "prompt-cancelled", timeout: "timeout", dns: "dns", network: "network",
   "channel-open-failed": "channel-open-failed", "subsystem-unavailable": "subsystem-unavailable", "resource-limit": "resource-limit",
   "jump-refused": "jump-refused", "proxy-failed": "proxy-failed",
+  "local-spawn-failed": "local-spawn-failed", "local-unsupported": "local-unsupported",
 } as const satisfies Record<SessionErrorCode, TerminalErrorCode>;
 const accepted: Result<TerminalActionResponse> = { ok: true, value: { accepted: true } };
 const relocked: SessionResult<never> = { ok: false, error: { code: "locked", message: "The workspace is locked." } };
@@ -44,6 +46,7 @@ export function project(snapshot: SessionSnapshot): TerminalSession {
     sessionId: snapshot.id,
     generation: snapshot.generation,
     hostId: snapshot.hostId,
+    ...(snapshot.local ? { local: { ...snapshot.local } } : {}),
     phase: phases[snapshot.state],
     target: target ? { label: target.label, environment: target.environment, endpointHost: target.address,
       endpointPort: target.port, username: target.username } : null,
@@ -64,6 +67,8 @@ export function createKindSessions<V, Extra = never>(options: {
   registry: LifecycleRegistry;
   /** Whether a locked registry may unlock (metadata storage ready; a missing secret store fails per saved ref). Absent: never. */
   checkAccess?: () => Promise<boolean>;
+  /** Local restart needs app access, without a metadata repository or saved secret provider. */
+  checkLocalAccess?: () => Promise<boolean>;
   stateChannel: string;
   view(snapshot: SessionSnapshot, ownerId: string): V;
   isState(value: unknown): value is KindState<V>;
@@ -136,10 +141,12 @@ export function createKindSessions<V, Extra = never>(options: {
         const reconnect = () => registry.lockEpoch === since
           ? registry.reconnect(ownerId, request.sessionId, request.generation) : relocked;
         const first = reconnect();
-        if (first.ok || first.error.code !== "locked" || !options.checkAccess) return first;
+        const checkAccess = registry.snapshot(ownerId, request.sessionId).some((snapshot) => snapshot.local)
+          ? options.checkLocalAccess ?? options.checkAccess : options.checkAccess;
+        if (first.ok || first.error.code !== "locked" || !checkAccess) return first;
         // The user's Reconnect is the explicit unlock action. A refused unlock may only have been superseded by
         // a concurrent one, so reconnect is retried once either way; it re-checks the lock and the epoch.
-        await registry.unlock(options.checkAccess, since);
+        await registry.unlock(checkAccess, since);
         // An owner revoked while access was checked must not start a new generation.
         return registration(request.owner) ? reconnect() : first;
       }, true);
@@ -182,10 +189,12 @@ export function createKindSessions<V, Extra = never>(options: {
 
 /** Fence and framing only: stream policy lives in the adapter, lifecycle in the registry. */
 export function createTerminalController(options: {
-  registry: LifecycleRegistry & Pick<SessionRegistry, "terminal">;
+  registry: LifecycleRegistry & Pick<SessionRegistry, "terminal" | "connectLocal">;
   checkAccess?: () => Promise<boolean>;
+  checkLocalAccess?: () => Promise<boolean>;
 }) {
   const sessions = createKindSessions<TerminalSession, TerminalOutput>({ kind: "terminal", registry: options.registry, checkAccess: options.checkAccess,
+    checkLocalAccess: options.checkLocalAccess,
     stateChannel: channels.terminalStateChanged, view: project, isState: isTerminalState });
   type Live = NonNullable<ReturnType<typeof sessions.registration>>;
   /** Runs `use` only on the exact owner/session/generation stream while it is live and Ready. */
@@ -246,6 +255,24 @@ export function createTerminalController(options: {
     },
     reconnectTerminal: sessions.reconnect,
     connectHost: sessions.connect,
+    async startLocalTerminal(request: StartLocalTerminalRequest): Promise<Result<ConnectHostResponse>> {
+      if (!isStartLocalTerminalRequest(request)) return failure("invalid-request");
+      if (!sessions.registration(request.owner)) return failure("stale-owner");
+      const since = options.registry.lockEpoch;
+      try {
+        const ownerId = sessionOwnerId(request.owner);
+        const connect = () => options.registry.lockEpoch === since ? options.registry.connectLocal(ownerId) : relocked;
+        let result = connect();
+        const checkAccess = options.checkLocalAccess ?? options.checkAccess;
+        if (!result.ok && result.error.code === "locked" && checkAccess) {
+          await options.registry.unlock(checkAccess, since);
+          if (!sessions.registration(request.owner)) return failure("stale-owner");
+          result = connect();
+        }
+        return result.ok ? { ok: true, value: { sessionId: result.value.id, generation: result.value.generation } }
+          : failure(result.error.code === "resource-limit" ? "busy" : "unavailable");
+      } catch { return failure("unavailable"); }
+    },
     dismissTerminal: sessions.dismiss,
     revokeOwner: sessions.revokeOwner,
     dispose: sessions.dispose,
@@ -257,6 +284,7 @@ export type TerminalController = ReturnType<typeof createTerminalController>;
 export const terminalChannels = Object.freeze([
   channels.terminalState, channels.openTerminal, channels.writeTerminal, channels.resizeTerminal, channels.ackTerminal,
   channels.closeTerminal, channels.reconnectTerminal, channels.dismissTerminal, channels.connectHost,
+  channels.startLocalTerminal,
 ]);
 
 export function registerTerminalHandlers(options: {
@@ -298,6 +326,7 @@ export function registerTerminalHandlers(options: {
   handle(channels.reconnectTerminal, isTerminalTarget, (controller, request) => controller.reconnectTerminal(request));
   handle(channels.dismissTerminal, isTerminalTarget, (controller, request) => controller.dismissTerminal(request));
   handle(channels.connectHost, isConnectHostRequest, (controller, request) => controller.connectHost(request));
+  handle(channels.startLocalTerminal, isStartLocalTerminalRequest, (controller, request) => controller.startLocalTerminal(request));
   return () => { for (const channel of terminalChannels) options.ipc.removeHandler(channel); };
 }
 
@@ -306,8 +335,10 @@ const MAX_PROMPT_LINES = 8;
 export function closePrompt(sessions: readonly TerminalSession[], action: "close" | "quit"): { message: string; detail: string } | undefined {
   const ready = sessions.filter((session) => session.phase === "ready");
   if (ready.length === 0) return undefined;
+  const hasLocal = ready.some((session) => session.local);
   const count = ready.length === 1 ? "1 connected session" : `${ready.length} connected sessions`;
-  const lines = ready.slice(0, MAX_PROMPT_LINES).map(({ target }) => {
+  const lines = ready.slice(0, MAX_PROMPT_LINES).map(({ target, local }) => {
+    if (local) return `LOCAL · This Mac — ${local.shell}`;
     if (!target) return "Unknown host";
     const host = target.endpointHost.includes(":") ? `[${target.endpointHost}]` : target.endpointHost;
     const endpoint = `${target.username ? `${target.username}@` : ""}${host}:${target.endpointPort}`;
@@ -315,7 +346,8 @@ export function closePrompt(sessions: readonly TerminalSession[], action: "close
   });
   if (ready.length > MAX_PROMPT_LINES) lines.push(`and ${ready.length - MAX_PROMPT_LINES} more`);
   return {
-    message: action === "close" ? `Close this window and disconnect ${count}?` : `Quit ssterm and disconnect ${count}?`,
-    detail: lines.join("\n"),
+    message: hasLocal ? (action === "close" ? "Close this window and end its sessions?" : "Quit ssterm and end its sessions?")
+      : action === "close" ? `Close this window and disconnect ${count}?` : `Quit ssterm and disconnect ${count}?`,
+    detail: [...lines, ...(hasLocal ? ["Local shells and their owned jobs will be terminated."] : [])].join("\n"),
   };
 }

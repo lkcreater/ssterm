@@ -11,7 +11,7 @@ export interface CapturedTarget {
   readonly production: boolean;
 }
 export function captureTarget(session: TerminalSession): CapturedTarget | null {
-  if (session.phase !== "ready" || !session.target) return null;
+  if (session.phase !== "ready" || session.local || !session.hostId || !session.target) return null;
   const target = session.target;
   return Object.freeze({
     sessionId: session.sessionId, generation: session.generation, label: target.label,
@@ -56,7 +56,7 @@ export interface TargetDispatchResult {
 function prepare(options: TargetOptions, target: CapturedTarget) {
   const session = options.readSession(target.sessionId);
   const input = options.inputs.get(target.sessionId);
-  if (!session || !session.target || session.phase !== "ready" || session.generation !== target.generation ||
+  if (!session || session.local || !session.hostId || !session.target || session.phase !== "ready" || session.generation !== target.generation ||
       !input || input.generation !== target.generation || !input.accepting()) return null;
   return { input, plan: planDispatch({
     text: options.text, mode: options.mode, bracketed: input.bracketed(),

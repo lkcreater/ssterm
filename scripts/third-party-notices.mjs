@@ -47,6 +47,9 @@ export async function writeNotices({ root, out, staged, destination }) {
     "The native module @napi-rs/keyring-darwin-arm64 (keyring.darwin-arm64.node, MIT, same project as @napi-rs/keyring)",
     "statically links Rust crates including napi, napi-derive, keyring, security-framework and core-foundation,",
     "distributed under MIT and/or Apache-2.0; see https://github.com/Brooooooklyn/keyring-node and each crate's repository.",
+    "",
+    "node-pty's native addon incorporates node-addon-api header code (MIT):",
+    await licenseText(locate(root, "node-addon-api")),
   ];
   const header = [
     "ssterm — third-party notices",

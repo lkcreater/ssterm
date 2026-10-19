@@ -54,6 +54,8 @@ const messages = {
   "resource-limit": "The session resource limit was reached.",
   "jump-refused": "The jump host refused to connect onward.",
   "proxy-failed": "The proxy did not connect.",
+  "local-spawn-failed": "The local shell could not be started.",
+  "local-unsupported": "Local terminals are unavailable on this platform.",
 } as const;
 export type SessionErrorCode = keyof typeof messages;
 export interface SessionError {
@@ -136,7 +138,9 @@ export interface SessionSnapshot {
   id: string;
   kind: SessionKind;
   generation: number;
-  hostId: string;
+  hostId: string | null;
+  /** Present only for a local terminal; never a saved-host or SFTP capability. */
+  local?: LocalSessionMetadata;
   state: SessionState;
   target?: {
     label: string;
@@ -176,6 +180,24 @@ export interface SessionContext {
 export interface SessionAdapter {
   start(context: SessionContext): void | Promise<void>;
 }
+export interface LocalSessionMetadata {
+  shell: string;
+  platform: "darwin";
+}
+/** Local processes share ownership and teardown, without SSH configuration or authentication callbacks. */
+export interface LocalSessionContext {
+  readonly id: string;
+  readonly generation: number;
+  readonly signal: AbortSignal;
+  own(resource: SessionResource): boolean;
+  ready(channel: TerminalChannel): boolean;
+  failed(code: SessionErrorCode): void;
+  ended(end?: TerminalEnd): void;
+}
+export interface LocalSessionAdapter {
+  readonly metadata: Readonly<LocalSessionMetadata>;
+  start(context: LocalSessionContext): void | Promise<void>;
+}
 export interface SessionLimits {
   sessions: number;
   resources: number;
@@ -204,7 +226,8 @@ interface ResourceEntry {
 interface Generation {
   id: string;
   ownerId: string;
-  hostId: string;
+  hostId: string | null;
+  local?: LocalSessionMetadata;
   kind: SessionKind;
   generation: number;
   state: SessionState;
@@ -374,6 +397,7 @@ export class SessionRegistry {
         | StoreResult<ResolvedHostConfig>
         | Promise<StoreResult<ResolvedHostConfig>>;
       adapter: SessionAdapter;
+      localAdapter?: LocalSessionAdapter;
       transient: TransientSecrets;
       limits?: Partial<SessionLimits>;
       scheduler?: SessionScheduler;
@@ -412,6 +436,14 @@ export class SessionRegistry {
     if (this.#records.size >= this.#limits.sessions)
       return failure("resource-limit");
     return success(this.#begin(ownerId, hostId, kind, randomUUID(), 1));
+  }
+  /** Explicit local start: no host resolver, network authentication, arbitrary process arguments or persistence. */
+  connectLocal(ownerId: string): SessionResult<SessionSnapshot> {
+    if (this.#disposed) return failure("disposed");
+    if (this.#locked) return failure("locked");
+    if (!validName(ownerId)) return failure("invalid-request");
+    if (this.#records.size >= this.#limits.sessions) return failure("resource-limit");
+    return success(this.#begin(ownerId, null, "terminal", randomUUID(), 1));
   }
   /** `generation`, when given, must name the current generation; a stale one is `invalid-state`. */
   reconnect(ownerId: string, id: string, generation?: number): SessionResult<SessionSnapshot> {
@@ -703,7 +735,7 @@ export class SessionRegistry {
   }
   #begin(
     ownerId: string,
-    hostId: string,
+    hostId: string | null,
     kind: SessionKind,
     id: string,
     generation: number,
@@ -722,6 +754,7 @@ export class SessionRegistry {
       hops: 0,
       cleanup: "none",
       teardownDone: false,
+      ...(hostId === null ? { local: { shell: "/bin/zsh", platform: "darwin" as const } } : {}),
     };
     this.#records.set(id, current);
     current.connectTimer = this.#scheduler.set(
@@ -734,6 +767,42 @@ export class SessionRegistry {
     void Promise.resolve()
       .then(async () => {
         if (!this.#live(current)) return;
+        if (hostId === null) {
+          const adapter = this.options.localAdapter;
+          if (!adapter) { this.#fail(current, "local-unsupported"); return; }
+          const metadata = adapter.metadata;
+          if (!metadata || metadata.platform !== "darwin" || !validName(metadata.shell) || !metadata.shell.startsWith("/")) {
+            this.#fail(current, "local-spawn-failed"); return;
+          }
+          current.local = { shell: metadata.shell, platform: "darwin" };
+          this.#emit(current);
+          if (!this.#live(current)) return;
+          const context: LocalSessionContext = Object.freeze({
+            id, generation, signal: current.controller.signal,
+            own: (resource: SessionResource) => this.#own(current, resource),
+            ready: (channel: TerminalChannel) => {
+              if (!this.#live(current) || current.state !== "Connecting") { this.#discard(current, channel); return false; }
+              if (!this.#own(current, channel)) return false;
+              if (typeof channel.open !== "function") { this.#fail(current, "invalid-request"); return false; }
+              current.channel = channel;
+              current.state = "Ready";
+              this.#scheduler.clear(current.connectTimer);
+              delete current.connectTimer;
+              this.#emit(current);
+              return this.#live(current) && current.state === "Ready";
+            },
+            failed: (code: SessionErrorCode) => this.#fail(current, finiteCode(code)),
+            ended: (end?: TerminalEnd) => {
+              if (this.#live(current)) {
+                current.end = end ?? { kind: "eof" };
+                this.#fence(current, "Closing");
+                void this.#teardown(current);
+              }
+            },
+          });
+          try { await adapter.start(context); } catch { this.#fail(current, "local-spawn-failed"); }
+          return;
+        }
         const result = await this.options.resolve(hostId);
         if (!this.#live(current)) return;
         if (!result.ok) {
@@ -1004,6 +1073,7 @@ export class SessionRegistry {
       hostId: current.hostId,
       state: current.state,
       cleanup: current.cleanup,
+      ...(current.local ? { local: { ...current.local } } : {}),
       ...(current.target ? { target: { ...current.target } } : {}),
       ...(current.end ? { end: { ...current.end } } : {}),
       ...(current.prompt

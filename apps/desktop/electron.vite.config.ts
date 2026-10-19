@@ -45,7 +45,7 @@ export default defineConfig({
     resolve: { alias: { "@ssterm/contracts": contracts } },
     build: {
       externalizeDeps: {
-        include: ["ssh2"],
+        include: ["ssh2", "node-pty"],
         exclude: [
           "zod",
           "@ssterm/contracts",

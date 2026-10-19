@@ -5,6 +5,7 @@ import { ConnectionStatus, type ConnectionState } from "@/components/connection/
 import { Badge } from "@/components/ui/badge";
 import type { WorkspaceController } from "@/components/workspace/terminal-workspace";
 import { panes, type Tab } from "@/lib/workspace-layout";
+import { terminalIdentity } from "@/lib/terminal-target";
 
 // Worst first: a tab shows the least healthy of its panes.
 const severity: TerminalPhase[] = ["failed", "closed", "connecting", "ready"];
@@ -20,7 +21,9 @@ function summary(tab: Tab, sessions: readonly TerminalSession[]) {
   const active = members.find((session) => session.sessionId === tab.active) ?? members[0];
   const worst = severity.find((phase) => members.some((session) => session.phase === phase)) ?? "closed";
   return {
-    label: active?.target?.label ?? "Unknown target",
+    label: active ? terminalIdentity(active).label : "Unknown target",
+    local: !!active?.local,
+    shell: active?.local?.shell,
     others: members.length - 1,
     production: members.some((session) => session.target?.environment === "PROD"),
     state: states[worst],
@@ -88,7 +91,7 @@ export function SessionTabs({
       className="session-tabs flex min-w-0 items-center gap-1 overflow-x-auto"
     >
       {tabs.map((tab, index) => {
-        const { label, others, production, state } = summary(tab, sessions);
+        const { label, local, shell, others, production, state } = summary(tab, sessions);
         const selected = tab.id === workspace.activeTab;
         return (
           <div key={tab.id} className="session-tab max-w-64 shrink-0" data-active={selected}>
@@ -98,12 +101,14 @@ export function SessionTabs({
               data-tab-id={tab.id}
               aria-selected={selected}
               tabIndex={selected ? 0 : -1}
-              title={others > 0 ? `${label} and ${others} more` : label}
+              title={`${local ? `LOCAL · ${label} · ${shell}` : label}${others > 0 ? ` and ${others} more` : ""}`}
               className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => select(tab, false)}
               onKeyDown={(event) => onKeyDown(event, index)}
             >
               <span className="session-tab-label truncate">{label}</span>
+              {local ? <span className="host-target truncate">{shell}</span> : null}
+              {local ? <Badge variant="secondary">LOCAL</Badge> : null}
               {others > 0 ? (
                 <span className="type-caption shrink-0 text-muted-foreground">
                   +{others} {others === 1 ? "pane" : "panes"}

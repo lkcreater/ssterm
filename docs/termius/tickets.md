@@ -1,6 +1,6 @@
 # Tickets สำหรับ ssterm
 
-**SST-032: remote editing `DONE` (automated)** — [remote editing](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md): private text copies, explicit TextEdit/snapshot upload consent, SHA-256 stale checks, owned cleanup and captured SFTP targets. Unit 514/514, development E2E 72/72, packaged 73/73; schema remains 4. Resume and remote↔remote remain unsupported optional capabilities. SST-029 is next in the authorized order. Native TextEdit UI/autosave and prior manual release/signing gates remain pending.
+**SST-029: local terminal `DONE` (automated)** — [local terminal](../local-terminal.md), [platform ADR](../adr/0005-local-terminal-platforms.md), [delivery](../agent-runs/sst-029-delivery.md): macOS arm64 local PTY with explicit LOCAL targets, bounded native IO and owned-job cleanup. Unit 537/537, development E2E 75/75, packaged 76/76; final license-refresh smoke 7/7. Schema remains 4. Windows/Linux/macOS x64 remain unsupported/unverified; no untested builds. SST-034 is next in the authorized order. Existing manual release/signing gates remain pending.
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) และ SST-029–038 เป็น later scope
 
@@ -40,7 +40,7 @@ UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) �
 | SST-026 | Tunnel rules and status UI | M4 | P1 | S | 005,018,025 |
 | SST-027 | End-to-end / accessibility / regression gate | M5 | P0 | L | 018,022,024,026 |
 | SST-028 | macOS package / release readiness | M5 | P0 | M | 027 |
-| SST-029 | Local PTY / additional platforms | Later | P2 | L | 028 |
+| SST-029 | Local PTY / additional platforms | DONE | P2 | L | 028 |
 | SST-030 | Jump host / multi-hop / proxy | DONE | P2 | L | 015,028 |
 | SST-031 | Remote and dynamic forwarding | Later | P2 | M | 025,026,028 |
 | SST-032 | Remote editing / advanced transfers | DONE | P2 | L | 022,028 |
@@ -366,9 +366,13 @@ Dependency numbers ย่อหมายถึง `SST-` prefix งานบา�
 2. **VoiceOver:** listbox ของแต่ละ pane ต้องประกาศชื่อ pane, รายการที่ active (ชื่อ, ชนิด folder/file/link, broken link, “contains hidden characters”, unreadable name), สถานะ selected และจำนวนรายการ ทุกคำสั่งในหน้า Files ใช้ได้ด้วย VoiceOver + คีย์บอร์ดอย่างเดียว ส่วน session header ต้องอ่าน target, PROD และสถานะได้
 3. **Privacy prompt ตอนเปิดครั้งแรกจาก Finder:** ใช้ `tccutil reset All dev.ssterm.desktop` แล้วเปิดแอปจาก Finder (ไม่ใช่จาก terminal ซึ่งจะได้สิทธิ์ของ terminal แทน) แล้วเปิด Desktop, Documents, Downloads, network volume และ removable volume ใน pane “This Mac” prompt ต้องแสดงคำอธิบายของ ssterm ถ้าผู้ใช้กด Deny ต้องแสดง “permission denied” โดยไม่ค้าง แล้วต้องกลับมาเปิดได้หลังอนุญาตใน System Settings ก่อนทดสอบให้แก้สิ่งที่พบไว้แล้ว (2026-10-17) ใน `artifacts/package/…/SSTerm.app` คือ `Info.plist` ไม่มี `NSDocumentsFolderUsageDescription`, `NSDesktopFolderUsageDescription`, `NSDownloadsFolderUsageDescription`, `NSNetworkVolumesUsageDescription`, `NSRemovableVolumesUsageDescription` แต่มีข้อความกล้อง/ไมค์/Bluetooth แบบ generic ที่ติดมาจาก Electron ทั้งที่แอปไม่ได้ใช้ และ signature เป็น ad-hoc ที่มี `Identifier=Electron` ทำให้ macOS ถามสิทธิ์ซ้ำทุก build
 
-## Later — ต้องยืนยัน scope เพิ่ม
+## Later scope — SST-029–038 authorized
+
+Follow the [recorded scope choices and dependency order](../agent-runs/implementation-plan.md#later-scope-authorization--sst-029-to-sst-038-2026-10-17); additional work beyond those choices still requires authorization.
 
 ### SST-029 — Local PTY / additional platforms
+
+**Status:** automated gates `DONE` — [behavior](../local-terminal.md), [ADR 0005](../adr/0005-local-terminal-platforms.md), [delivery](../agent-runs/sst-029-delivery.md). macOS arm64 PTY/Unicode/flow/exit/job cleanup and packaged native addon/helper verified; Windows/Linux/macOS x64 declared unsupported/unverified, with no untested builds.
 
 **Evidence:** N03/N-T04/W04. **Outcome:** optional local terminal adapter และ platform roadmap.
 

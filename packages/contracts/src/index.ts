@@ -4,7 +4,7 @@ import type { CredentialState, CredentialStateRequest, AnswerCredentialsRequest,
 export * from "./credentials.ts";
 import type { TrustState, TrustStateRequest, AnswerHostTrustRequest, PrepareKnownHostRevokeRequest, RevokeKnownHostRequest, KnownHostRevokePreview, TrustActionResponse } from "./known-hosts.ts";
 export * from "./known-hosts.ts";
-import type { TerminalState, TerminalStateRequest, TerminalOutput, TerminalTarget, CloseTerminalRequest, WriteTerminalRequest, ResizeTerminalRequest, AckTerminalRequest, TerminalActionResponse } from "./terminals.ts";
+import type { TerminalState, TerminalStateRequest, StartLocalTerminalRequest, TerminalOutput, TerminalTarget, CloseTerminalRequest, WriteTerminalRequest, ResizeTerminalRequest, AckTerminalRequest, TerminalActionResponse } from "./terminals.ts";
 export * from "./terminals.ts";
 import type { SftpState, FilePathRequest, FileOutcome, DirectoryListing, FileAttributes } from "./files.ts";
 export * from "./files.ts";
@@ -92,6 +92,7 @@ export interface DesktopAPI {
   prepareKnownHostRevoke(request: PrepareKnownHostRevokeRequest): Promise<Result<KnownHostRevokePreview>>;
   revokeKnownHost(request: RevokeKnownHostRequest): Promise<Result<TrustActionResponse>>;
   terminalState(request: TerminalStateRequest): Promise<Result<TerminalState>>;
+  startLocalTerminal(request: StartLocalTerminalRequest): Promise<Result<ConnectHostResponse>>;
   onTerminalState(callback: (state: TerminalState) => void): () => void;
   onTerminalOutput(callback: (output: TerminalOutput) => void): () => void;
   openTerminal(request: TerminalTarget): Promise<Result<TerminalActionResponse>>;
@@ -182,6 +183,7 @@ export const channels = Object.freeze({
   prepareKnownHostRevoke: "ssterm:prepare-known-host-revoke",
   revokeKnownHost: "ssterm:revoke-known-host",
   terminalState: "ssterm:terminal-state",
+  startLocalTerminal: "ssterm:start-local-terminal",
   terminalStateChanged: "ssterm:terminal-state-changed",
   terminalOutput: "ssterm:terminal-output",
   openTerminal: "ssterm:open-terminal",

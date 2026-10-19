@@ -25,7 +25,7 @@ import { WindowBoundary, sameDocument } from "./boundary";
 import { contentSecurityPolicy, rendererLocation } from "./security";
 import { openMetadata } from "./storage";
 import { createDesktopSessions, sessionOwnerId } from "./session-runtime";
-import { createSavedHostSessions } from "./ssh";
+import { createSavedHostSessions, createLocalPtyAdapter } from "./ssh";
 import { createKnownHostsController } from "./known-hosts";
 import { registerKnownHostHandlers } from "./known-host-runtime";
 import { createCredentialsController } from "./credentials";
@@ -488,6 +488,7 @@ if (ownsInstance) {
       desktopSessions = createDesktopSessions({
         transient: transientSecrets,
         power: powerMonitor,
+        localAdapter: createLocalPtyAdapter(),
         resolve: () => ({
           ok: false,
           error: { code: "unavailable", message: "Configuration is unavailable." },
@@ -503,6 +504,9 @@ if (ownsInstance) {
     terminals = createTerminalController({
       registry: desktopSessions.registry,
       checkAccess,
+      // App-lock authorization is enforced by WindowBoundary for every IPC. A local shell
+      // needs no saved catalog configuration or secure-store capability after screen unlock.
+      checkLocalAccess: async () => true,
     });
     removeTerminalHandlers = registerTerminalHandlers({
       ipc: ipcMain,

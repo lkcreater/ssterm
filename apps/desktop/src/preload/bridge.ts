@@ -8,9 +8,9 @@ import {
   isCancelCredentialPromptRequest, isCredentialActionResponse,
   type CredentialState, type CredentialStateRequest, type AnswerCredentialsRequest,
   type CancelCredentialPromptRequest,
-  isTerminalState, isTerminalStateRequest, isTerminalOutput, isTerminalTarget, isCloseTerminalRequest, isWriteTerminalRequest,
+  isTerminalState, isTerminalStateRequest, isStartLocalTerminalRequest, isTerminalOutput, isTerminalTarget, isCloseTerminalRequest, isWriteTerminalRequest,
   isResizeTerminalRequest, isAckTerminalRequest, isTerminalActionResponse,
-  type TerminalState, type TerminalStateRequest, type TerminalOutput, type TerminalTarget, type CloseTerminalRequest,
+  type TerminalState, type TerminalStateRequest, type StartLocalTerminalRequest, type TerminalOutput, type TerminalTarget, type CloseTerminalRequest,
   type WriteTerminalRequest, type ResizeTerminalRequest, type AckTerminalRequest,
   isOpenLinkRequest, isOpenLinkResponse, type OpenLinkRequest,
   isSftpState, isFilePathRequest, isResolvePathRequest, isListingOutcome, isAttributesOutcome, isResolvedPathOutcome,
@@ -539,6 +539,10 @@ export function createDesktopBridge(transport: BridgeTransport): {
     applyCatalogChange(request: ApplyCatalogChangeRequest) {
       if (!isApplyCatalogChangeRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.applyCatalogChange, [{ owner: { ...request.owner }, token: request.token }], isCatalogApplyResponse);
+    },
+    startLocalTerminal(request: StartLocalTerminalRequest) {
+      if (!isStartLocalTerminalRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.startLocalTerminal, [{ owner: { ...request.owner } }], isConnectHostResponse);
     },
     connectHost(request: ConnectHostRequest) {
       if (!isConnectHostRequest(request)) return Promise.resolve(failure("invalid-request"));

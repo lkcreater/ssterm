@@ -21,6 +21,8 @@ const reasons = {
   locked: "ssterm is locked",
   "jump-refused": "a jump host refused to connect onward (check its forwarding settings)",
   "proxy-failed": "the proxy did not connect",
+  "local-spawn-failed": "the local shell could not be started",
+  "local-unsupported": "local shells are not supported on this platform",
 } as const satisfies Record<TerminalErrorCode, string>;
 const sftpReasons: Partial<Record<TerminalErrorCode, string>> = {
   "channel-open-failed": "the server did not open a file session",
@@ -34,9 +36,12 @@ const sftpReasons: Partial<Record<TerminalErrorCode, string>> = {
 export function terminalOutcome(
   session: Pick<TerminalSession, "phase" | "end" | "error">,
   connected: boolean,
-  kind: "terminal" | "sftp" = "terminal",
+  kind: "terminal" | "sftp" | "local" = "terminal",
 ): string | null {
   const { phase, end, error } = session;
+  if (kind === "local" && end?.kind === "exit") return `Local process exited with status ${end.code}`;
+  if (kind === "local" && end?.kind === "signal") return `Local process was terminated by ${end.signal}`;
+  if (kind === "local" && end?.kind === "eof") return "The local process closed the session";
   if (end?.kind === "exit") return `Remote process exited with status ${end.code}`;
   if (end?.kind === "signal") return `Remote process was terminated by ${end.signal}`;
   if (end?.kind === "eof") return "The remote end closed the session";
@@ -44,6 +49,10 @@ export function terminalOutcome(
   if (error === "locked") return "Closed because ssterm locked (screen lock or sleep)";
   // A failed generation that is then closed keeps its failure, which stays the reason shown.
   if (phase === "closed" && error === null) return "Session closed";
+  if (kind === "local") {
+    if (connected && error === "resource-limit") return "Local session failed: output exceeded the safety limit";
+    return `${connected ? "Local session failed" : "Couldn't start local shell"}${error ? `: ${reasons[error]}` : ""}`;
+  }
   if (connected && (error === null || error === "network" || error === "timeout")) return "Connection lost";
   if (error === null) return "Couldn't connect";
   if (connected && error === "resource-limit") return "Session failed: output exceeded the safety limit";

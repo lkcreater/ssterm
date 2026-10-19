@@ -60,7 +60,7 @@ import {
   sanitizePaste,
   terminalShortcut,
 } from "@/lib/terminal-input";
-import { endpointText } from "@/lib/catalog-filter";
+import { terminalIdentity } from "@/lib/terminal-target";
 import { copyText } from "@/lib/clipboard";
 import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
 import { TerminalInputsContext, type TerminalInputHandle } from "@/components/workspace/terminal-inputs";
@@ -480,13 +480,9 @@ export function LiveTerminal({
     return () => { stale = true; };
   }, [opened, ready, windowId, ownerGeneration, sessionId, generation]);
 
-  const endpoint = target
-    ? endpointText(target.endpointHost, target.endpointPort, target.username)
-    : null;
-  const label = target?.label ?? "Unknown target";
-  const production = target?.environment === "PROD";
+  const { endpoint, label, production } = terminalIdentity(session);
   const notify = (text: string) => setNotice({ text });
-  const outcome = terminalOutcome(session, connected === generation);
+  const outcome = terminalOutcome(session, connected === generation, session.local ? "local" : "terminal");
   const inTerminal = (node: EventTarget) =>
     !!controls.current?.term.element?.contains(node as Node);
 
@@ -592,7 +588,8 @@ export function LiveTerminal({
       data-active={active || undefined}
       onPasteCapture={interceptPaste}
       onCopy={reportCopy}
-      aria-label={`Terminal for ${label}`}
+      aria-label={`Terminal for ${label}${session.local ? ` · LOCAL · ${session.local.shell}` : ""}`}
+      data-terminal-kind={session.local ? "local" : "ssh"}
       data-session-id={sessionId}
       data-phase={phase}
       data-generation={generation}
@@ -602,6 +599,7 @@ export function LiveTerminal({
     >
       <SessionHeader
         target={target}
+        local={session.local}
         phase={phase}
         outcome={outcome}
         busy={busy}
@@ -615,11 +613,11 @@ export function LiveTerminal({
           <Alert role={undefined} className="has-data-[slot=alert-action]:pr-30" variant={phase === "failed" ? "destructive" : "default"}>
             {phase === "failed" ? <TriangleAlertIcon aria-hidden="true" /> : <CircleIcon aria-hidden="true" />}
             <AlertTitle>{connected ? "History is kept in this pane." : "Nothing was received in this pane."}</AlertTitle>
-            <AlertDescription>Reconnect starts a new session. Nothing typed earlier is sent again.</AlertDescription>
+            <AlertDescription>{session.local ? "Restart starts a new local shell. Nothing typed earlier is sent again." : "Reconnect starts a new session. Nothing typed earlier is sent again."}</AlertDescription>
             <AlertAction>
               <Button size="sm" variant="outline" disabled={busy} onClick={() => act("reconnect")}>
                 <RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
-                Reconnect
+                {session.local ? "Restart local shell" : "Reconnect"}
               </Button>
             </AlertAction>
           </Alert>
@@ -681,6 +679,7 @@ export function LiveTerminal({
  */
 export function SessionHeader({
   target,
+  local,
   phase,
   outcome,
   busy,
@@ -689,6 +688,7 @@ export function SessionHeader({
   onNotify,
 }: {
   target: TerminalSession["target"];
+  local?: TerminalSession["local"];
   phase: TerminalPhase;
   outcome: string | null;
   busy: boolean;
@@ -697,9 +697,8 @@ export function SessionHeader({
   onAction(action: LifecycleAction, detail: number): void;
   onNotify(text: string): void;
 }) {
-  const endpoint = target ? endpointText(target.endpointHost, target.endpointPort, target.username) : null;
-  const label = target?.label ?? "Unknown target";
-  const fullTarget = endpoint ?? label;
+  const { endpoint, label } = terminalIdentity({ target, local });
+  const fullTarget = local ? `LOCAL · ${label} · ${endpoint}` : endpoint ?? label;
   const copyTarget = () =>
     onNotify(copyText(fullTarget) ? `Copied ${fullTarget}` : "The target could not be copied.");
   return (
@@ -713,6 +712,7 @@ export function SessionHeader({
           <span className="break-all select-text">{endpoint ? `${label} · ${endpoint}` : label}</span>
         </TooltipContent>
       </Tooltip>
+      {local ? <Badge variant="secondary" className="pane-badge">LOCAL</Badge> : null}
       {target?.environment === "PROD" ? <Badge variant="production" className="pane-badge">PROD</Badge> : null}
       <ConnectionStatus state={statuses[phase]} />
       <span role="status" className="pane-outcome type-caption min-w-0 shrink truncate text-muted-foreground" title={outcome ?? undefined}>
@@ -727,7 +727,7 @@ export function SessionHeader({
         {phase === "connecting" ? (
           <PaneAction key="cancel" label="Cancel" icon={BanIcon} variant="outline" disabled={busy} onClick={(detail) => onAction("close", detail)} />
         ) : phase === "ready" ? (
-          <PaneAction key="disconnect" label="Disconnect" icon={UnplugIcon} variant="outline" disabled={busy} onClick={(detail) => onAction("close", detail)} />
+          <PaneAction key="disconnect" label={local ? "Stop shell" : "Disconnect"} icon={UnplugIcon} variant="outline" disabled={busy} onClick={(detail) => onAction("close", detail)} />
         ) : (
           <PaneAction key="dismiss" label="Close pane" icon={XIcon} variant="ghost" disabled={busy} onClick={(detail) => onAction("dismiss", detail)} />
         )}
