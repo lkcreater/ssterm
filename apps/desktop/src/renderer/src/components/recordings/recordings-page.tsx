@@ -113,7 +113,7 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
           </EmptyHeader>
         </Empty>
       ) : (
-        <ul className="tunnel-list" aria-label="Session logs">
+        <ul className="tunnel-list shrink-0" aria-label="Session logs">
           {logs.map((log) => <LogRow key={log.id} log={log} busy={busy === log.id} onExport={() => void save({ kind: "log", id: log.id }, log.id)}
             onDelete={() => setConfirm({ target: { kind: "log", id: log.id }, title: `Delete the log of ${log.label}?`,
               description: log.state === "recording" ? "Recording stops now and the log is deleted from this Mac." : "The log is deleted from this Mac." })} />)}
@@ -122,7 +122,7 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
           ) : null}
         </ul>
       )}
-      <section className="recording-integration" aria-labelledby="shell-integration-heading">
+      <section className="recording-integration shrink-0" aria-labelledby="shell-integration-heading">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 id="shell-integration-heading" className="type-label flex items-center gap-2">
             <HistoryIcon className="size-4" aria-hidden="true" />Shell integration for command history

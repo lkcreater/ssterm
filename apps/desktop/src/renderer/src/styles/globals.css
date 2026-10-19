@@ -929,6 +929,7 @@
   padding: 4px 8px;
   border-left: 3px solid transparent;
   font: 13px / 20px var(--font-mono);
+  font-variant-ligatures: none;
   white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -963,6 +964,8 @@
   border-radius: 8px;
   background: var(--background);
   font: 12px / 18px var(--font-mono);
+  /* Shown exactly as it is copied: no "==" or ">=" ligatures. */
+  font-variant-ligatures: none;
   white-space: pre;
   outline: none;
 }

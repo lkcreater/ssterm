@@ -45,7 +45,7 @@ async function startTerminalFixture(production, options) {
     }
     return entry;
   };
-  let lab, repository, runtime, controller, unsubscribe, current, second, cleaned = false;
+  let lab, repository, runtime, controller, unsubscribe, current, second, recorder, cleaned = false;
   const requireTrue = (condition, code) => {
     if (!condition) throw new Error(`TERMINAL_FIXTURE_${code}`);
   };
@@ -72,6 +72,7 @@ async function startTerminalFixture(production, options) {
     await clean(() => controller?.dispose());
     await clean(() => unsubscribe?.());
     await clean(() => runtime?.shutdown());
+    await clean(() => recorder?.dispose());
     await clean(() => transient.purgeAll());
     await clean(() => repository?.close());
     await clean(async () => { leftovers = await production.clearTestNamespace(namespace); });
@@ -118,7 +119,16 @@ async function startTerminalFixture(production, options) {
         label: "Owned unsaved password", username: lab.username, method: "password",
       } }).createdIds[0] },
     } }).createdIds[0] : null;
+    // SST-034: an owned recorder (temporary root, this namespace's vault key) when the caller asks for capture.
+    if (options.recording) {
+      recorder = production.createRecorder({ files: production.createRecordingFiles({ root: path.join(directory, "recordings") }),
+        keys: () => service.recording, ...(options.recording.limits ? { limits: options.recording.limits } : {}) });
+      await recorder.ready;
+      const configured = await recorder.configure({ logs: true, history: true, logDays: 30, logMiB: 10_240, historyDays: 180, historyMiB: 8 });
+      requireTrue(configured.status === "saved", "RECORDING_CONFIGURE");
+    }
     runtime = production.createSavedHostSessions({ repository, provider, transient, power,
+      ...(recorder ? { observeTerminal: recorder.observe } : {}),
       ...(options.keepalive ? { keepalive: options.keepalive } : {}), ...(options.limits ? { limits: options.limits } : {}) });
     const registry = runtime.registry;
     unsubscribe = registry.subscribe(ownerId, (snapshot) => {
@@ -128,7 +138,7 @@ async function startTerminalFixture(production, options) {
       }
     });
     // Reconnect after a lock is the explicit unlock; the owned catalog and namespace stay available.
-    const terminals = production.createTerminalController({ registry, checkAccess: async () => !cleaned });
+    const terminals = production.createTerminalController({ registry, checkAccess: async () => !cleaned, ...(recorder ? { recording: recorder } : {}) });
     // IPC handlers re-register the invoking sender on every call, so the recorder wraps that path too.
     controller = {
       ...terminals,
@@ -168,6 +178,24 @@ async function startTerminalFixture(production, options) {
       controller,
       // The owned catalog and the PROD host, for fixtures that add their own rows (e.g. tunnel rules).
       repository,
+      /**
+       * SST-034 receipts for the newest log: its state, the exported length, and the gap records (count and bytes).
+       * The export is read for its length and markers only, then removed.
+       */
+      async recordingReceipt() {
+        requireTrue(recorder, "NO_RECORDER");
+        const log = recorder.state().logs[0];
+        if (!log) return null;
+        const destination = path.join(directory, `export-${randomUUID()}.log`);
+        const outcome = await recorder.export({ kind: "log", id: log.id }, destination);
+        if (outcome.status !== "saved") return { state: log.state, outcome: outcome.status };
+        const text = fs.readFileSync(destination).toString("latin1");
+        fs.rmSync(destination, { force: true });
+        const markers = [...text.matchAll(/\r\n\[ssterm: (\d+) bytes not recorded\]\r\n/gu)];
+        const markerBytes = markers.reduce((sum, match) => sum + match[0].length, 0);
+        return { state: log.state, outcome: outcome.status, exportBytes: text.length, recordedBytes: text.length - markerBytes,
+          gaps: markers.length, gapBytes: markers.reduce((sum, match) => sum + Number(match[1]), 0), incomplete: outcome.incomplete };
+      },
       hostId,
       runtime,
       ownerId,

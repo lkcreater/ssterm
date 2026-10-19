@@ -1,3 +1,4 @@
+import type { ElectronApplication } from "@playwright/test";
 import { resolve } from "node:path";
 import { test, expect } from "./fixtures";
 import { TERMINAL_OUTPUT_WINDOW } from "../../packages/adapters/src/ssh";
@@ -17,6 +18,17 @@ type Receipt = {
 };
 const flood = (bytes: number, marker: string) =>
   `head -c ${bytes} /dev/zero | tr '\\0' x | fold -w 100; echo ${marker}-$((40+2))`;
+/** Main event-loop delay (perf_hooks histogram, 1 ms resolution) between start and stop, in milliseconds. */
+const startLag = (app: ElectronApplication) => app.evaluate(() => {
+  const histogram = process.getBuiltinModule("node:perf_hooks").monitorEventLoopDelay({ resolution: 1 });
+  histogram.enable();
+  (globalThis as any).__sstermLag = histogram;
+});
+const stopLag = (app: ElectronApplication) => app.evaluate(() => {
+  const histogram = (globalThis as any).__sstermLag;
+  histogram.disable();
+  return { p99Ms: +(histogram.percentile(99) / 1e6).toFixed(2), maxMs: +(histogram.max / 1e6).toFixed(2), meanMs: +(histogram.mean / 1e6).toFixed(2) };
+});
 
 test("terminal output and input stay bounded and responsive under a flood, a blocked renderer and a maximum paste", async ({ desktop }, testInfo) => {
   test.setTimeout(300_000);
@@ -111,18 +123,20 @@ test("terminal output and input stay bounded and responsive under a flood, a blo
     const start = await receipt("mark");
     await startProbe();
     await startMemory();
+    await startLag(app);
     await page.keyboard.press("Enter");
     await expect(screen, "the flood completes").toContainText("FLOW-42", { timeout: 60_000 });
     await idle();
     const end = await receipt();
     const render = await stopProbe();
     const floodMemory = await stopMemory();
+    const floodLag = await stopLag(app);
     const bytes = end.bytes - start.bytes, mebibytes = bytes / MiB;
     const seconds = (end.lastFrameAt! - end.firstFrameAt!) / 1000;
     const flow = {
       MiB: +mebibytes.toFixed(1), seconds: +seconds.toFixed(2), MiBps: +(mebibytes / seconds).toFixed(1),
       framesPerMiB: +((end.count - start.count) / mebibytes).toFixed(1), acksPerMiB: +((end.acks - start.acks) / mebibytes).toFixed(1),
-      maxUnackedKiB: +(end.maxUnacked / 1024).toFixed(0), ...render,
+      maxUnackedKiB: +(end.maxUnacked / 1024).toFixed(0), ...render, mainLoopLag: floodLag,
       mainPeakMiB: +floodMemory.mainPeakMiB.toFixed(0), rendererPeakMiB: +floodMemory.rendererPeakMiB.toFixed(0),
     };
     record("flood", flow);
@@ -232,6 +246,116 @@ test("terminal output and input stay bounded and responsive under a flood, a blo
         return { status, receipt };
       }).catch(() => ({ status: "unavailable" }));
       await testInfo.attach("terminal-flow-failure-state", { body: JSON.stringify(diagnostics), contentType: "application/json" });
+    }
+  }
+});
+
+test("with session recording on, a 20 MB flood keeps the SST-014 gates and the log accounts for every byte", async ({ desktop }, testInfo) => {
+  test.setTimeout(240_000);
+  const { app, page } = desktop;
+  const bootstrap = await page.evaluate(() => window.ssterm.bootstrap());
+  if (!bootstrap.ok) throw new Error("Terminal fixture bootstrap failed");
+  const owner = bootstrap.value.owner;
+  await app.evaluate(async ({ app, BrowserWindow, ipcMain }, parameters) => {
+    await new Promise<void>((done) => setImmediate(done));
+    const require = process.getBuiltinModule("node:module").createRequire(app.getAppPath() + "/package.json");
+    const path = require("node:path");
+    const production = { ...require(path.join(app.getAppPath(), "out/main/ssh.js")), ...require(path.join(app.getAppPath(), "out/main/secrets.js")) };
+    const window = BrowserWindow.getAllWindows()[0];
+    const boundary = new production.WindowBoundary(window.webContents.getURL().split("#")[0],
+      { name: "ssterm", version: app.getVersion(), platform: process.platform }, () => ({ status: "ready", schemaVersion: 1 }));
+    boundary.register(window.webContents, window.id, true, () => {});
+    for (let generation = 1; generation < parameters.owner.generation; generation += 1) boundary.rotate(window.webContents);
+    const checked = boundary.bootstrap({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, []);
+    if (!checked.ok || JSON.stringify(checked.value.owner) !== JSON.stringify(parameters.owner)) throw new Error("Terminal fixture owner mismatch");
+    const { startTerminalFixture } = require(parameters.fixturePath);
+    const fixture = await startTerminalFixture(production, {
+      owner: parameters.owner, label: parameters.label, tempDirectory: app.getPath("temp"), recording: {},
+      send: (channel: string, value: unknown) => { if (!window.webContents.isDestroyed()) window.webContents.send(channel, value); },
+    });
+    for (const channel of production.terminalChannels) ipcMain.removeHandler(channel);
+    const disposeHandlers = production.registerTerminalHandlers({ ipc: ipcMain, boundary, controller: () => fixture.controller });
+    (globalThis as any).__sstermTerminalFixture = { fixture, disposeHandlers };
+  }, { owner, label, fixturePath: resolve("tests/fixtures/terminal/ssh.cjs") });
+  const receipt = (method: "frames" | "mark" = "frames"): Promise<Receipt> => app.evaluate(async (_electron, method) => {
+    await new Promise<void>((done) => setImmediate(done));
+    return { ...(globalThis as any).__sstermTerminalFixture.fixture[method](1), now: performance.now() };
+  }, method);
+  const pane = page.getByRole("region", { name: `Terminal for ${label}`, exact: true });
+  const screen = pane.locator(".xterm-rows");
+  const textarea = pane.locator(".xterm-helper-textarea");
+  const idle = async () => { await textarea.focus(); await expect(pane.locator(".xterm-rows > div:has(.xterm-cursor)")).toHaveText(/\$\s*$/, { timeout: 60_000 }); };
+  let cleaned = false;
+  try {
+    await app.evaluate(async () => {
+      await new Promise<void>((done) => setImmediate(done));
+      (globalThis as any).__sstermTerminalFixture.fixture.connect();
+    });
+    await expect(pane).toHaveAttribute("data-phase", "ready");
+    await expect(pane.locator(".recording-badge")).toHaveAttribute("data-recording", "on");
+    await expect(screen).toContainText("fixture@");
+    await idle();
+    await textarea.focus();
+    await page.keyboard.type(flood(20_000_000, "RECORDED"));
+    const start = await receipt("mark");
+    await page.evaluate(() => {
+      const longTasks: number[] = [];
+      const observer = new PerformanceObserver((list) => { for (const entry of list.getEntries()) longTasks.push(entry.duration); });
+      observer.observe({ type: "longtask" });
+      (window as any).__sstermFlowProbe = { stop() { for (const entry of observer.takeRecords()) longTasks.push(entry.duration); observer.disconnect(); return Math.max(0, ...longTasks); } };
+    });
+    await startLag(app);
+    await page.keyboard.press("Enter");
+    await expect(screen).toContainText("RECORDED-42", { timeout: 60_000 });
+    await idle();
+    const end = await receipt();
+    const lag = await stopLag(app);
+    const longestTaskMs = await page.evaluate(() => (window as any).__sstermFlowProbe.stop() as number);
+    const bytes = end.bytes - start.bytes, mebibytes = bytes / MiB;
+    const seconds = (end.lastFrameAt! - end.firstFrameAt!) / 1000;
+    const flow = { MiB: +mebibytes.toFixed(1), seconds: +seconds.toFixed(2), MiBps: +(mebibytes / seconds).toFixed(1),
+      maxUnackedKiB: +(end.maxUnacked / 1024).toFixed(0), longestTaskMs, mainLoopLag: lag };
+    await expect(pane.locator(".recording-badge"), "a healthy disk records the flood without gaps").toHaveAttribute("data-recording", "on");
+    const total = await receipt();
+    // Disconnect seals the log; its export must account for every byte the view received.
+    await app.evaluate(async () => {
+      await new Promise<void>((done) => setImmediate(done));
+      await (globalThis as any).__sstermTerminalFixture.fixture.close();
+    });
+    let recorded: { state: string; outcome: string; recordedBytes: number; gapBytes: number; gaps: number; incomplete: boolean } | null = null;
+    await expect.poll(async () => {
+      recorded = await app.evaluate(async () => (globalThis as any).__sstermTerminalFixture.fixture.recordingReceipt());
+      return recorded?.state;
+    }, { timeout: 20_000 }).toBe("complete");
+    testInfo.annotations.push({ type: "recording-flood", description: JSON.stringify({ ...flow, recording: recorded }) });
+    expect(bytes).toBeGreaterThanOrEqual(20_000_000);
+    expect(end.consecutive).toBe(true);
+    expect(end.maxUnacked, "unacknowledged output stays within the window").toBeLessThanOrEqual(WINDOW_LIMIT);
+    expect(longestTaskMs, "no renderer long task over 100 ms").toBeLessThanOrEqual(100);
+    expect(flow.MiBps, "throughput budget with recording on").toBeGreaterThanOrEqual(10);
+    expect(lag.p99Ms, "main event-loop delay p99 with recording on").toBeLessThanOrEqual(4);
+    expect(recorded!.outcome).toBe("saved");
+    expect(recorded!.incomplete).toBe(false);
+    expect(recorded!.recordedBytes + recorded!.gapBytes, "export length = received bytes − recorded gaps (+ gap bytes)").toBe(total.bytes);
+    expect(desktop.errors).toEqual([]);
+    await testInfo.attach("terminal-flow-recording-evidence", {
+      body: JSON.stringify({ annotations: testInfo.annotations, platform: process.platform, arch: process.arch }), contentType: "application/json",
+    });
+    const cleanup = await app.evaluate(async () => {
+      await new Promise<void>((done) => setImmediate(done));
+      const owned = (globalThis as any).__sstermTerminalFixture;
+      owned.disposeHandlers();
+      return owned.fixture.cleanup();
+    });
+    expect(cleanup).toEqual({ fixtureCleaned: true, leftoverItems: 0 });
+    cleaned = true;
+  } finally {
+    if (!cleaned) {
+      await app.evaluate(async () => {
+        const owned = (globalThis as any).__sstermTerminalFixture;
+        owned?.disposeHandlers();
+        await owned?.fixture.cleanup().catch(() => undefined);
+      }).catch(() => undefined);
     }
   }
 });

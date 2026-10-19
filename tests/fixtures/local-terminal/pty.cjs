@@ -4,16 +4,25 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
+/**
+ * Options beyond the original ones: `shell`/`args` (default startup-free bash), `files` (owned startup files written
+ * into the temporary home first, e.g. a `.zshrc`), and the SST-034 `observeTerminal`/`recording` capture seams.
+ */
 async function startLocalTerminalFixture(production, options) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ssterm-local-pty-"));
   fs.chmodSync(directory, 0o700);
+  for (const [name, text] of Object.entries(options.files ?? {})) {
+    if (!/^\.[a-z]+$/u.test(name)) throw new Error("LOCAL_FIXTURE_INVALID_FILE");
+    fs.writeFileSync(path.join(directory, name), text, { mode: 0o600 });
+  }
   const transient = new production.TransientSecrets();
   const runtime = production.createDesktopSessions({
     resolve: () => { throw new Error("LOCAL_FIXTURE_MUST_NOT_RESOLVE_HOST"); },
     transient,
     power: options.power,
+    observeTerminal: options.observeTerminal,
     localAdapter: production.createLocalPtyAdapter({
-      shell: "/bin/bash", args: ["--noprofile", "--norc", "-i"], home: directory, cwd: directory,
+      shell: options.shell ?? "/bin/bash", args: options.args ?? ["--noprofile", "--norc", "-i"], home: directory, cwd: directory,
       env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" },
     }),
   });
@@ -25,7 +34,7 @@ async function startLocalTerminalFixture(production, options) {
     if (!receipts.has(key)) receipts.set(key, { frames: 0, bytes: 0, consecutive: true, writes: 0, writtenBytes: 0 });
     return receipts.get(key);
   };
-  const terminals = production.createTerminalController({ registry, checkAccess: async () => !cleaned });
+  const terminals = production.createTerminalController({ registry, checkAccess: async () => !cleaned, recording: options.recording });
   const controller = {
     ...terminals,
     register(owner, send) {
@@ -41,11 +50,14 @@ async function startLocalTerminalFixture(production, options) {
     },
     writeTerminal(request) {
       const bytes = request.bytes.byteLength;
+      // A receipt, never content: whether this write would press Enter.
+      const enter = request.bytes.includes(13);
       const result = terminals.writeTerminal(request);
       if (result.ok) {
         const entry = receipt(request.sessionId, request.generation);
         entry.writes += 1;
         entry.writtenBytes += bytes;
+        entry.enterWrites = (entry.enterWrites ?? 0) + (enter ? 1 : 0);
       }
       return result;
     },

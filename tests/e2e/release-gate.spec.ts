@@ -168,6 +168,12 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
     { name: "port-forwarding", open: () => page.getByRole("button", { name: /^Port forwarding/u }).click() },
     { name: "known-hosts", open: () => page.getByRole("button", { name: "Known hosts", exact: true }).click() },
     { name: "files", open: () => page.getByRole("button", { name: "Files", exact: true }).click() },
+    // SST-034: the Recordings page (empty logs, shell-integration snippet and matrix); Settings › Recording is audited
+    // with the Settings dialog below.
+    { name: "recordings", open: async () => {
+      await page.getByRole("button", { name: "Recordings", exact: true }).click();
+      await expect(page.getByTestId("recordings-page").getByRole("table")).toBeVisible();
+    } },
     { name: "terminals-empty", open: () => page.getByRole("button", { name: /^Terminals/u }).click() },
   ];
   const findings: Finding[] = [];
@@ -201,6 +207,15 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       expect(result.checked, `${name} dialog text was audited`).toBeGreaterThan(3);
       matrix[`${dialog}-dialog@${size}`] = { checked: result.checked };
       findings.push(...result.findings.map((finding) => ({ page: `${dialog}-dialog`, size, ...finding })));
+      if (dialog === "settings") {
+        // The Recording section sits below the fold of the scrolling dialog.
+        await page.getByTestId("recording-settings").scrollIntoViewIfNeeded();
+        await expect(page.getByTestId("recording-settings").getByRole("switch", { name: "Record session output" })).not.toBeChecked();
+        const recording = await audit(page);
+        matrix[`settings-recording@${size}`] = { checked: recording.checked };
+        findings.push(...recording.findings.map((finding) => ({ page: "settings-recording", size, ...finding })));
+        await page.getByRole("dialog").getByRole("heading", { name: "Settings" }).scrollIntoViewIfNeeded();
+      }
       await page.screenshot({ path: testInfo.outputPath(`${dialog}-dialog-${size}.png`) });
       await page.keyboard.press("Escape");
       await expect(page.getByRole("dialog")).toHaveCount(0);
