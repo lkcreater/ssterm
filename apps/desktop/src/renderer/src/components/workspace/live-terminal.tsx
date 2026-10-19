@@ -16,7 +16,9 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import {
   BanIcon,
+  CircleDotIcon,
   CircleIcon,
+  CircleOffIcon,
   CopyIcon,
   RotateCcwIcon,
   TriangleAlertIcon,
@@ -29,8 +31,12 @@ import {
   MAX_TERMINAL_WRITE,
   type Owner,
   type TerminalPhase,
+  type TerminalRecording,
   type TerminalSession,
 } from "@ssterm/contracts";
+import { CommandSuggestions } from "@/components/workspace/command-suggestions";
+import { trackPrompt } from "@/lib/prompt-tracker";
+import { planDispatch } from "@/lib/snippet-dispatch";
 import {
   ConnectionStatus,
   type ConnectionState,
@@ -111,7 +117,12 @@ interface Controls {
   /** Sends text through xterm's paste path only while this view accepts input. */
   paste(text: string): boolean;
   apply(settings: PaneSettings): void;
+  /** What is typed after the shell's prompt (OSC 133;B), or null when not at an integrated prompt. */
+  prefix(): string | null;
+  /** Inserts text at the prompt through the pane's queue (bracketed when the shell asks); never adds Enter. */
+  insert(text: string, generation: number): Promise<"sent" | "refused">;
 }
+interface Suggestions { generation: number; prefix: string; items: string[] }
 
 /** What a pane renders with: the saved settings after the scrollback cap and reduced motion. */
 export interface PaneSettings {
@@ -174,6 +185,9 @@ export function LiveTerminal({
   const searchVisible = useRef(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingPaste>();
+  const [suggestions, setSuggestions] = useState<Suggestions>();
+  // A pane that leaves Ready (lock, disconnect, failure) drops its suggestions at once.
+  if (!ready && suggestions) setSuggestions(undefined);
 
   // Keys typed after a tab switch must never reach a hidden pane, whatever `inert` does with focus.
   useLayoutEffect(() => {
@@ -250,9 +264,34 @@ export function LiveTerminal({
     search.onDidChangeResults(({ resultIndex, resultCount }) => {
       if (!cancelled && searchVisible.current) setResults({ index: resultIndex, count: resultCount });
     });
+    const prompt = trackPrompt(term);
+    // ⌘; asks main for same-scope commands that start with what is typed; main derives the scope from this generation.
+    const suggest = async () => {
+      if (!live || paused) return;
+      const prefix = prompt.prefix();
+      if (prefix === null) {
+        notify("Suggestions need the ssterm shell integration at a shell prompt (see Recordings).");
+        return;
+      }
+      const generation = current;
+      const result = await bridge.suggestCommands({ owner, sessionId, generation, prefix }).catch(() => undefined);
+      if (cancelled || generation !== current) return;
+      if (!result?.ok) return notify("Suggestions are unavailable right now.");
+      const answer = result.value;
+      if (answer.status === "off") return notify("Command history is off. Turn it on in Settings.");
+      if (answer.status === "key-unavailable") return notify("Command history could not be opened: secure storage is unavailable.");
+      if (answer.status !== "ok") return;
+      if (!answer.suggestions.length) return notify(prefix ? "No saved commands start with what is typed." : "No saved commands for this target yet.");
+      setSuggestions({ generation, prefix, items: answer.suggestions });
+    };
     term.attachCustomKeyEventHandler((event) => {
-      if (terminalShortcut(event) !== "search") return true;
+      const shortcut = terminalShortcut(event);
+      if (!shortcut) return true;
       event.preventDefault();
+      if (shortcut === "suggest") {
+        if (!cancelled) void suggest();
+        return false;
+      }
       if (!cancelled) {
         const input = searchInput.current;
         if (input) {
@@ -404,6 +443,8 @@ export function LiveTerminal({
         paused = false;
         term.options.disableStdin = true;
         discard();
+        prompt.reset();
+        setSuggestions(undefined);
         if (reconnected) term.write(RECONNECTED);
         setFault(undefined);
         setInputPaused(false);
@@ -431,9 +472,18 @@ export function LiveTerminal({
         // A new font size changes the cell size without resizing the element, so nothing else refits.
         if (term.element) show();
       },
+      prefix: () => prompt.prefix(),
+      insert(text, generation) {
+        const plan = planDispatch({ text, mode: "insert", bracketed: term.modes.bracketedPasteMode, production: false });
+        if (plan.kind !== "send") return Promise.resolve("refused");
+        const sent = handle.deliver(plan.bytes, generation);
+        plan.bytes.fill(0);
+        return sent;
+      },
     };
     return () => {
       cancelled = true;
+      prompt.dispose();
       if (inputs?.get(sessionId) === handle) inputs.delete(sessionId);
       if (controls.current?.term === term) controls.current = null;
       stopOutput();
@@ -572,6 +622,39 @@ export function LiveTerminal({
     if (direction === "previous") search.findPrevious(query, options);
     else search.findNext(query, options);
   };
+  const closeSuggestions = () => {
+    setSuggestions(undefined);
+    controls.current?.term.focus();
+  };
+  /** Inserts only the rest of the command after what is typed now; a changed command line inserts nothing. */
+  const acceptSuggestion = (item: string) => {
+    const open = suggestions;
+    closeSuggestions();
+    const current = controls.current;
+    if (!open || !current) return;
+    const prefix = current.prefix();
+    if (open.generation !== generation || prefix === null || !item.startsWith(prefix)) {
+      notify("Not inserted: the command line changed.");
+      return;
+    }
+    const rest = item.slice(prefix.length);
+    if (!rest) return;
+    void current.insert(rest, open.generation).then((sent) => {
+      if (sent !== "sent") notify("Not inserted: this session no longer accepts input.");
+    });
+  };
+  const forgetSuggestion = (item: string) => {
+    const open = suggestions;
+    const bridge = window.ssterm;
+    if (!open || !bridge) return;
+    const items = open.items.filter((value) => value !== item);
+    if (items.length) setSuggestions({ ...open, items });
+    else closeSuggestions();
+    void bridge.forgetCommand({ owner: { windowId, generation: ownerGeneration }, sessionId, generation: open.generation, text: item }).then(
+      (result) => notify(result.ok && result.value.status === "forgotten" ? "Removed from this target's command history." : "It could not be removed from command history."),
+      () => notify("It could not be removed from command history."),
+    );
+  };
   const closeSearch = () => {
     controls.current?.search.clearDecorations();
     searchVisible.current = false;
@@ -600,6 +683,7 @@ export function LiveTerminal({
       <SessionHeader
         target={target}
         local={session.local}
+        recording={session.recording}
         phase={phase}
         outcome={outcome}
         busy={busy}
@@ -658,6 +742,15 @@ export function LiveTerminal({
             onClose={closeSearch}
           />
         ) : null}
+        {suggestions && ready && suggestions.generation === generation ? (
+          <CommandSuggestions
+            label={label}
+            items={suggestions.items}
+            onAccept={acceptSuggestion}
+            onForget={forgetSuggestion}
+            onClose={closeSuggestions}
+          />
+        ) : null}
         <div role="status" className="live-terminal-feedback" data-testid="terminal-feedback">
           {notice ? <span className="type-caption">{notice.text}</span> : null}
         </div>
@@ -680,6 +773,7 @@ export function LiveTerminal({
 export function SessionHeader({
   target,
   local,
+  recording,
   phase,
   outcome,
   busy,
@@ -689,6 +783,8 @@ export function SessionHeader({
 }: {
   target: TerminalSession["target"];
   local?: TerminalSession["local"];
+  /** SST-034 capture state; independent of the connection state beside it. */
+  recording?: TerminalRecording;
   phase: TerminalPhase;
   outcome: string | null;
   busy: boolean;
@@ -714,6 +810,7 @@ export function SessionHeader({
       </Tooltip>
       {local ? <Badge variant="secondary" className="pane-badge">LOCAL</Badge> : null}
       {target?.environment === "PROD" ? <Badge variant="production" className="pane-badge">PROD</Badge> : null}
+      {recording ? <RecordingBadge recording={recording} /> : null}
       <ConnectionStatus state={statuses[phase]} />
       <span role="status" className="pane-outcome type-caption min-w-0 shrink truncate text-muted-foreground" title={outcome ?? undefined}>
         {outcome}
@@ -733,6 +830,33 @@ export function SessionHeader({
         )}
       </div>
     </div>
+  );
+}
+
+const recordingProblems: Record<NonNullable<TerminalRecording["problem"]>, string> = {
+  "storage-unavailable": "Not recording: secure storage or the recordings folder is unavailable. Nothing from this session is saved.",
+  "key-unavailable": "Not recording: the encryption key could not be read from the Keychain. Nothing from this session is saved.",
+  "write-failed": "Recording stopped: the disk refused a write. What was already saved is kept.",
+  "size-limit": "Recording stopped: this recording reached its size limit (Settings › Recording).",
+};
+/** Blue while capturing, amber when capture was wanted but stopped or has gaps; always icon plus text. */
+function RecordingBadge({ recording }: { recording: TerminalRecording }) {
+  const stopped = recording.state === "stopped";
+  const text = stopped ? "Not recording" : recording.gaps ? "Recording · gaps" : "Recording";
+  const kinds = [recording.output ? "output" : "", recording.commands ? "command lines" : ""].filter(Boolean).join(" and ");
+  const detail = stopped ? recordingProblems[recording.problem ?? "storage-unavailable"]
+    : recording.gaps ? "Some output was not recorded because the disk was slow; the saved log marks each gap."
+    : `Saving this session's ${kinds}, encrypted on this Mac. Typed input is never saved; anything shown on screen is.`;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<Badge variant={stopped || recording.gaps ? "warning" : "recording"} className="pane-badge recording-badge" tabIndex={0} aria-label={text} data-recording={stopped ? "stopped" : recording.gaps ? "gaps" : recording.state} />}
+      >
+        {stopped ? <CircleOffIcon data-icon="inline-start" aria-hidden="true" /> : <CircleDotIcon data-icon="inline-start" aria-hidden="true" />}
+        <span className="recording-badge-text">{text}</span>
+      </TooltipTrigger>
+      <TooltipContent>{detail}</TooltipContent>
+    </Tooltip>
   );
 }
 

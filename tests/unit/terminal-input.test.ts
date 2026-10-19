@@ -146,6 +146,19 @@ test("terminalShortcut finds the physical F key under non-Latin layouts", () => 
   assert.equal(terminalShortcut(key("f", { metaKey: true }, "keydown", "KeyY")), "search");
 });
 
+test("terminalShortcut maps Cmd+; (and the physical Semicolon key under Thai) to suggest; Tab, Ctrl and Option stay with the shell", () => {
+  assert.equal(terminalShortcut(key(";", { metaKey: true }, "keydown", "Semicolon")), "suggest");
+  assert.equal(terminalShortcut(key("ว", { metaKey: true }, "keydown", "Semicolon")), "suggest", "Thai Kedmanee");
+  assert.equal(terminalShortcut(key(";", { metaKey: true }, "keydown", "Comma")), "suggest", "AZERTY types ; on Comma");
+  assert.equal(terminalShortcut(key("s", { metaKey: true }, "keydown", "Semicolon")), null, "Dvorak types s there");
+  assert.equal(terminalShortcut(key(";", { ctrlKey: true }, "keydown", "Semicolon")), null);
+  assert.equal(terminalShortcut(key("…", { altKey: true }, "keydown", "Semicolon")), null);
+  assert.equal(terminalShortcut(key(":", { metaKey: true, shiftKey: true }, "keydown", "Semicolon")), null);
+  assert.equal(terminalShortcut(key(";", { metaKey: true }, "keyup", "Semicolon")), null);
+  assert.equal(terminalShortcut(key("Tab", {}, "keydown", "Tab")), null);
+  assert.equal(terminalShortcut(key("Tab", { metaKey: true }, "keydown", "Tab")), null);
+});
+
 function contrast(a: string, b: string) {
   const luminance = (hex: string) => {
     const [r, g, bl] = [1, 3, 5].map((at) => {

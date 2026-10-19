@@ -1,0 +1,227 @@
+import { useRef, useState } from "react";
+import {
+  CircleAlertIcon, CircleDotIcon, CopyIcon, DownloadIcon, FileClockIcon, HistoryIcon, Trash2Icon, TriangleAlertIcon,
+} from "lucide-react";
+import {
+  SHELL_INTEGRATION, SHELL_MATRIX, type DeleteRecordingTarget, type ExportRecordingTarget, type Owner, type RecordingSummary,
+  type SupportedShell,
+} from "@ssterm/contracts";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useRecordings } from "@/hooks/use-recordings";
+import { copyText } from "@/lib/clipboard";
+
+const bytes = (value: number) =>
+  value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KiB` : `${(value / 1024 / 1024).toFixed(1)} MiB`;
+const when = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const exportText: Record<string, string> = {
+  cancelled: "",
+  "not-found": "That recording no longer exists.",
+  "key-unavailable": "The recording could not be decrypted: secure storage is unavailable.",
+  corrupt: "The recording failed its integrity check and was not exported.",
+  failed: "The export could not be written.",
+  aborted: "The export stopped because ssterm locked. Nothing was left behind.",
+};
+type Confirm = { target: DeleteRecordingTarget; title: string; description: string };
+
+/**
+ * SST-034 Recordings: session logs (with Export… and Delete each), command history export/delete, Delete all, and
+ * the copyable shell-integration snippets. Exports are plaintext and leave ssterm's control.
+ */
+export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpenSettings(): void }) {
+  const { state, unavailable, remove, exportRecording } = useRecordings(owner);
+  const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string }>();
+  const [busy, setBusy] = useState<string>();
+  const [confirm, setConfirm] = useState<Confirm>();
+  const [shell, setShell] = useState<SupportedShell>("bash");
+  const heading = useRef<HTMLHeadingElement>(null);
+  async function save(target: ExportRecordingTarget, key: string) {
+    setBusy(key);
+    setNotice(undefined);
+    const result = await exportRecording(target);
+    setBusy(undefined);
+    if (!result.ok) return setNotice({ tone: "error", text: "The export is unavailable right now." });
+    const outcome = result.value;
+    if (outcome.status === "saved") {
+      const extra = [outcome.gaps ? `${outcome.gaps} ${outcome.gaps === 1 ? "gap" : "gaps"} marked` : "", outcome.incomplete ? "the recording was incomplete" : ""].filter(Boolean).join("; ");
+      setNotice({ tone: "info", text: `Exported as plaintext${extra ? ` (${extra})` : ""}. Delete in ssterm does not remove that file.` });
+    } else if (outcome.status !== "cancelled") setNotice({ tone: "error", text: exportText[outcome.status] ?? "The export failed." });
+  }
+  const logs = state?.logs ?? [];
+  const history = state ? state.historyFiles > 0 : false;
+  return (
+    <div className="catalog-page" data-testid="recordings-page">
+      <div className="catalog-heading">
+        <div className="flex min-w-0 items-center gap-2">
+          <FileClockIcon className="size-5 shrink-0" aria-hidden="true" />
+          <h2 ref={heading} tabIndex={-1} className="type-title">Recordings</h2>
+          {state ? (
+            <span className="type-caption text-muted-foreground">
+              {state.logCount} {state.logCount === 1 ? "log" : "logs"} · {bytes(state.logBytes + state.historyBytes)}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <Button size="sm" variant="outline" disabled={!history || !!busy} onClick={() => void save({ kind: "history" }, "history")}>
+            {busy === "history" ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}Export history…
+          </Button>
+          <Button size="sm" variant="outline" disabled={!history} onClick={() => setConfirm({ target: { kind: "history" }, title: "Delete command history?",
+            description: "Every saved command line is deleted from this Mac, including history being recorded now. ⌘; offers nothing until new commands are saved." })}>
+            <Trash2Icon data-icon="inline-start" />Delete history
+          </Button>
+          <Button size="sm" variant="destructive" disabled={!state || (!state.logCount && !history)} onClick={() => setConfirm({ target: { kind: "all" },
+            title: "Delete all recordings?", description: "Every session log and all command history are deleted from this Mac, including recordings in progress." })}>
+            <Trash2Icon data-icon="inline-start" />Delete all
+          </Button>
+        </div>
+      </div>
+      <p className="type-caption text-muted-foreground">
+        Session logs hold what each terminal displayed; command history holds the command lines a shell reported. Both are
+        encrypted on this Mac, kept within the limits in{" "}
+        <button type="button" className="rounded-sm text-primary underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" onClick={onOpenSettings}>Settings › Recording</button>, and never
+        sent anywhere. Exports are plaintext files outside ssterm's control.
+      </p>
+      {unavailable ? (
+        <Alert variant="destructive"><CircleAlertIcon /><AlertDescription>Recordings are unavailable right now.</AlertDescription></Alert>
+      ) : state?.problem ? (
+        <Alert>
+          <TriangleAlertIcon />
+          <AlertTitle>New sessions are not being recorded</AlertTitle>
+          <AlertDescription>
+            {state.problem === "key-unavailable" ? "The encryption key could not be read from the Keychain." : "Secure storage or the recordings folder is unavailable."}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {notice ? (
+        <Alert variant={notice.tone === "error" ? "destructive" : "default"} role="status"><AlertDescription>{notice.text}</AlertDescription></Alert>
+      ) : null}
+      {logs.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><FileClockIcon /></EmptyMedia>
+            <EmptyTitle>No session logs</EmptyTitle>
+            <EmptyDescription>
+              {state?.policy.logs ? "New terminals are recorded; their logs appear here when they start." : "Session output is not recorded. Turn it on in Settings › Recording."}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <ul className="tunnel-list" aria-label="Session logs">
+          {logs.map((log) => <LogRow key={log.id} log={log} busy={busy === log.id} onExport={() => void save({ kind: "log", id: log.id }, log.id)}
+            onDelete={() => setConfirm({ target: { kind: "log", id: log.id }, title: `Delete the log of ${log.label}?`,
+              description: log.state === "recording" ? "Recording stops now and the log is deleted from this Mac." : "The log is deleted from this Mac." })} />)}
+          {state && state.logCount > logs.length ? (
+            <li className="type-caption text-muted-foreground">Showing the newest {logs.length} of {state.logCount} logs.</li>
+          ) : null}
+        </ul>
+      )}
+      <section className="recording-integration" aria-labelledby="shell-integration-heading">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="shell-integration-heading" className="type-label flex items-center gap-2">
+            <HistoryIcon className="size-4" aria-hidden="true" />Shell integration for command history
+          </h3>
+          <ToggleGroup aria-label="Shell" variant="outline" spacing={0} value={[shell]}
+            onValueChange={(value) => { const next = value[0] as SupportedShell | undefined; if (next) setShell(next); }}>
+            <ToggleGroupItem value="bash">bash</ToggleGroupItem>
+            <ToggleGroupItem value="zsh">zsh</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        <p className="type-caption text-muted-foreground">
+          Command history and ⌘; suggestions need this snippet at the end of {shell === "bash" ? "~/.bashrc" : "~/.zshrc"} on each
+          host (and on this Mac for local terminals). ssterm never installs it. It only prints markers to the terminal.
+        </p>
+        <pre className="recording-snippet" tabIndex={0} aria-label={`${shell} integration snippet`}>{SHELL_INTEGRATION[shell]}</pre>
+        <div>
+          <Button size="sm" variant="outline" onClick={() => setNotice(copyText(SHELL_INTEGRATION[shell])
+            ? { tone: "info", text: `Copied the ${shell} snippet.` } : { tone: "error", text: "The snippet could not be copied." })}>
+            <CopyIcon data-icon="inline-start" />Copy {shell} snippet
+          </Button>
+        </div>
+        <table className="recording-matrix">
+          <caption className="sr-only">Supported shells</caption>
+          <thead><tr><th scope="col">Shell</th><th scope="col">Where</th><th scope="col">Status</th></tr></thead>
+          <tbody>
+            {SHELL_MATRIX.map((row) => <tr key={`${row.shell}-${row.where}`}><td>{row.shell}</td><td>{row.where}</td><td>{row.status}</td></tr>)}
+          </tbody>
+        </table>
+      </section>
+      {confirm ? (
+        <DeleteDialog confirm={confirm} onClose={() => setConfirm(undefined)} onDelete={async () => {
+          const deleted = await remove(confirm.target);
+          if (!deleted) return false;
+          setNotice({ tone: "info", text: "Deleted from this Mac. Plaintext exports and OS backups are not affected." });
+          return true;
+        }} heading={() => heading.current} />
+      ) : null}
+    </div>
+  );
+}
+
+function LogRow({ log, busy, onExport, onDelete }: { log: RecordingSummary; busy: boolean; onExport(): void; onDelete(): void }) {
+  return (
+    <li className="tunnel-row" data-recording-id={log.id} data-state={log.state}>
+      <div className="grid min-w-0 gap-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate font-medium" title={log.label}>{log.label}</span>
+          {log.local ? <Badge variant="secondary">LOCAL</Badge> : null}
+          {log.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
+          {log.state === "recording" ? (
+            <Badge variant="recording"><CircleDotIcon data-icon="inline-start" />Recording</Badge>
+          ) : log.state === "incomplete" ? (
+            <Badge variant="warning"><TriangleAlertIcon data-icon="inline-start" />Incomplete</Badge>
+          ) : null}
+        </span>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+          {log.endpoint ? <span className="host-target truncate">{log.endpoint}</span> : null}
+          <span>{when(log.startedAt)}</span>
+          <span>{bytes(log.bytes)}</span>
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button size="sm" variant="outline" disabled={busy} aria-label={`Export the log of ${log.label}`} onClick={onExport}>
+          {busy ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}Export…
+        </Button>
+        <Button size="icon-sm" variant="ghost" aria-label={`Delete the log of ${log.label}`} onClick={onDelete}>
+          <Trash2Icon aria-hidden="true" />
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+function DeleteDialog({ confirm, onClose, onDelete, heading }: { confirm: Confirm; onClose(): void; onDelete(): Promise<boolean>; heading(): HTMLElement | null }) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return (
+    <AlertDialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
+      <AlertDialogContent initialFocus={cancel} finalFocus={() => heading() ?? true} data-testid="delete-recordings-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="break-words">{confirm.title}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {confirm.description} Copies outside ssterm (plaintext exports, Time Machine backups) are not affected.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {failed ? <Alert variant="destructive"><CircleAlertIcon /><AlertDescription>Nothing could be deleted right now.</AlertDescription></Alert> : null}
+        <AlertDialogFooter>
+          <Button ref={cancel} variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button variant="destructive" disabled={busy} onClick={async () => {
+            setBusy(true);
+            const deleted = await onDelete();
+            setBusy(false);
+            if (deleted) onClose(); else setFailed(true);
+          }}>
+            {busy ? <Spinner data-icon="inline-start" /> : null}Delete
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}

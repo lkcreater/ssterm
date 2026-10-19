@@ -10,6 +10,9 @@ const badgeVariants = cva(
       variant: {
         production:
           "border-environment-production text-environment-production bg-card",
+        // SST-034 capture states: blue (an action ssterm is taking) vs amber (wanted but not happening, or gaps).
+        recording: "border-primary text-primary bg-card",
+        warning: "border-connection-connecting text-connection-connecting bg-card",
         fixture: "border-input text-muted-foreground bg-background",
         default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
         secondary:

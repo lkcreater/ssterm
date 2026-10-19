@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircleIcon,
   CircleIcon,
+  FileClockIcon,
   FolderOpenIcon,
   KeyboardIcon,
   KeyRoundIcon,
@@ -86,6 +87,7 @@ import { GroupEditor, HostEditor } from "@/components/catalog/editors";
 import { IdentitiesPage } from "@/components/identities/identities-page";
 import { SnippetsPage } from "@/components/snippets/snippets-page";
 import { TunnelsPage } from "@/components/tunnels/tunnels-page";
+import { RecordingsPage } from "@/components/recordings/recordings-page";
 import { useTunnels } from "@/hooks/use-tunnels";
 import {
   DeleteGroupDialog,
@@ -150,7 +152,7 @@ const storageProblems: Record<
   },
 };
 
-type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities" | "snippets" | "tunnels";
+type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities" | "snippets" | "tunnels" | "recordings";
 type CatalogDialog =
   | { kind: "host"; id?: string; groupId?: string | null }
   | { kind: "group"; id?: string; parentId?: string | null }
@@ -164,6 +166,7 @@ const titles: Record<Page, string> = {
   identities: "Identities",
   snippets: "Snippets",
   tunnels: "Port forwarding",
+  recordings: "Recordings",
 };
 const phaseStates = {
   connecting: "connecting",
@@ -555,6 +558,17 @@ export function AppShell() {
                           ) : null}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={page === "recordings"}
+                          aria-current={page === "recordings" ? "page" : undefined}
+                          onClick={() => setPage("recordings")}
+                          disabled={!owner}
+                        >
+                          <FileClockIcon />
+                          <span>Recordings</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
                     </SidebarMenu>
                   </SidebarGroupContent>
                 </SidebarGroup>
@@ -649,7 +663,10 @@ export function AppShell() {
                     <IdentitiesPage owner={owner} catalog={catalog} state={state} />
                   ) : page === "tunnels" && owner && state && ready ? (
                     <TunnelsPage owner={owner} catalog={catalog} state={state} tunnels={tunnelState} />
-                  ) : page !== "identities" && page !== "snippets" && page !== "tunnels" && state && ready ? (
+                  ) : page === "recordings" && owner ? (
+                    // Works while storage is blocked too: capture there fails closed, and Delete still works.
+                    <RecordingsPage owner={owner} onOpenSettings={() => setOverlay("settings")} />
+                  ) : page !== "identities" && page !== "snippets" && page !== "tunnels" && page !== "recordings" && state && ready ? (
                     <HostsPage
                       catalog={catalog}
                       state={state}
@@ -796,6 +813,7 @@ export function AppShell() {
         settings={settings}
         terminals={sessions.length}
         owner={owner}
+        onOpenRecordings={() => { setOverlay(undefined); setPage("recordings"); }}
       />
       <ShortcutsDialog
         open={overlay === "shortcuts"}

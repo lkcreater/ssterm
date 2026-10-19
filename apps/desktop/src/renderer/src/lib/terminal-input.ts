@@ -73,20 +73,16 @@ interface KeyLike {
 }
 
 /**
- * The allowlist of keys the pane takes from xterm. Only Cmd+F; Ctrl and Option combinations are
- * terminal input, and Cmd+C/V/A keep their native Edit-menu paths. The physical F key counts
- * when the layout gives a non-Latin character (Thai Kedmanee gives "ด"); a Latin layout that
- * moves F (Dvorak) is matched by its character instead.
+ * The allowlist of keys the pane takes from xterm: Cmd+F (find) and Cmd+; (command suggestions, SST-034).
+ * Ctrl and Option combinations and Tab are terminal input, and Cmd+C/V/A keep their native Edit-menu
+ * paths. The physical key counts when the layout gives a non-Latin character (Thai Kedmanee gives "ด"
+ * on F and "ว" on Semicolon); a Latin layout that moves the key (Dvorak) is matched by its character.
  */
-export function terminalShortcut(event: KeyLike): "search" | null {
-  return event.type === "keydown" &&
-    event.metaKey &&
-    !event.ctrlKey &&
-    !event.altKey &&
-    !event.shiftKey &&
-    (event.key.toLowerCase() === "f" || (event.code === "KeyF" && !/^[a-z]$/i.test(event.key)))
-    ? "search"
-    : null;
+export function terminalShortcut(event: KeyLike): "search" | "suggest" | null {
+  if (event.type !== "keydown" || !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
+  if (event.key.toLowerCase() === "f" || (event.code === "KeyF" && !/^[a-z]$/i.test(event.key))) return "search";
+  if (event.key === ";" || (event.code === "Semicolon" && !/^[\x20-\x7e]$/.test(event.key))) return "suggest";
+  return null;
 }
 
 /** xterm activates links on a plain mouseup; only an explicit Cmd+click may open one. */

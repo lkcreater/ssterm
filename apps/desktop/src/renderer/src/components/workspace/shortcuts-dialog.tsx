@@ -26,6 +26,7 @@ const groups: { title: string; rows: [keys: string, action: string][] }[] = [
     title: "Terminal",
     rows: [
       ["⌘F", "Find in terminal"],
+      ["⌘;", "Command history suggestions at the prompt (Return inserts, never runs)"],
       ["⌘C", "Copy selection"],
       ["⌘V", "Paste"],
       ["⇧⌘S", "Snippets: Paste or Run on the active terminal"],

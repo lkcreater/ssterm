@@ -1,8 +1,10 @@
 import { useId, useState } from "react";
-import { AlertCircleIcon } from "lucide-react";
-import type { Owner, TerminalSettings } from "@ssterm/contracts";
+import { AlertCircleIcon, FileClockIcon } from "lucide-react";
+import { RECORDING_BOUNDS, type Owner, type RecordingPolicy, type TerminalSettings } from "@ssterm/contracts";
 import { SignInSettings } from "@/components/app-lock/sign-in-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { useRecordings } from "@/hooks/use-recordings";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +19,9 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
   FieldSeparator,
+  FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -39,6 +43,7 @@ export function SettingsDialog({
   settings: { settings, disabledReason, error, update },
   terminals,
   owner,
+  onOpenRecordings,
 }: {
   owner?: Owner;
   open: boolean;
@@ -46,6 +51,7 @@ export function SettingsDialog({
   settings: ReturnType<typeof useSettings>;
   /** Open terminals share the scrollback budget. */
   terminals: number;
+  onOpenRecordings?(): void;
 }) {
   const id = useId();
   const disabled = !!disabledReason;
@@ -132,10 +138,100 @@ export function SettingsDialog({
             <dt>App theme</dt>
             <dd>Dark</dd>
           </dl>
+          {owner && open ? <RecordingSettings owner={owner} onOpenRecordings={onOpenRecordings} /> : null}
           {owner ? <SignInSettings owner={owner} /> : null}
         </FieldGroup>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const keyReasons: Record<string, string> = {
+  locked: "The Keychain is locked. Unlock it and try again.",
+  denied: "Keychain access was denied.",
+  missing: "This workspace's encryption key is missing from the Keychain.",
+  constraint: "This workspace has encrypted snippets but no key reference; recording cannot be enabled.",
+};
+
+/**
+ * SST-034 Settings → Recording: both switches are off by default. Turning one on affects sessions started afterwards;
+ * turning it off stops capture in running panes at once and keeps what was saved.
+ */
+function RecordingSettings({ owner, onOpenRecordings }: { owner: Owner; onOpenRecordings?(): void }) {
+  const id = useId();
+  const { state, unavailable, configure } = useRecordings(owner);
+  const [problem, setProblem] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const policy = state?.policy;
+  const disabled = !policy || busy;
+  async function save(changes: Partial<RecordingPolicy>) {
+    if (!policy) return;
+    setBusy(true);
+    setProblem(undefined);
+    const result = await configure({ ...policy, ...changes });
+    setBusy(false);
+    if (!result.ok) return setProblem("Recording settings could not be saved.");
+    if (result.value.status === "key-unavailable") return setProblem(`Recording stays off: ${keyReasons[result.value.reason] ?? "secure storage is unavailable."}`);
+    if (result.value.status === "failed") setProblem("Recording settings could not be saved: the recordings folder is unavailable.");
+  }
+  return (
+    <>
+      <FieldSeparator />
+      <FieldSet data-testid="recording-settings">
+        <FieldLegend>Recording</FieldLegend>
+        <FieldDescription>
+          Off by default. Recordings are encrypted on this Mac and never sent anywhere. Typed input is never saved, so a
+          password typed at a hidden prompt is not recorded; anything the terminal displays is, including echoed secrets.
+        </FieldDescription>
+        {problem || unavailable ? (
+          <Alert variant="destructive">
+            <AlertCircleIcon aria-hidden="true" />
+            <AlertDescription>{problem ?? "Recording settings are unavailable."}</AlertDescription>
+          </Alert>
+        ) : null}
+        <Field orientation="horizontal" data-disabled={disabled || undefined}>
+          <Switch id={`${id}-logs`} aria-describedby={`${id}-logs-note`} disabled={disabled} checked={!!policy?.logs}
+            onCheckedChange={(logs) => void save({ logs })} />
+          <FieldContent>
+            <FieldLabel htmlFor={`${id}-logs`}>Record session output</FieldLabel>
+            <FieldDescription id={`${id}-logs-note`}>
+              Saves what each new terminal shows. A recording pane shows Recording; turning this off stops it at once.
+            </FieldDescription>
+          </FieldContent>
+        </Field>
+        <Field orientation="horizontal" data-disabled={disabled || undefined}>
+          <Switch id={`${id}-history`} aria-describedby={`${id}-history-note`} disabled={disabled} checked={!!policy?.history}
+            onCheckedChange={(history) => void save({ history })} />
+          <FieldContent>
+            <FieldLabel htmlFor={`${id}-history`}>Keep command history</FieldLabel>
+            <FieldDescription id={`${id}-history-note`}>
+              Saves each command line a shell with the ssterm integration reports, and offers them with ⌘; at the prompt.
+              Lines starting with a space, multi-line and credential-shaped lines are skipped.
+            </FieldDescription>
+          </FieldContent>
+        </Field>
+        {policy ? (
+          <>
+            <NumberSetting id={`${id}-log-days`} label="Logs kept for" unit="days" value={policy.logDays} min={RECORDING_BOUNDS.logDays[0]}
+              max={RECORDING_BOUNDS.logDays[1]} disabled={disabled} onCommit={(logDays) => save({ logDays })} />
+            <NumberSetting id={`${id}-log-mib`} label="Session log storage" unit="MiB" value={policy.logMiB} min={RECORDING_BOUNDS.logMiB[0]}
+              max={RECORDING_BOUNDS.logMiB[1]} disabled={disabled} onCommit={(logMiB) => save({ logMiB })}
+              description="The oldest logs are removed first; a single log that reaches this size stops recording." />
+            <NumberSetting id={`${id}-history-days`} label="History kept for" unit="days" value={policy.historyDays}
+              min={RECORDING_BOUNDS.historyDays[0]} max={RECORDING_BOUNDS.historyDays[1]} disabled={disabled}
+              onCommit={(historyDays) => save({ historyDays })} />
+            <NumberSetting id={`${id}-history-mib`} label="History storage" unit="MiB" value={policy.historyMiB}
+              min={RECORDING_BOUNDS.historyMiB[0]} max={RECORDING_BOUNDS.historyMiB[1]} disabled={disabled}
+              onCommit={(historyMiB) => save({ historyMiB })} />
+          </>
+        ) : null}
+        {onOpenRecordings ? (
+          <Button variant="outline" size="sm" className="justify-self-start" onClick={onOpenRecordings}>
+            <FileClockIcon data-icon="inline-start" aria-hidden="true" /> Manage recordings and shell integration
+          </Button>
+        ) : null}
+      </FieldSet>
+    </>
   );
 }
 
