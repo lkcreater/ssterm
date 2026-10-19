@@ -1,6 +1,6 @@
 # Task checklist
 
-**SST-029: local terminal `DONE` (automated)** — [local terminal](../local-terminal.md), [platform ADR](../adr/0005-local-terminal-platforms.md), [delivery](../agent-runs/sst-029-delivery.md): macOS arm64 local PTY with explicit LOCAL targets, bounded native IO and owned-job cleanup. Unit 537/537, development E2E 75/75, packaged 76/76; final license-refresh smoke 7/7. Schema remains 4. Windows/Linux/macOS x64 remain unsupported/unverified; no untested builds. SST-034 is next in the authorized order. Existing manual release/signing gates remain pending.
+**SST-034: recordings / history / suggestions `DONE` (automated)** — [behavior](../recording.md), [AI privacy scope](../ai-scope.md), [delivery](../agent-runs/sst-034-delivery.md): opt-in encrypted local capture, retention/export/delete, shell-reported history and insert-only suggestions. Review fixes cover size-cap data loss, header ordering, Forget/Delete/lock/export races and bounded quit; packaged verification also closes the SFTP focus race. Unit 587 passed / 1 skipped (588 total), full development 79/79 plus final integration 10/10, final packaged 80/80. Schema remains 4; AI sends nothing and has no provider. SST-036 is next in the authorized order. Existing manual release/signing checks remain pending.
 
 **สถานะ: M0 เสร็จแล้ว ณ 2026-10-15.** SST-001/T001/T047 ส่งมอบและ commit `ad9ed51` ก่อนเริ่ม SST-002/T002–T003 ซึ่งผ่าน fixture/runtime/package checks และ delivery แล้ว SST-003/T004–T005 documentation-only `DONE` ตามคำสั่งถัดไป; Production SST-012–028 และ DS04 ส่งมอบแล้วใน SST-018; DS05–DS06 ยังหยุดรอคำสั่ง; DS02–DS03 ส่งมอบแล้วใน SST-004
 
@@ -85,7 +85,7 @@ SST-029–038 follow the [recorded authorization and choices](../agent-runs/impl
 - [x] **T039 / SST-031:** remote/dynamic tunnel capabilities and UI — DONE ([tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031), [delivery](../agent-runs/sst-031-delivery.md))
 - [x] **T040 / SST-032:** remote editing/stale version/temp cleanup/advanced transfers — automated DONE ([behavior](../remote-edit.md), [delivery](../agent-runs/sst-032-delivery.md)); native TextEdit manual check pending; resume/remote↔remote unsupported
 - [x] **T041 / SST-033:** workspace templates/explicit broadcast/multi-host snippet target orchestration — DONE ([workspace tools](../workspace-tools.md), [delivery](../agent-runs/sst-033-delivery.md))
-- [ ] **T042 / SST-034:** logs/history/autocomplete/AI privacy and implementation scope
+- [x] **T042 / SST-034:** opt-in encrypted logs/history/suggestions, retention/export/delete and AI privacy-only scope — automated DONE ([behavior](../recording.md), [delivery](../agent-runs/sst-034-delivery.md)); no AI provider or data transmission
 - [ ] **T043 / SST-036:** threat model/independent crypto key lifecycle/test vectors/review
 - [ ] **T044 / SST-038:** residual runtime/native/Mosh/FIDO focused investigations and ADRs
 - [ ] **T045 / SST-035:** own backend/device enrollment/encrypted sync/conflict/tombstones

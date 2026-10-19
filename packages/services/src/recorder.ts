@@ -65,8 +65,8 @@ export interface Recorder {
   configure(policy: RecordingPolicy): Promise<ConfigureOutcome>;
   /** Unlinks matching closed files; stops and unlinks matching live ones. */
   delete(target: DeleteRecordingTarget): Promise<RecordingState>;
-  /** Streams plaintext to `destination` (chosen by the main save dialog) through an exclusive stage. */
-  export(target: ExportRecordingTarget, destination: string): Promise<ExportOutcome>;
+  /** The lock epoch covers the main-owned destination chooser as well as decryption and staged publication. */
+  export(target: ExportRecordingTarget, destination: string | (() => Promise<string | undefined>)): Promise<ExportOutcome>;
   /** Same-scope prefix matches, newest first, distinct, at most MAX_SUGGESTIONS, never equal to the prefix. */
   suggest(scope: string, prefix: string): Promise<SuggestOutcome>;
   /** Rewrites every closed history file of the scope without `text` under a fresh key; live ones at their end. */
@@ -83,6 +83,7 @@ const MAGIC = Buffer.from('SSTREC\0\x01', 'latin1');
 const MAX_IDENTITY = 4_096;
 const MAX_VAULT_ID = 64;
 const KEY_ENVELOPE = ENVELOPE_OVERHEAD + CONTENT_KEY_BYTES;
+const FRAME_OVERHEAD = SEGMENT_HEADER + 16;
 interface Identity {
   v: 1;
   kind: Kind;
@@ -134,6 +135,7 @@ interface Writer {
   pumping: boolean;
   ended: boolean;
   failed: boolean;
+  limited: boolean;
   /** Deleted while live: the file is unlinked once its handle is closed. */
   discard: boolean;
   /** Lines the user forgot while this file was live; it is rewritten without them at its end. */
@@ -216,8 +218,20 @@ export function createRecorder(options: {
   let loading: Promise<Buffer | SuggestOutcome> | undefined;
   // Bumped by every purge, so a load that started before one never installs its result.
   let loads = 0;
+  // Only metadata mutations wait here; output sealing/credit never waits for disk, keys or this queue.
+  let mutations: Promise<void> = Promise.resolve();
+  function mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = mutations.then(operation);
+    mutations = result.then(() => undefined, () => undefined);
+    return result;
+  }
 
   const cap = (kind: Kind) => (kind === 'out' ? policy.logMiB : policy.historyMiB) * MiB;
+  /** Reserve the full header, final frame and a possible trailing gap before accepting more plaintext. */
+  function available(writer: Writer): number {
+    const header = writer.header?.length ?? writer.block.length + 2 + MAX_VAULT_ID + 2 + KEY_ENVELOPE;
+    return cap(writer.kind) - header - writer.bytes - (FRAME_OVERHEAD + 1) - (writer.kind === 'out' ? FRAME_OVERHEAD + 9 : 0);
+  }
   /** Coalesced and deferred: a badge change never re-enters the registry from inside its own callback. */
   function changed(record: Live): void {
     const ownerId = record.session.ownerId;
@@ -275,7 +289,7 @@ export function createRecorder(options: {
     const created: Writer = {
       record, kind, id, identity, block, hash: sha256(block), key: randomBytes(CONTENT_KEY_BYTES), counter: 0,
       plain: kind === 'out' ? Buffer.alloc(limits.segmentBytes + 1) : undefined, used: 0, queue: [], pending: 0, dropped: 0,
-      bytes: 0, commands: 0, opening: false, pumping: false, ended: false, failed: false, discard: false, forget: new Set(), done,
+      bytes: 0, commands: 0, opening: false, pumping: false, ended: false, failed: false, limited: false, discard: false, forget: new Set(), done,
       settle: () => { writers.delete(created); settle(); },
     };
     writers.add(created);
@@ -288,7 +302,7 @@ export function createRecorder(options: {
     if (writer.key && !writer.failed) {
       flush(writer);
       if (writer.dropped) gap(writer);
-      enqueue(writer, Uint8Array.of(Segment.End), true);
+      if (!writer.limited) enqueue(writer, Uint8Array.of(Segment.End), true);
     }
     zero(writer);
     if (writer.failed || (writer.kind === 'cmd' && writer.commands === 0 && !writer.sink && !writer.opening)) {
@@ -303,6 +317,17 @@ export function createRecorder(options: {
     if (record.status) record.status = { ...record.status, state: 'stopped', problem };
     for (const item of [record.out, record.cmd]) if (item) close(item);
     record.scanner = undefined;
+    changed(record);
+  }
+  function sizeLimit(writer: Writer): void {
+    writer.limited = true;
+    close(writer);
+    const record = writer.record;
+    if (writer.kind === 'cmd') record.scanner = undefined;
+    if (record.status) {
+      record.status = { ...record.status, [writer.kind === 'out' ? 'output' : 'commands']: false, problem: 'size-limit' };
+      record.status.state = record.status.output || record.status.commands ? 'on' : 'stopped';
+    }
     changed(record);
   }
   async function fail(writer: Writer): Promise<void> {
@@ -326,6 +351,14 @@ export function createRecorder(options: {
     try {
       const name = `${writer.kind}-${writer.id}.part`;
       const sink = await files.create(name);
+      if (writer.discard) {
+        await sink.close();
+        await files.remove(name, sink.identity);
+        dropQueue(writer);
+        writer.opening = false;
+        writer.settle();
+        return;
+      }
       writer.entry = {
         kind: writer.kind, id: writer.id, name, identity: writer.identity, block: writer.block, hash: writer.hash,
         vaultId: writer.vaultId!, envelope: writer.envelope!, file: sink.identity, bytes: 0, state: 'live',
@@ -333,7 +366,6 @@ export function createRecorder(options: {
       index.set(writer.id, writer.entry);
       writer.sink = sink;
       await sink.write(writer.header);
-      writer.bytes += writer.header.length;
       writer.entry.bytes = writer.header.length;
     } catch {
       writer.opening = false;
@@ -344,7 +376,7 @@ export function createRecorder(options: {
     pump(writer);
   }
   function pump(writer: Writer): void {
-    if (writer.pumping || !writer.sink) return;
+    if (writer.pumping || writer.opening || !writer.sink) return;
     writer.pumping = true;
     void (async () => {
       try {
@@ -371,18 +403,24 @@ export function createRecorder(options: {
     writer.sink = undefined;
     await sink.sync();
     await sink.close();
-    if (writer.discard) {
-      if (await files.remove(entry.name, entry.file)) index.delete(entry.id);
-    } else {
-      const sealed = entry.name.replace(/\.part$/u, '.ssr');
-      await files.rename(entry.name, sealed, entry.file);
-      entry.name = sealed;
-      entry.state = 'complete';
-      if (writer.forget.size) {
-        const keys = options.keys();
-        if (keys) await rewrite([entry], writer.forget, keys, epoch).catch(() => undefined);
+    await mutate(async () => {
+      if (writer.discard) {
+        if (await files.remove(entry.name, entry.file)) index.delete(entry.id);
+      } else {
+        if (writer.limited) entry.state = 'incomplete';
+        else {
+          const sealed = entry.name.replace(/\.part$/u, '.ssr');
+          await files.rename(entry.name, sealed, entry.file);
+          entry.name = sealed;
+          entry.state = 'complete';
+        }
+        if (writer.forget.size) {
+          const keys = options.keys();
+          if (keys) await rewrite([entry], writer.forget, keys, writer.record.epoch).catch(() => undefined);
+          purgeCache();
+        }
       }
-    }
+    });
     writer.settle();
     void sweep();
   }
@@ -433,13 +471,15 @@ export function createRecorder(options: {
       } else {
         if (out.dropped) { flush(out); gap(out); }
         for (let offset = 0; offset < chunk.length;) {
-          const count = Math.min(chunk.length - offset, limits.segmentBytes - out.used);
+          const room = available(out) - FRAME_OVERHEAD - 1 - out.used;
+          const count = Math.min(chunk.length - offset, limits.segmentBytes - out.used, room);
+          if (count <= 0) { sizeLimit(out); break; }
           out.plain.set(chunk.subarray(offset, offset + count), 1 + out.used);
           out.used += count;
           offset += count;
           if (out.used === limits.segmentBytes) flush(out);
+          if (available(out) <= FRAME_OVERHEAD + 1 + out.used) { sizeLimit(out); break; }
         }
-        if (out.bytes >= cap('out')) stop(record, 'size-limit');
       }
     }
     if (record.scanner) for (const command of record.scanner.feed(chunk)) accept(record, command);
@@ -451,6 +491,7 @@ export function createRecorder(options: {
     if (at - record.lastCommandAt < limits.commandIntervalMs) return;
     record.lastCommandAt = at;
     const text = Buffer.from(command, 'utf8');
+    if (available(writer) < FRAME_OVERHEAD + 9 + text.length) { text.fill(0); sizeLimit(writer); return; }
     const body = Buffer.alloc(9 + text.length);
     body[0] = Segment.Command;
     body.writeBigUInt64BE(BigInt(at), 1);
@@ -465,7 +506,7 @@ export function createRecorder(options: {
       line.fill(0);
       cache.bytes = next;
     }
-    if (writer.bytes >= cap('cmd')) stop(record, 'size-limit');
+    if (available(writer) <= FRAME_OVERHEAD + 9) sizeLimit(writer);
   }
   function finish(record: Live): void {
     if (record.finished) return;
@@ -585,9 +626,10 @@ export function createRecorder(options: {
   }
   /** Re-seals each history file that holds one of `texts` without those lines, under a fresh key, then unlinks it. */
   async function rewrite(entries: readonly Entry[], texts: ReadonlySet<string>, keys: RecordingKeys, since: number): Promise<number | 'key-unavailable' | 'locked' | 'failed'> {
+    if (since !== epoch) return 'locked';
     const opened = await openKeys(keys, entries);
     if (!opened.ok) return 'key-unavailable';
-    const plans: { entry: Entry; commands: { at: number; text: string }[] }[] = [];
+    const plans: { entry: Entry; commands: { at: number; text: string }[]; verdict: 'complete' | 'incomplete' }[] = [];
     try {
       for (const [at, entry] of entries.entries()) {
         const key = opened.keys[at];
@@ -599,14 +641,17 @@ export function createRecorder(options: {
           if (texts.has(record.text)) hit = true;
           else commands.push({ at: record.at, text: record.text });
         }).catch(() => 'corrupt' as const);
-        if (hit && verdict !== 'corrupt') plans.push({ entry, commands });
+        if (hit && verdict !== 'corrupt') plans.push({ entry, commands, verdict });
       }
     } finally { for (const key of opened.keys) key?.fill(0); }
     if (since !== epoch) return 'locked';
     if (!plans.length) return 0;
     const fresh = plans.filter((plan) => plan.commands.length).map((plan) => ({ plan, id: randomUUID(), key: randomBytes(CONTENT_KEY_BYTES) }));
+    const copies = fresh.map((item) => ({ recordingId: item.id, key: Buffer.from(item.key) }));
+    // Not indexed until its original is removed. On failure/lock, remove every unpublished replacement.
+    const staged = new Map<Entry, Entry>();
     try {
-      const sealed = fresh.length ? await keys.seal(fresh.map((item) => ({ recordingId: item.id, key: Buffer.from(item.key) })))
+      const sealed = fresh.length ? await keys.seal(copies)
         : { ok: true as const, vaultId: '', envelopes: [] as Uint8Array[] };
       if (!sealed.ok) return 'key-unavailable';
       if (since !== epoch) return 'locked';
@@ -626,29 +671,44 @@ export function createRecorder(options: {
           body.fill(0);
           text.fill(0);
         });
-        frames.push(Buffer.from(sealSegment(item.key, hash, item.plan.commands.length, true, Uint8Array.of(Segment.End))));
+        if (item.plan.verdict === 'complete') frames.push(Buffer.from(sealSegment(item.key, hash, item.plan.commands.length, true, Uint8Array.of(Segment.End))));
         const name = `cmd-${item.id}.part`;
         const sink = await files.create(name);
+        const replacement: Entry = {
+          kind: 'cmd', id: item.id, name, identity, block, hash, vaultId: sealed.vaultId, envelope,
+          file: sink.identity, bytes: frames.reduce((sum, frame) => sum + frame.length, 0), state: item.plan.verdict,
+        };
+        staged.set(item.plan.entry, replacement);
         try {
+          if (since !== epoch) return 'locked';
           await sink.write(Buffer.concat(frames));
+          if (since !== epoch) return 'locked';
           await sink.sync();
         } finally { await sink.close(); }
-        await files.rename(name, `cmd-${item.id}.ssr`, sink.identity);
-        index.set(item.id, {
-          kind: 'cmd', id: item.id, name: `cmd-${item.id}.ssr`, identity, block, hash, vaultId: sealed.vaultId, envelope,
-          file: sink.identity, bytes: frames.reduce((sum, frame) => sum + frame.length, 0), state: 'complete',
-        });
+        if (since !== epoch) return 'locked';
+        if (item.plan.verdict === 'complete') {
+          await files.rename(name, `cmd-${item.id}.ssr`, sink.identity);
+          replacement.name = `cmd-${item.id}.ssr`;
+        }
       }
       for (const plan of plans) {
-        if (await files.remove(plan.entry.name, plan.entry.file)) index.delete(plan.entry.id);
+        if (since !== epoch) return 'locked';
+        if (!(await files.remove(plan.entry.name, plan.entry.file))) return 'failed';
+        index.delete(plan.entry.id);
+        const replacement = staged.get(plan.entry);
+        if (replacement) { index.set(replacement.id, replacement); staged.delete(plan.entry); }
       }
       return plans.length;
-    } catch { return 'failed'; } finally { for (const item of fresh) item.key.fill(0); }
+    } catch { return 'failed'; } finally {
+      for (const item of fresh) item.key.fill(0);
+      for (const copy of copies) copy.key.fill(0);
+      for (const entry of staged.values()) await files.remove(entry.name, entry.file).catch(() => false);
+    }
   }
 
   function sweep(): Promise<void> {
     if (sweeping) { sweepAgain = true; return sweeping; }
-    sweeping = (async () => {
+    sweeping = mutate(async () => {
       do {
         sweepAgain = false;
         const at = now();
@@ -669,7 +729,7 @@ export function createRecorder(options: {
           for (const entry of victims) if (await files.remove(entry.name, entry.file)) index.delete(entry.id);
         }
       } while (sweepAgain);
-    })().catch(() => undefined).finally(() => { sweeping = undefined; });
+    }).catch(() => undefined).finally(() => { sweeping = undefined; });
     return sweeping;
   }
   const summary = (entry: Entry): RecordingSummary => ({
@@ -792,26 +852,35 @@ export function createRecorder(options: {
       return { status: 'saved', state: state() };
     },
     async delete(target) {
-      const kinds: readonly Kind[] = target.kind === 'logs' ? ['out'] : target.kind === 'history' ? ['cmd'] : target.kind === 'all' ? ['out', 'cmd'] : [];
-      const matches = (kind: Kind, id: string) => target.kind === 'log' ? kind === 'out' && id === target.id : kinds.includes(kind);
-      stopKinds((item) => matches(item.kind, item.id), true);
-      if (kinds.includes('cmd')) purgeCache();
-      for (const entry of [...index.values()]) {
-        if (entry.state === 'live' || !matches(entry.kind, entry.id)) continue;
-        if (await files.remove(entry.name, entry.file)) index.delete(entry.id);
-      }
-      // Files whose header could not be read are not indexed; a bulk delete still removes them.
-      if (kinds.length && rootSafe) {
-        const liveIds = new Set([...writers].map((item) => item.id));
-        for (const info of await files.list() ?? []) {
-          const match = RECORDING_NAME.exec(info.name);
-          if (match && kinds.includes(match[1] as Kind) && !index.has(match[2]!) && !liveIds.has(match[2]!)) await files.remove(info.name, info);
+      return mutate(async () => {
+        const kinds: readonly Kind[] = target.kind === 'logs' ? ['out'] : target.kind === 'history' ? ['cmd'] : target.kind === 'all' ? ['out', 'cmd'] : [];
+        const matches = (kind: Kind, id: string) => target.kind === 'log' ? kind === 'out' && id === target.id : kinds.includes(kind);
+        stopKinds((item) => matches(item.kind, item.id), true);
+        // Ended observers have left `live`, but their native writes/finalization may still be pending.
+        for (const item of writers) if (matches(item.kind, item.id)) { item.discard = true; close(item); }
+        if (kinds.includes('cmd')) purgeCache();
+        for (const entry of [...index.values()]) {
+          if (entry.state === 'live' || !matches(entry.kind, entry.id)) continue;
+          if (await files.remove(entry.name, entry.file)) index.delete(entry.id);
         }
-      }
-      return state();
+        // Files whose header could not be read are not indexed; a bulk delete still removes them.
+        if (kinds.length && rootSafe) {
+          const liveIds = new Set([...writers].map((item) => item.id));
+          for (const info of await files.list() ?? []) {
+            const match = RECORDING_NAME.exec(info.name);
+            if (match && kinds.includes(match[1] as Kind) && !index.has(match[2]!) && !liveIds.has(match[2]!)) await files.remove(info.name, info);
+          }
+        }
+        return state();
+      });
     },
     async export(target, destination) {
       const since = epoch;
+      let selected: string | undefined;
+      try { selected = typeof destination === 'string' ? destination : await destination(); }
+      catch { return { status: 'failed' }; }
+      if (since !== epoch) return { status: 'aborted' };
+      if (!selected) return { status: 'cancelled' };
       const keys = options.keys();
       const entries = target.kind === 'log'
         ? [index.get(target.id)].filter((entry): entry is Entry => entry?.kind === 'out')
@@ -824,9 +893,9 @@ export function createRecorder(options: {
       let gaps = 0;
       try {
         if (since !== epoch) return { status: 'aborted' };
-        if (target.kind === 'log' && !opened.keys[0]) return { status: 'corrupt' };
+        if (opened.keys.some((key) => !key)) return { status: 'corrupt' };
         const abort = new Error('aborted');
-        const saved = await files.exportTo(destination, async (write) => {
+        const saved = await files.exportTo(selected, async (write) => {
           for (const [at, entry] of entries.entries()) {
             const key = opened.keys[at];
             if (!key) continue;
@@ -839,17 +908,19 @@ export function createRecorder(options: {
                 try { await write(line); } finally { line.fill(0); }
               }
             });
-            if (result === 'corrupt' && target.kind === 'log') { verdict = 'corrupt'; return false; }
+            if (result === 'corrupt') { verdict = 'corrupt'; return false; }
             if (result === 'incomplete') {
               verdict = 'incomplete';
               if (target.kind === 'log') await write(Buffer.from('\r\n[ssterm: recording incomplete]\r\n'));
             }
           }
           return since === epoch;
-        });
+        }, () => since === epoch);
+        // Once the native rename was dispatched while authorized, publication can win a later lock.
+        if (saved === 'saved') return { status: 'saved', incomplete: verdict === 'incomplete', gaps };
         if (since !== epoch) return { status: 'aborted' };
         if (verdict === 'corrupt') return { status: 'corrupt' };
-        return saved === 'saved' ? { status: 'saved', incomplete: verdict === 'incomplete', gaps } : { status: saved === 'aborted' ? 'aborted' : 'failed' };
+        return { status: saved === 'aborted' ? 'aborted' : 'failed' };
       } finally { for (const key of opened.keys) key?.fill(0); }
     },
     async suggest(scope, prefix) {
@@ -857,7 +928,7 @@ export function createRecorder(options: {
       const loaded = await loadCache();
       if (!Buffer.isBuffer(loaded)) return loaded;
       const excluded = new Set<string>();
-      for (const record of live.values()) if (record.scope === scope && record.cmd) for (const text of record.cmd.forget) excluded.add(text);
+      for (const writer of writers) if (writer.kind === 'cmd' && writer.record.scope === scope) for (const text of writer.forget) excluded.add(text);
       const text = loaded.toString('utf8');
       const suggestions: string[] = [];
       const seen = new Set<string>();
@@ -876,20 +947,24 @@ export function createRecorder(options: {
       return { status: 'ok', suggestions };
     },
     async forget(scope, text) {
-      if (!policy.history) return { status: 'off' };
-      if (!isCommandText(text)) return { status: 'not-found' };
-      const keys = options.keys();
-      if (!keys) return { status: 'key-unavailable' };
       const since = epoch;
-      purgeCache();
-      let flagged = false;
-      for (const record of live.values()) {
-        if (record.scope === scope && record.cmd && !record.cmd.discard) { record.cmd.forget.add(text); flagged = true; }
-      }
-      const closed = [...index.values()].filter((entry) => entry.kind === 'cmd' && entry.state !== 'live' && entry.identity.scope === scope);
-      const rewritten = await rewrite(closed, new Set([text]), keys, since);
-      if (typeof rewritten !== 'number') return { status: rewritten };
-      return { status: rewritten > 0 || flagged ? 'forgotten' : 'not-found' };
+      return mutate(async () => {
+        if (since !== epoch || disposed) return { status: 'locked' };
+        if (!policy.history) return { status: 'off' };
+        if (!isCommandText(text)) return { status: 'not-found' };
+        const keys = options.keys();
+        if (!keys) return { status: 'key-unavailable' };
+        purgeCache();
+        let flagged = false;
+        for (const writer of writers) {
+          if (writer.kind === 'cmd' && writer.record.scope === scope && !writer.discard) { writer.forget.add(text); flagged = true; }
+        }
+        const closed = [...index.values()].filter((entry) => entry.kind === 'cmd' && entry.state !== 'live' && entry.identity.scope === scope);
+        const rewritten = await rewrite(closed, new Set([text]), keys, since);
+        purgeCache();
+        if (typeof rewritten !== 'number') return { status: rewritten };
+        return { status: rewritten > 0 || flagged ? 'forgotten' : 'not-found' };
+      });
     },
     lock() {
       epoch += 1;
@@ -898,17 +973,17 @@ export function createRecorder(options: {
     dispose() {
       return disposing ??= (async () => {
         disposed = true;
+        epoch += 1;
         if (sweepTimer) clearInterval(sweepTimer);
         for (const record of [...live.values()]) finish(record);
         purgeCache();
         let timer: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([
-          Promise.all([...writers].map((item) => item.done)),
+          Promise.all([...writers].map((item) => item.done).concat([mutations, sweeping ?? Promise.resolve()])),
           new Promise<void>((done) => { timer = setTimeout(done, limits.drainMs); }),
         ]);
         clearTimeout(timer);
         for (const item of [...writers]) { dropQueue(item); zero(item); }
-        await sweeping;
       })();
     },
   };

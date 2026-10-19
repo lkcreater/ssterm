@@ -198,7 +198,25 @@ test("recording over SSH bash 5.2 through production main: opt-in, encrypted, ex
     await expect(cursorRow(pane)).toContainText("echo N");
     await page.keyboard.press("Meta+Semicolon");
     await expect(list).toBeVisible();
+    // The lock epoch starts before the main-owned Save dialog, including a result returned after lock.
+    const abortedExport = join(profile, `locked-export-${id}.log`);
+    await app.evaluate(({ dialog }) => {
+      dialog.showSaveDialog = (() => new Promise((resolve) => {
+        (globalThis as any).__sstermPendingSave = resolve;
+      })) as typeof dialog.showSaveDialog;
+    });
+    await page.evaluate(async (owner) => {
+      const state = await window.ssterm.recordingState({ owner });
+      if (!state.ok) throw new Error("recording state");
+      const log = state.value.logs.find((log) => log.state === "complete")!;
+      (globalThis as any).__sstermPendingExport = window.ssterm.exportRecording({ owner, target: { kind: "log", id: log.id } });
+    }, owner);
+    await expect.poll(() => app.evaluate(() => typeof (globalThis as any).__sstermPendingSave)).toBe("function");
     await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("lock-screen"); });
+    await app.evaluate((_electron, path) => { (globalThis as any).__sstermPendingSave({ canceled: false, filePath: path }); }, abortedExport);
+    const aborted = await page.evaluate(() => (globalThis as any).__sstermPendingExport);
+    expect(aborted.ok ? aborted.value.status : aborted.error.code).toMatch(/^(aborted|unauthorized)$/u);
+    expect((await readdir(profile)).some((name) => name === `locked-export-${id}.log` || name.startsWith(".ssterm-export-"))).toBe(false);
     await expect(pane).not.toHaveAttribute("data-phase", "ready", { timeout: 10_000 });
     await expect(list).toHaveCount(0);
     await expect.poll(async () => (await recordingNames(root)).every((name) => name.endsWith(".ssr")), { message: "no file is left open" }).toBe(true);
@@ -254,7 +272,7 @@ test("recording over SSH bash 5.2 through production main: opt-in, encrypted, ex
 });
 
 /** A recorder, Keychain-namespaced vault and startup-file zsh pane, all owned by the test, behind the shipped handlers. */
-async function localZsh(app: ElectronApplication, owner: { windowId: number; generation: number }) {
+async function localZsh(app: ElectronApplication, owner: { windowId: number; generation: number }, logMiB = 1024) {
   await app.evaluate(async ({ app, BrowserWindow, ipcMain, powerMonitor }, parameters) => {
     await new Promise<void>((done) => setImmediate(done));
     const require = process.getBuiltinModule("node:module").createRequire(app.getAppPath() + "/package.json");
@@ -276,7 +294,7 @@ async function localZsh(app: ElectronApplication, owner: { windowId: number; gen
     owned.root = path.join(owned.directory, "recordings");
     owned.recorder = production.createRecorder({ files: production.createRecordingFiles({ root: owned.root }), keys: () => service.recording });
     await owned.recorder.ready;
-    const configured = await owned.recorder.configure({ logs: true, history: true, logDays: 30, logMiB: 1024, historyDays: 180, historyMiB: 8 });
+    const configured = await owned.recorder.configure({ logs: true, history: true, logDays: 30, logMiB: parameters.logMiB, historyDays: 180, historyMiB: 8 });
     if (configured.status !== "saved") throw new Error(`configure ${configured.status}`);
     const boundary = new production.WindowBoundary(contents.getURL().split("#")[0],
       { name: "ssterm", version: app.getVersion(), platform: process.platform }, () => ({ status: "ready", schemaVersion: 4 }));
@@ -310,7 +328,7 @@ async function localZsh(app: ElectronApplication, owner: { windowId: number; gen
       return { ...receipt, leftovers };
     };
     (globalThis as any).__sstermRecordingLocal = owned;
-  }, { owner, fixturePath: resolve("tests/fixtures/local-terminal/pty.cjs"), zshrc: `${SHELL_INTEGRATION.zsh}\n` });
+  }, { owner, logMiB, fixturePath: resolve("tests/fixtures/local-terminal/pty.cjs"), zshrc: `${SHELL_INTEGRATION.zsh}\n` });
   const call = <T>(method: string) => app.evaluate(async (_electron, method) => {
     await new Promise<void>((done) => setImmediate(done));
     return (globalThis as any).__sstermRecordingLocal[method]();
@@ -323,6 +341,55 @@ async function localZsh(app: ElectronApplication, owner: { windowId: number; gen
     cleanup: () => call<{ fixtureCleaned: boolean; remainingProcesses: number; leftovers: number }>("cleanup"),
   };
 }
+
+test("a capped local log stays incomplete and exportable while history keeps recording", async ({ desktop }) => {
+  test.setTimeout(120_000);
+  const { app, page } = desktop;
+  const boot = await page.evaluate(() => window.ssterm.bootstrap());
+  if (!boot.ok) throw new Error("bootstrap");
+  const local = await localZsh(app, boot.value.owner, 16);
+  try {
+    await page.getByRole("button", { name: "New local terminal", exact: true }).first().click();
+    const pane = page.locator("section[data-terminal-kind=local]");
+    await expect(pane).toHaveAttribute("data-phase", "ready");
+    await expect(pane.locator(".recording-badge")).toHaveAttribute("data-recording", "on");
+    await expect(pane.locator(".xterm-rows")).toContainText("%");
+    await typeAt(page, pane, "LC_ALL=C /usr/bin/yes CAPPED | /usr/bin/head -c 18000000; echo CAP-$((40+2))");
+    await page.keyboard.press("Enter");
+    await expect(pane.locator(".xterm-rows")).toContainText("CAP-42", { timeout: 60_000 });
+    const badge = pane.locator(".recording-badge");
+    await expect(badge).toHaveAttribute("data-recording", "partial");
+    await expect(badge).toHaveAccessibleName("Recording · partial");
+    expect((await renderedContrast(badge)).ratio).toBeGreaterThanOrEqual(4.5);
+    await expect(pane).toHaveAttribute("data-phase", "ready");
+    await typeAt(page, pane, "echo AFTER_CAP-$((2+3))");
+    await page.keyboard.press("Enter");
+    await expect(pane.locator(".xterm-rows")).toContainText("AFTER_CAP-5");
+    await typeAt(page, pane, "echo AFTER");
+    await page.keyboard.press("Meta+Semicolon");
+    await expect(pane.getByRole("listbox").getByRole("option")).toHaveText(["echo AFTER_CAP-$((2+3))"]);
+    await page.keyboard.press("Escape");
+    const receipt = await app.evaluate(async () => {
+      const owned = (globalThis as any).__sstermRecordingLocal;
+      const log = owned.recorder.state().logs[0];
+      const destination = `${owned.directory}/capped-export.txt`;
+      const outcome = await owned.recorder.export({ kind: "log", id: log.id }, destination);
+      const fs = process.getBuiltinModule("node:fs");
+      return { state: log.state, bytes: log.bytes, outcome, marked: fs.readFileSync(destination, "utf8").endsWith("[ssterm: recording incomplete]\r\n") };
+    });
+    expect(receipt.state).toBe("incomplete");
+    expect(receipt.bytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+    expect(receipt.outcome).toEqual({ status: "saved", incomplete: true, gaps: 0 });
+    expect(receipt.marked).toBe(true);
+    await page.getByRole("button", { name: "Recordings", exact: true }).first().click();
+    await expect(page.getByTestId("recordings-page").getByText("Incomplete", { exact: true })).toBeVisible();
+  } finally {
+    const receipt = await local.cleanup();
+    expect(receipt.fixtureCleaned).toBe(true);
+    expect(receipt.remainingProcesses).toBe(0);
+    expect(receipt.leftovers).toBe(0);
+  }
+});
 
 test("recording on local zsh: the LOCAL pane records, suggests the command it just ran and forgets it", async ({ desktop }) => {
   test.setTimeout(120_000);

@@ -442,9 +442,24 @@ test("Files browses a real OpenSSH server and This Mac: hostile names, links, pe
     // Disconnect, then Reconnect: a new generation lists the same folder.
     await remote.goto(ROOT);
     await remote.at(ROOT);
+    // Hold only the close reply: main can publish Closed before renderer busy clears.
+    await app.evaluate(({ ipcMain }) => {
+      const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> })._invokeHandlers;
+      const original = handlers.get("ssterm:close-sftp")!;
+      const gate = new Promise<void>((resolve) => { (globalThis as any).__sstermReleaseSftpClose = resolve; });
+      ipcMain.removeHandler("ssterm:close-sftp");
+      ipcMain.handle("ssterm:close-sftp", async (event, ...args) => {
+        const reply = await original(event, ...args);
+        await gate;
+        return reply;
+      });
+    });
     await remote.button("Disconnect").focus();
     await page.keyboard.press("Enter");
     await expect(remote.section).toHaveAttribute("data-phase", "closed");
+    await expect(remote.section.getByRole("button", { name: "Reconnect" })).toBeDisabled();
+    await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    await app.evaluate(() => { (globalThis as any).__sstermReleaseSftpClose(); });
     await expect(remote.section.getByRole("button", { name: "Reconnect" }), "focus moves to Reconnect").toBeFocused();
     await expect.poll(w.sftpProcesses, { message: "Disconnect reaped the SFTP processes", timeout: 10_000 }).toBe(0);
     await page.keyboard.press("Enter");
@@ -478,6 +493,7 @@ test("Files browses a real OpenSSH server and This Mac: hostile names, links, pe
       contentType: "application/json",
     });
   } finally {
+    await app.evaluate(() => { (globalThis as any).__sstermReleaseSftpClose?.(); }).catch(() => undefined);
     await w.finish();
   }
 });

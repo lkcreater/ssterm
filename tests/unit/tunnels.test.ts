@@ -56,25 +56,37 @@ async function roundTrip(port: number, text: string, host = "127.0.0.1"): Promis
   });
 }
 
-test("listener: exclusive loopback bind, typed collision, close destroys accepted sockets and frees the port", async () => {
+test("listener: exclusive loopback bind, typed collision, close destroys accepted sockets and frees the port", async (t) => {
   const port = await freePort();
   const accepted: Socket[] = [];
-  const first = await listenLocal({ address: "127.0.0.1", port, connection: (socket) => accepted.push(socket) });
+  let client: Socket | undefined;
+  let rebound: Awaited<ReturnType<typeof listenLocal>> | undefined;
+  const first = await listenLocal({ address: "127.0.0.1", port, connection: (socket) => {
+    accepted.push(socket);
+    socket.once("end", () => socket.end());
+  } });
   assert.ok(first.ok);
+  t.after(async () => {
+    client?.destroy();
+    await first.listener.close();
+    if (rebound?.ok) await rebound.listener.close();
+    for (const socket of accepted) socket.destroy();
+  });
   assert.equal(first.listener.port, port);
   assert.deepEqual(await listenLocal({ address: "127.0.0.1", port, connection() {} }), { ok: false, code: "address-in-use" });
   assert.deepEqual(await listenLocal({ address: "0.0.0.0" as "127.0.0.1", port, connection() {} }), { ok: false, code: "bind-failed" });
-  const client = connect({ host: "127.0.0.1", port });
+  client = connect({ host: "127.0.0.1", port });
   const clientClosed = new Promise<void>((done) => client.once("close", () => done()));
   client.on("error", () => undefined);
-  await until(() => accepted.length === 1, "accepted");
+  await until(() => client!.localPort !== undefined && accepted.some((socket) => socket.remotePort === client!.localPort), "explicit client accepted");
+  await until(() => first.listener.connections === 1, "probe closed");
   assert.equal(first.listener.connections, 1);
   await Promise.all([first.listener.close(), first.listener.close()]);
   await clientClosed;
   assert.equal(await listening(port), false);
-  const again = await listenLocal({ address: "127.0.0.1", port, connection() {} });
-  assert.ok(again.ok, "the port is free again");
-  await again.listener.close();
+  rebound = await listenLocal({ address: "127.0.0.1", port, connection() {} });
+  assert.ok(rebound.ok, "the port is free again");
+  await rebound.listener.close();
 });
 
 test("tunnel channel: bounded opens, refused opens carry no server text, dispose destroys streams and late replies", async () => {

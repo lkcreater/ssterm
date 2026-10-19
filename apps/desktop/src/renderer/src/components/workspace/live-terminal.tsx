@@ -843,15 +843,17 @@ const recordingProblems: Record<NonNullable<TerminalRecording["problem"]>, strin
 /** Blue while capturing, amber when capture was wanted but stopped or has gaps; always icon plus text. */
 function RecordingBadge({ recording }: { recording: TerminalRecording }) {
   const stopped = recording.state === "stopped";
-  const text = stopped ? "Not recording" : recording.gaps ? "Recording · gaps" : "Recording";
+  const partial = !stopped && recording.problem === "size-limit";
+  const text = stopped ? "Not recording" : partial ? "Recording · partial" : recording.gaps ? "Recording · gaps" : "Recording";
   const kinds = [recording.output ? "output" : "", recording.commands ? "command lines" : ""].filter(Boolean).join(" and ");
   const detail = stopped ? recordingProblems[recording.problem ?? "storage-unavailable"]
+    : partial ? `One recording reached its size limit; its saved data is incomplete. Still saving ${kinds}.${recording.gaps ? " The output log also contains gaps." : ""}`
     : recording.gaps ? "Some output was not recorded because the disk was slow; the saved log marks each gap."
     : `Saving this session's ${kinds}, encrypted on this Mac. Typed input is never saved; anything shown on screen is.`;
   return (
     <Tooltip>
       <TooltipTrigger
-        render={<Badge variant={stopped || recording.gaps ? "warning" : "recording"} className="pane-badge recording-badge" tabIndex={0} aria-label={text} data-recording={stopped ? "stopped" : recording.gaps ? "gaps" : recording.state} />}
+        render={<Badge variant={stopped || partial || recording.gaps ? "warning" : "recording"} className="pane-badge recording-badge" tabIndex={0} aria-label={text} data-recording={stopped ? "stopped" : partial ? "partial" : recording.gaps ? "gaps" : recording.state} />}
       >
         {stopped ? <CircleOffIcon data-icon="inline-start" aria-hidden="true" /> : <CircleDotIcon data-icon="inline-start" aria-hidden="true" />}
         <span className="recording-badge-text">{text}</span>

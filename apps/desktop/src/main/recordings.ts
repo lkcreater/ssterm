@@ -35,7 +35,7 @@ export function registerRecordingHandlers(options: {
   /** Main-owned save dialog anchored to the owner's window; undefined when cancelled. */
   chooseDestination(owner: Owner, suggestedName: string): Promise<string | undefined>;
 }): () => void {
-  const handle = <T>(channel: string, validate: (value: unknown) => value is T, run: (recorder: Recorder, request: T, owner: Owner) => Promise<unknown>) => {
+  const handle = <T>(channel: string, validate: (value: unknown) => value is T, run: (recorder: Recorder, request: T, owner: Owner, reauthorize: () => Result<Owner>) => Promise<unknown>) => {
     options.ipc.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
       try {
         const request = args[0];
@@ -45,7 +45,7 @@ export function registerRecordingHandlers(options: {
         if (args.length !== 1 || !validate(request)) return failure("invalid-request");
         const recorder = options.recorder();
         if (!recorder) return failure("unavailable");
-        return await run(recorder, request, authorized.value);
+        return await run(recorder, request, authorized.value, () => options.boundary.authorizeOwner(event, owner));
       } catch { return failure("unavailable"); }
     });
   };
@@ -58,10 +58,14 @@ export function registerRecordingHandlers(options: {
   handle(channels.recordingState, isRecordingStateRequest, async (recorder) => ok(recorder.state()));
   handle(channels.configureRecording, isConfigureRecordingRequest, async (recorder, request) => ok(await recorder.configure({ ...request.policy })));
   handle(channels.deleteRecordings, isDeleteRecordingsRequest, async (recorder, request) => ok(await recorder.delete(request.target)));
-  handle(channels.exportRecording, isExportRecordingRequest, async (recorder, request, owner) => {
-    const destination = await options.chooseDestination(owner, exportName(request.target, recorder));
-    if (!destination) return ok({ status: "cancelled" });
-    return ok(await recorder.export(request.target, destination));
+  handle(channels.exportRecording, isExportRecordingRequest, async (recorder, request, owner, reauthorize) => {
+    let authorization: Result<Owner> | undefined;
+    const outcome = await recorder.export(request.target, async () => {
+      const destination = await options.chooseDestination(owner, exportName(request.target, recorder));
+      authorization = reauthorize();
+      return authorization.ok ? destination : undefined;
+    });
+    return authorization && !authorization.ok ? authorization : ok(outcome);
   });
   handle(channels.suggestCommands, isSuggestCommandsRequest, async (recorder, request, owner) => {
     const found = scope(owner, request.sessionId, request.generation);

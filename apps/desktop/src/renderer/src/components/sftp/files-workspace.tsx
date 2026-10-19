@@ -305,7 +305,7 @@ function RemotePane({
   );
   useEffect(() => {
     const pending = focusAfter.current;
-    if (!pending) return;
+    if (!pending || busy) return;
     const target =
       pending.action === "close" && ended
         ? pane.current?.querySelector<HTMLElement>(".files-message button")
@@ -317,7 +317,7 @@ function RemotePane({
     const focused = document.activeElement;
     // Only if the user has not moved on to something else meanwhile.
     if (!focused || focused === document.body || pane.current?.contains(focused)) target.focus();
-  }, [phase, generation, ended]);
+  }, [phase, generation, ended, busy]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(undefined), 4000);

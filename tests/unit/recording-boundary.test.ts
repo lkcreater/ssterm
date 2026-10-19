@@ -63,14 +63,20 @@ test("recording IPC: owner-authorized, app-lock gated, one valid argument, scope
     state: () => (calls.push("state"), state),
     suggest: async (scope: string, prefix: string) => (calls.push(`suggest:${scope}:${prefix}`), { status: "ok", suggestions: ["ls -la"] }),
     forget: async (scope: string, text: string) => (calls.push(`forget:${scope}:${text}`), { status: "forgotten" }),
-    export: async (_target: unknown, destination: string) => (calls.push(`export:${destination}`), { status: "saved", incomplete: false, gaps: 0 }),
+    export: async (_target: unknown, choose: () => Promise<string | undefined>) => {
+      const destination = await choose();
+      if (!destination) return { status: "cancelled" };
+      calls.push(`export:${destination}`);
+      return { status: "saved", incomplete: false, gaps: 0 };
+    },
   } as unknown as Recorder;
   const snapshots: Partial<SessionSnapshot>[] = [{ id: sessionId, kind: "terminal", generation: 2, hostId: "host-a", state: "Ready" }];
   const registry = { snapshot: (ownerId: string, id?: string) => ownerId === sessionOwnerId(owner) ? snapshots.filter((s) => s.id === id) as SessionSnapshot[] : [] };
   let destination: string | undefined;
+  let lockInDialog = false;
   const chosen: string[] = [];
   const unregister = registerRecordingHandlers({ ipc, boundary, recorder: () => recorder, registry: () => registry,
-    chooseDestination: async (_owner, name) => (chosen.push(name), destination) });
+    chooseDestination: async (_owner, name) => { chosen.push(name); if (lockInDialog) open = false; return destination; } });
   t.after(unregister);
   assert.deepEqual([...handlers.keys()].sort(), [...recordingChannels].sort());
   const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent;
@@ -88,6 +94,12 @@ test("recording IPC: owner-authorized, app-lock gated, one valid argument, scope
   assert.deepEqual(await call(channels.exportRecording, { owner, target: { kind: "history" } }), { ok: true, value: { status: "saved", incomplete: false, gaps: 0 } });
   assert.match(chosen[0]!, /^ssterm-command-history-/u);
   assert.equal(calls.at(-1), "export:/private/tmp/chosen.txt");
+  lockInDialog = true;
+  const exports = calls.filter((call) => call.startsWith("export:")).length;
+  assert.deepEqual(await call(channels.exportRecording, { owner, target: { kind: "history" } }), failure("unauthorized"), "a dialog result cannot authorize an export after lock");
+  assert.equal(calls.filter((call) => call.startsWith("export:")).length, exports);
+  lockInDialog = false;
+  open = true;
   assert.deepEqual(await call(channels.recordingState, { owner }, "extra"), failure("invalid-request"));
   assert.deepEqual(await call(channels.recordingState, { owner: { windowId: 1, generation: 9 } }), failure("stale-owner"));
   const forged = { sender, senderFrame: { url: "https://evil.example/" } } as unknown as IpcMainInvokeEvent;

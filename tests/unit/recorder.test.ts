@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, truncate, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, open as openNative, readdir, readFile, rename as renameNative, rm, symlink, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { open, seal, PROTECTION_FORMAT, ENVELOPE_VERSION } from '../../packages/adapters/src/protection.ts';
@@ -49,12 +49,12 @@ const session = (overrides: Partial<ObservedTerminal> = {}): ObservedTerminal =>
 });
 const marker = (text: string) => Buffer.from(`\x1b]633;E;${text.replaceAll('\\', '\\\\').replaceAll(';', '\\x3b')}\x07`, 'utf8');
 
-async function setup(t: TestContext, options: { limits?: Partial<RecorderLimits>; policy?: RecordingPolicy | null; files?: (files: RecordingFiles) => RecordingFiles; keys?: () => RecordingKeys | undefined } = {}) {
+async function setup(t: TestContext, options: { limits?: Partial<RecorderLimits>; policy?: RecordingPolicy | null; files?: (files: RecordingFiles) => RecordingFiles; keys?: () => RecordingKeys | undefined; io?: Parameters<typeof createRecordingFiles>[0]['io'] } = {}) {
   const profile = await mkdtemp(join(tmpdir(), 'ssterm-recorder-'));
   const root = join(profile, 'recordings');
   const memory = memoryKeys();
   const clock = { now: 1_800_000_000_000 };
-  const base = createRecordingFiles({ root });
+  const base = createRecordingFiles({ root, io: options.io });
   const files = options.files ? options.files(base) : base;
   let recorder: Recorder | undefined;
   const make = async () => {
@@ -386,4 +386,316 @@ test('unknown, foreign and linked entries are never touched; an invalid policy f
   await reloaded.delete({ kind: 'all' });
   assert.equal(await readFile(outside, 'utf8'), 'keep');
   assert.equal((await s.names()).length, 5, 'marker, notes, link, directory and policy remain');
+});
+
+test('a capped log remains exportable and fits the retention budget including header and final frame', async (t) => {
+  const s = await setup(t, { policy: { ...ON, logMiB: 16 } });
+  const target = session();
+  const observer = s.recorder.observe(target)!;
+  await until(() => s.recorder.state().logCount === 1, 'header started');
+  for (let i = 0; i < 17; i++) {
+    observer.output(Buffer.alloc(1024 * 1024, 0x63));
+    await delay(15);
+    if (s.recorder.status(target.sessionId, 1)?.problem === 'size-limit') break;
+  }
+  assert.equal(s.recorder.status(target.sessionId, 1)?.problem, 'size-limit');
+  assert.equal(s.recorder.status(target.sessionId, 1)?.state, 'on', 'history keeps capturing');
+  assert.equal(s.recorder.status(target.sessionId, 1)?.output, false);
+  s.clock.now += 1_000;
+  observer.output(marker('echo after log limit'));
+  observer.end();
+  await s.recorder.dispose();
+  assert.equal(s.recorder.state().logCount, 1, 'retention must preserve the capped recording');
+  const log = s.recorder.state().logs[0]!;
+  assert.equal(log.state, 'incomplete', 'size-limited data is never presented as a full session');
+  assert.ok(log.bytes <= 16 * 1024 * 1024, 'full file must fit the configured budget');
+  const result = await s.exported({ kind: 'log', id: log.id });
+  assert.deepEqual(result.outcome, { status: 'saved', incomplete: true, gaps: 0 });
+  assert.ok(result.text.endsWith('[ssterm: recording incomplete]\r\n'));
+  assert.ok(result.text.length > 15 * 1024 * 1024, 'keeps the bounded prefix');
+  assert.deepEqual(await s.recorder.suggest('host-a', ''), { status: 'ok', suggestions: ['echo after log limit'] });
+});
+
+test('data and end wait for a slow header write before touching the sink', async (t) => {
+  let release!: () => void;
+  const gate = new Promise<void>((done) => { release = done; });
+  t.after(() => release());
+  let headerStarted = false;
+  let headerFinished = false;
+  let raced = false;
+  const s = await setup(t, { policy: { ...ON, history: false }, limits: { segmentBytes: 16 }, files: (files) => ({
+    ...files, async create(name) {
+      const sink = await files.create(name);
+      let first = true;
+      return { ...sink, async write(bytes) {
+        if (first) {
+          first = false;
+          headerStarted = true;
+          await gate;
+          await sink.write(bytes);
+          headerFinished = true;
+        } else { if (!headerFinished) raced = true; await sink.write(bytes); }
+      } };
+    },
+  }) });
+  const observer = s.recorder.observe(session())!;
+  await until(() => headerStarted, 'header write reached gate');
+  observer.output(Buffer.from('a first frame larger than sixteen bytes'));
+  observer.end();
+  await delay(30);
+  release();
+  await s.recorder.dispose();
+  assert.equal(raced, false, 'header and frames must never overlap');
+  const result = await s.exported({ kind: 'log', id: s.recorder.state().logs[0]!.id });
+  assert.equal(result.text, 'a first frame larger than sixteen bytes');
+  assert.deepEqual(result.outcome, { status: 'saved', incomplete: false, gaps: 0 });
+});
+
+test('delete history during a pending Forget cannot resurrect replacement files', async (t) => {
+  const s = await setup(t, { policy: { ...ON, logs: false } });
+  await record(s.recorder, s.clock, [marker('echo forget'), marker('echo keep')]);
+  await settled(s, 1);
+  let release!: () => void;
+  s.memory.control.gate = new Promise<void>((done) => { release = done; });
+  t.after(() => release());
+  const seals = s.memory.calls.seal;
+  const forgetting = s.recorder.forget('host-a', 'echo forget');
+  await until(() => s.memory.calls.seal > seals, 'replacement key reached gate');
+  const deleting = s.recorder.delete({ kind: 'history' });
+  // Give Delete a chance to finish in the buggy implementation without depending on that completion.
+  await delay(30);
+  release();
+  await Promise.all([forgetting, deleting]);
+  assert.equal(s.recorder.state().historyFiles, 0, 'Delete wins over an older Forget');
+  assert.deepEqual((await s.names()).filter((name) => /^cmd-/u.test(name)), []);
+  assert.deepEqual(await s.recorder.suggest('host-a', ''), { status: 'ok', suggestions: [] });
+});
+
+test('Forget reports failed when the original file cannot be removed', async (t) => {
+  let refused = '';
+  const s = await setup(t, { policy: { ...ON, logs: false }, files: (files) => ({ ...files, remove: (name, identity) => name === refused ? Promise.resolve(false) : files.remove(name, identity) }) });
+  await record(s.recorder, s.clock, [marker('echo forget'), marker('echo keep')]);
+  await settled(s, 1);
+  const before = await s.names();
+  refused = before.find((name) => name.startsWith('cmd-'))!;
+  assert.deepEqual(await s.recorder.forget('host-a', 'echo forget'), { status: 'failed' });
+  assert.deepEqual(await s.names(), before, 'replacement is removed when original unlink is refused');
+});
+
+test('locking during a Forget write aborts and removes the unpublished replacement', async (t) => {
+  let release!: () => void;
+  const gate = new Promise<void>((done) => { release = done; });
+  t.after(() => release());
+  let block = false;
+  let started = false;
+  const s = await setup(t, { policy: { ...ON, logs: false }, files: (files) => ({ ...files, async create(name) {
+    const sink = await files.create(name);
+    return { ...sink, async write(bytes) { if (block) { started = true; await gate; } await sink.write(bytes); } };
+  } }) });
+  await record(s.recorder, s.clock, [marker('echo forget'), marker('echo keep')]);
+  await settled(s, 1);
+  const before = await s.names();
+  block = true;
+  const forgetting = s.recorder.forget('host-a', 'echo forget');
+  await until(() => started, 'rewrite reached gated write');
+  const queued = s.recorder.forget('host-a', 'echo keep');
+  s.recorder.lock();
+  release();
+  assert.deepEqual(await forgetting, { status: 'locked' });
+  assert.deepEqual(await queued, { status: 'locked' }, 'queued actions cannot start decrypting after a lock');
+  assert.deepEqual(await s.names(), before, 'no unindexed replacement or part remains');
+  assert.equal(s.recorder.state().historyFiles, 1);
+});
+
+test('a failed Forget write removes its stage and keeps the original history', async (t) => {
+  let fail = false;
+  const s = await setup(t, { policy: { ...ON, logs: false }, files: (files) => ({ ...files, async create(name) {
+    const sink = await files.create(name);
+    return { ...sink, async write(bytes) { if (fail) throw new Error('owned disk failure'); await sink.write(bytes); } };
+  } }) });
+  await record(s.recorder, s.clock, [marker('echo forget'), marker('echo keep')]);
+  await settled(s, 1);
+  const before = await s.names();
+  fail = true;
+  assert.deepEqual(await s.recorder.forget('host-a', 'echo forget'), { status: 'failed' });
+  assert.deepEqual(await s.names(), before);
+  assert.match((await s.exported({ kind: 'history' })).text, /echo forget/u);
+});
+
+test('two concurrent Forgets cannot restore each other\'s commands or a stale cache', async (t) => {
+  const s = await setup(t, { policy: { ...ON, logs: false } });
+  await record(s.recorder, s.clock, [marker('echo first'), marker('echo second'), marker('echo keep')]);
+  await settled(s, 1);
+  const results = await Promise.all([s.recorder.forget('host-a', 'echo first'), s.recorder.forget('host-a', 'echo second')]);
+  assert.deepEqual(results, [{ status: 'forgotten' }, { status: 'forgotten' }]);
+  assert.deepEqual(await s.recorder.suggest('host-a', ''), { status: 'ok', suggestions: ['echo keep'] });
+  assert.doesNotMatch((await s.exported({ kind: 'history' })).text, /echo (first|second)/u);
+  assert.equal(s.recorder.state().historyFiles, 1);
+});
+
+test('Delete also discards an ended observer whose header is still being created', async (t) => {
+  let release!: () => void;
+  const gate = new Promise<void>((done) => { release = done; });
+  t.after(() => release());
+  let started = false;
+  let writes = 0;
+  const s = await setup(t, { policy: { ...ON, history: false }, files: (files) => ({ ...files, async create(name) {
+    started = true;
+    await gate;
+    const sink = await files.create(name);
+    return { ...sink, async write(bytes) { writes++; await sink.write(bytes); } };
+  } }) });
+  const observer = s.recorder.observe(session())!;
+  observer.output(Buffer.from('ended output'));
+  observer.end();
+  await until(() => started, 'create reached gate after observer ended');
+  await s.recorder.delete({ kind: 'all' });
+  release();
+  await s.recorder.dispose();
+  assert.equal(s.recorder.state().logCount, 0);
+  assert.equal(writes, 0, 'no header or data is written after Delete, even when native create returns late');
+  assert.deepEqual((await s.names()).filter((name) => /^out-/u.test(name)), []);
+});
+
+test('a history cap preserves bounded history and lets the output log continue', async (t) => {
+  const s = await setup(t, { policy: { ...ON, historyMiB: 1 } });
+  const target = session();
+  const observer = s.recorder.observe(target)!;
+  await until(() => s.recorder.status(target.sessionId, 1)?.state === 'on', 'keys wrapped');
+  for (let i = 0; i < 600 && s.recorder.status(target.sessionId, 1)?.problem !== 'size-limit'; i++) {
+    s.clock.now += 1_000;
+    observer.output(marker(`echo ${i} ${'x'.repeat(1_980)}`));
+  }
+  assert.deepEqual(s.recorder.status(target.sessionId, 1), { state: 'on', output: true, commands: false, problem: 'size-limit', gaps: false });
+  observer.output(Buffer.from('output after history cap'));
+  observer.end();
+  await until(() => s.recorder.state().logs[0]?.state === 'complete', 'output finalized');
+  assert.equal(s.recorder.state().historyFiles, 1);
+  assert.ok(s.recorder.state().historyBytes <= 1024 * 1024);
+  const history = await s.exported({ kind: 'history' });
+  assert.deepEqual(history.outcome, { status: 'saved', incomplete: true, gaps: 0 });
+  assert.deepEqual(await s.recorder.forget('host-a', `echo 0 ${'x'.repeat(1_980)}`), { status: 'forgotten' });
+  assert.deepEqual((await s.exported({ kind: 'history' })).outcome, { status: 'saved', incomplete: true, gaps: 0 }, 'Forget preserves the incomplete verdict');
+  assert.equal((await s.names()).filter((name) => /^cmd-.*\.part$/u.test(name)).length, 1);
+  const log = s.recorder.state().logs[0]!;
+  assert.equal(log.state, 'complete');
+  assert.ok((await s.exported({ kind: 'log', id: log.id })).text.endsWith('output after history cap'));
+});
+
+test('a Forget invoked after Delete finds no history and cannot restore it', async (t) => {
+  const s = await setup(t, { policy: { ...ON, logs: false } });
+  await record(s.recorder, s.clock, [marker('echo forget'), marker('echo keep')]);
+  await settled(s, 1);
+  const [deleted, forgotten] = await Promise.all([s.recorder.delete({ kind: 'history' }), s.recorder.forget('host-a', 'echo forget')]);
+  assert.equal(deleted.historyFiles, 0);
+  assert.deepEqual(forgotten, { status: 'not-found' });
+  assert.deepEqual((await s.names()).filter((name) => /^cmd-/u.test(name)), []);
+});
+
+test('lock during the export destination dialog aborts before any key read or plaintext stage', async (t) => {
+  const s = await setup(t, { policy: { ...ON, history: false } });
+  await record(s.recorder, s.clock, ['owned export content']);
+  await settled(s, 1);
+  let release!: () => void;
+  const gate = new Promise<void>((done) => { release = done; });
+  t.after(() => release());
+  let choosing = false;
+  const before = s.memory.calls.open;
+  const destination = join(s.profile, 'aborted-export.txt');
+  const exporting = s.recorder.export({ kind: 'log', id: s.recorder.state().logs[0]!.id }, async () => {
+    choosing = true;
+    await gate;
+    return destination;
+  });
+  await until(() => choosing, 'save dialog is pending');
+  s.recorder.lock();
+  // Even if an owner unlocks again before the dialog returns, this export's epoch stays revoked.
+  release();
+  assert.deepEqual(await exporting, { status: 'aborted' });
+  assert.equal(s.memory.calls.open, before, 'no decryption after the dialog lock');
+  assert.ok(!(await readdir(s.profile)).includes('aborted-export.txt'));
+  assert.ok(!(await readdir(s.profile)).some((name) => name.startsWith('.ssterm-export-')));
+  assert.deepEqual(await s.recorder.export({ kind: 'history' }, async () => undefined), { status: 'cancelled' });
+});
+
+test('lock while an export stage syncs prevents publication and preserves an existing destination', async (t) => {
+  let release!: () => void;
+  const gate = new Promise<void>((done) => { release = done; });
+  t.after(() => release());
+  let syncing = false;
+  const s = await setup(t, { policy: { ...ON, history: false }, io: {
+    async open(path, flags, mode) {
+      const handle = await openNative(path, flags, mode);
+      if (String(path).includes('/.ssterm-export-')) {
+        const sync = handle.sync.bind(handle);
+        handle.sync = async () => { syncing = true; await gate; await sync(); };
+      }
+      return handle;
+    },
+  } });
+  await record(s.recorder, s.clock, ['plaintext must not replace a file after lock']);
+  await settled(s, 1);
+  const destination = join(s.profile, 'existing-export.txt');
+  await writeFile(destination, 'keep existing');
+  const exporting = s.recorder.export({ kind: 'log', id: s.recorder.state().logs[0]!.id }, destination);
+  await until(() => syncing, 'plaintext stage is waiting at fsync');
+  s.recorder.lock();
+  release();
+  assert.deepEqual(await exporting, { status: 'aborted' });
+  assert.equal(await readFile(destination, 'utf8'), 'keep existing');
+  assert.ok(!(await readdir(s.profile)).some((name) => name.startsWith('.ssterm-export-')));
+});
+
+test('a native export publication dispatched before lock reports saved once it succeeds', async (t) => {
+  let recorder: Recorder | undefined;
+  const s = await setup(t, { policy: { ...ON, history: false }, io: {
+    async rename(from, to) {
+      await renameNative(from, to);
+      if (String(from).includes('/.ssterm-export-')) recorder!.lock();
+    },
+  } });
+  recorder = s.recorder;
+  await record(s.recorder, s.clock, ['published with consent before lock']);
+  await settled(s, 1);
+  const destination = join(s.profile, 'published-export.txt');
+  assert.deepEqual(await s.recorder.export({ kind: 'log', id: s.recorder.state().logs[0]!.id }, destination), { status: 'saved', incomplete: false, gaps: 0 });
+  assert.equal(await readFile(destination, 'utf8'), 'published with consent before lock');
+});
+
+test('a corrupt history file aborts the whole export instead of reporting a successful partial history', async (t) => {
+  const s = await setup(t, { policy: { ...ON, logs: false } });
+  await record(s.recorder, s.clock, [marker('echo first'), marker('echo second')]);
+  await settled(s, 1);
+  const name = (await s.names()).find((name) => name.startsWith('cmd-'))!;
+  const path = join(s.root, name);
+  const bytes = await readFile(path);
+  bytes[bytes.length - 1]! ^= 1;
+  await writeFile(path, bytes);
+  const destination = join(s.profile, 'history.txt');
+  await writeFile(destination, 'keep existing');
+  assert.deepEqual(await s.recorder.export({ kind: 'history' }, destination), { status: 'corrupt' });
+  assert.equal(await readFile(destination, 'utf8'), 'keep existing');
+});
+
+test('quit keeps its bounded drain even when a retention sweep waits behind a Forget key read', async (t) => {
+  let policySaved = false;
+  const s = await setup(t, { policy: { ...ON, logs: false }, limits: { drainMs: 30 }, files: (files) => ({
+    ...files, async writePolicy(policy) { const saved = await files.writePolicy(policy); policySaved = true; return saved; },
+  }) });
+  await record(s.recorder, s.clock, [marker('echo forget'), marker('echo keep')]);
+  await settled(s, 1);
+  let release!: () => void;
+  s.memory.control.gate = new Promise<void>((done) => { release = done; });
+  t.after(() => release());
+  const before = s.memory.calls.seal;
+  const forgetting = s.recorder.forget('host-a', 'echo forget');
+  await until(() => s.memory.calls.seal > before, 'Forget waits on secure storage');
+  policySaved = false;
+  const configuring = s.recorder.configure({ ...ON, logs: false });
+  await until(() => policySaved, 'policy saved and retention sweep queued');
+  const disposing = s.recorder.dispose();
+  const bounded = await Promise.race([disposing.then(() => true), delay(150).then(() => false)]);
+  release();
+  await Promise.all([forgetting, configuring, disposing]);
+  assert.equal(bounded, true, 'quit must not wait indefinitely behind secure storage');
 });

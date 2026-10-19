@@ -46,10 +46,11 @@ export interface RecordingFiles {
   writePolicy(value: unknown): Promise<boolean>;
   /**
    * Streams plaintext into an exclusive 0600 stage next to `destination` and renames it over the destination only
-   * when `produce` returns true. The stage is removed on abort or failure. `destination` comes from a native save
+   * when `produce` returns true and `stillValid` allows dispatch of the native rename after all staging awaits.
+   * The stage is removed on abort or failure. `destination` comes from a native save
    * dialog, which already confirmed any replacement.
    */
-  exportTo(destination: string, produce: (write: (bytes: Uint8Array) => Promise<void>) => Promise<boolean>): Promise<'saved' | 'aborted' | 'failed'>;
+  exportTo(destination: string, produce: (write: (bytes: Uint8Array) => Promise<void>) => Promise<boolean>, stillValid: () => boolean): Promise<'saved' | 'aborted' | 'failed'>;
 }
 const same = (a: FileIdentity, b: FileIdentity) => a.dev === b.dev && a.ino === b.ino;
 const isPrivate = (s: Stats) => (s.mode & 0o077) === 0 && (typeof process.getuid !== 'function' || s.uid === process.getuid());
@@ -178,7 +179,7 @@ export function createRecordingFiles(options: { root: string; io?: Partial<typeo
         return await policy.write(Buffer.from(JSON.stringify(value), 'utf8')) === 'confirmed';
       } catch { return false; }
     },
-    async exportTo(destination, produce) {
+    async exportTo(destination, produce, stillValid) {
       if (!isAbsolute(destination) || destination.includes('\0') || Buffer.byteLength(destination) > 4096) return 'failed';
       const stage = join(dirname(destination), `.ssterm-export-${randomUUID()}.part`);
       let handle: native.FileHandle | undefined;
@@ -202,6 +203,7 @@ export function createRecordingFiles(options: { root: string; io?: Partial<typeo
         handle = undefined;
         const current = await fs.lstat(stage);
         if (!same(current, staged)) return outcome;
+        if (!stillValid()) { outcome = 'aborted'; return outcome; }
         await fs.rename(stage, destination);
         staged = undefined;
         outcome = 'saved';

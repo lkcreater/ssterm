@@ -71,7 +71,7 @@ export type DeleteRecordingTarget = { kind: 'log'; id: string } | { kind: 'logs'
 export type ExportRecordingTarget = { kind: 'log'; id: string } | { kind: 'history' };
 export type ExportOutcome =
   | { status: 'saved'; incomplete: boolean; gaps: number }
-  | { status: 'not-found' | 'key-unavailable' | 'corrupt' | 'failed' | 'aborted' };
+  | { status: 'not-found' | 'key-unavailable' | 'corrupt' | 'failed' | 'aborted' | 'cancelled' };
 export type SuggestOutcome = { status: 'ok'; suggestions: string[] } | { status: 'off' | 'key-unavailable' | 'locked' };
 export type ForgetOutcome = { status: 'forgotten' | 'not-found' | 'off' | 'key-unavailable' | 'locked' | 'failed' };
 export type ConfigureOutcome =
