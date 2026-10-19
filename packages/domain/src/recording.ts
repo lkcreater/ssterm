@@ -91,7 +91,7 @@ export interface RecordingKeys {
     Promise<{ ok: true; vaultId: string; envelopes: Uint8Array[] } | { ok: false; reason: RecordingKeyProblem }>;
   /** Another vault or a failed authentication yields `undefined` for that item; the caller zero-fills the keys. */
   open(items: readonly { recordingId: string; vaultId: string; envelope: Uint8Array }[]):
-    Promise<{ ok: true; keys: (Buffer | undefined)[] } | { ok: false; reason: RecordingKeyProblem }>;
+    Promise<{ ok: true; keys: (Uint8Array | undefined)[] } | { ok: false; reason: RecordingKeyProblem }>;
 }
 
 /** Decoded UTF-8 bytes of one recordable command line. */

@@ -601,3 +601,34 @@ test('transient holder copies, expires, overwrites on dispose and purges every l
   assert.equal(registry.size, 0);
   for (const ttl of [0, -1, 1.5, 5 * 60_000 + 1]) assert.throws(() => registry.hold(bytes('x'), ttl));
 });
+test('recording keys: prepare creates the vault key once, seal and open batch to one provider read, foreign or tampered items open to undefined', async t => {
+  const s = await store(t);
+  assert.deepEqual(await s.service.recording.seal([]), { ok: false, reason: 'uninitialized' });
+  assert.deepEqual(await s.service.recording.prepare(), { ok: true });
+  const ref = snapshot(s.repo).vault.contentKeyRef;
+  assert.ok(ref);
+  assert.deepEqual(await s.service.recording.prepare(), { ok: true });
+  assert.equal(snapshot(s.repo).vault.contentKeyRef, ref, 'an existing key is never replaced');
+  const items = [randomUUID(), randomUUID()].map(recordingId => ({ recordingId, key: randomBytes(32) }));
+  const reads = s.provider.count('read');
+  const sealed = await s.service.recording.seal(items);
+  assert.equal(s.provider.count('read'), reads + 1, 'one Keychain read for the whole batch');
+  assert.ok(sealed.ok);
+  const vaultId = sealed.vaultId;
+  const tampered = Uint8Array.from(sealed.envelopes[1]!);
+  tampered[tampered.length - 1]! ^= 1;
+  const opened = await s.service.recording.open([
+    { recordingId: items[0]!.recordingId, vaultId, envelope: sealed.envelopes[0]! },
+    { recordingId: items[1]!.recordingId, vaultId, envelope: tampered },
+    { recordingId: items[0]!.recordingId, vaultId: randomUUID(), envelope: sealed.envelopes[0]! },
+    { recordingId: items[1]!.recordingId, vaultId, envelope: sealed.envelopes[0]! },
+  ]);
+  assert.equal(s.provider.count('read'), reads + 2);
+  assert.ok(opened.ok);
+  assert.deepEqual(Buffer.from(opened.keys[0]!), items[0]!.key);
+  assert.deepEqual(opened.keys.slice(1), [undefined, undefined, undefined]);
+  s.provider.inject({ op: 'read', status: 'locked' });
+  assert.deepEqual(await s.service.recording.open([]), { ok: false, reason: 'locked' });
+  s.provider.items.clear();
+  assert.deepEqual(await s.service.recording.seal(items), { ok: false, reason: 'missing' });
+});

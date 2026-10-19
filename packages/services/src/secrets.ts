@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { CONTENT_KEY_BYTES, ENVELOPE_VERSION, MAX_BODY, open, PROTECTION_FORMAT, ProtectionFault, seal } from '@ssterm/adapters';
 import type { Id, MetadataChange, MetadataRepository, MetadataSnapshot, SecretItem, SecretKind, SecretOperation, SecretOwnerType, SecretProvider, StorageErrorCode, StoreResult } from '@ssterm/domain';
+import type { RecordingKeys } from '@ssterm/domain/recording';
 import { DEFAULT_TRANSIENT_MS, type TransientSecret, type TransientSecrets } from './transient.ts';
 export const MAX_SECRET_BYTES = 64 * 1024;
 export type PendingReason = 'locked' | 'denied' | 'unavailable' | 'unknown' | 'needs-input' | 'storage';
@@ -391,6 +392,52 @@ export class SecretService {
       return summary;
     });
   }
+  /**
+   * SST-034: per-recording data keys wrapped by the vault content key. One provider read per call however many
+   * items it carries; the vault key is zeroed before the call settles and never leaves this service.
+   */
+  readonly recording: RecordingKeys = {
+    prepare: async () => {
+      const result = await this.initializeContentKey();
+      if (result.status === 'ready' || result.status === 'published') return { ok: true };
+      if (result.status === 'failed') return { ok: false, reason: result.code === 'constraint' ? 'constraint' : 'unavailable' };
+      if (result.status === 'pending' && (result.reason === 'locked' || result.reason === 'denied')) return { ok: false, reason: result.reason };
+      return { ok: false, reason: 'unavailable' };
+    },
+    seal: (items) => this.serial(async () => {
+      const current = this.options.repository.snapshot();
+      if (!current.ok) return { ok: false as const, reason: 'unavailable' as const };
+      const s = current.value;
+      const loaded = await this.contentKey(s);
+      if ('reason' in loaded) return { ok: false as const, reason: loaded.reason };
+      try {
+        const envelopes = items.map((item) => seal(loaded.key, { vaultId: s.vault.id, recordingId: item.recordingId, field: 'recording-key' }, item.key));
+        return { ok: true as const, vaultId: s.vault.id, envelopes };
+      } catch {
+        return { ok: false as const, reason: 'error' as const };
+      } finally { loaded.key.fill(0); }
+    }),
+    open: (items) => this.serial(async () => {
+      const current = this.options.repository.snapshot();
+      if (!current.ok) return { ok: false as const, reason: 'unavailable' as const };
+      const s = current.value;
+      const loaded = await this.contentKey(s);
+      if ('reason' in loaded) return { ok: false as const, reason: loaded.reason };
+      try {
+        const keys = items.map((item) => {
+          if (item.vaultId !== s.vault.id) return undefined;
+          try {
+            return open(loaded.key, { vaultId: s.vault.id, recordingId: item.recordingId, field: 'recording-key' },
+              { bodyEnvelope: item.envelope, envelopeVersion: ENVELOPE_VERSION, protectionFormat: PROTECTION_FORMAT });
+          } catch (error) {
+            if (error instanceof ProtectionFault) return undefined;
+            throw error;
+          }
+        });
+        return { ok: true as const, keys };
+      } finally { loaded.key.fill(0); }
+    }),
+  };
   /** Creates the vault content key only for an uninitialized vault without ciphertext; a published key is never replaced. */
   initializeContentKey(): Promise<SecretResult | {
     status: 'ready';

@@ -90,7 +90,7 @@ test('domain text rules, prompt marks and the policy guard', () => {
 });
 
 test('recording modules make no network imports', () => {
-  for (const path of ['../../packages/domain/src/recording.ts', '../../packages/services/src/command-scanner.ts']) {
+  for (const path of ['../../packages/domain/src/recording.ts', '../../packages/services/src/command-scanner.ts', '../../packages/services/src/recorder.ts', '../../packages/adapters/src/recording-files.ts']) {
     const source = readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
     assert.doesNotMatch(source, /from ['"](?:node:)?(?:http|https|net|dgram|tls|dns)['"]|\bfetch\(/u, path);
   }
