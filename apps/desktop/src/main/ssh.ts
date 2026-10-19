@@ -25,6 +25,8 @@ export function createSavedHostSessions(options: {
   terminal?: TerminalBounds;
   /** Main-only dead-peer detection (default 15 s × 3). */
   keepalive?: SshKeepalive;
+  /** SST-034 capture tap (the recorder's `observe`). */
+  observeTerminal?: Parameters<typeof createDesktopSessions>[0]["observeTerminal"];
 }) {
   const terminal = terminalBounds(options.terminal);
   if (terminal.inputBacklog < MAX_TERMINAL_WRITE) throw new RangeError("invalid-terminal-bounds");
@@ -34,6 +36,7 @@ export function createSavedHostSessions(options: {
     transient: options.transient,
     power: options.power,
     limits: options.limits,
+    observeTerminal: options.observeTerminal,
     localAdapter: createLocalPtyAdapter(),
     resolve: (hostId) => {
       const snapshot = options.repository.snapshot();
@@ -77,3 +80,7 @@ export { createRemoteEditController, registerRemoteEditHandlers, remoteEditChann
 export { createRemoteEditService } from "@ssterm/services";
 export { createRemoteEditFiles } from "@ssterm/adapters/remote-edit-files";
 export { createRemoteEditEditor } from "@ssterm/adapters/remote-edit-editor";
+
+export { createRecorder } from "@ssterm/services";
+export { createRecordingFiles } from "@ssterm/adapters/recording-files";
+export { registerRecordingHandlers, recordingChannels } from "./recordings";

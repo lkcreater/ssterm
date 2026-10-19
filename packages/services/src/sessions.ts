@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   HOST_KEY_ALGORITHMS,
+  type ObservedTerminal,
   type ResolvedHostConfig,
   type StoreResult,
   type HostKeyAlgorithm,
@@ -8,6 +9,7 @@ import {
   type SftpSession,
   type TerminalChannel,
   type TerminalEnd,
+  type TerminalObserver,
   type TerminalStream,
   type TunnelChannel,
   type TunnelSession,
@@ -375,6 +377,21 @@ function promptSpec(input: SessionPromptSpec): SessionPromptSpec | undefined {
   };
 }
 
+/** The view's single consumer first, then the observer; a throwing observer never breaks the stream. */
+function teeTerminal(channel: TerminalChannel, observer: TerminalObserver): TerminalChannel {
+  return {
+    open: (output) => channel.open((chunk, sequence) => {
+      output(chunk, sequence);
+      try { observer.output(chunk); } catch { /* Capture is best effort; the view is not. */ }
+    }),
+    ack: (bytes) => channel.ack(bytes),
+    write: (bytes) => channel.write(bytes),
+    resize: (columns, rows) => channel.resize(columns, rows),
+    dispose: () => channel.dispose(),
+    get drained() { return channel.drained; },
+  };
+}
+
 /** Main-only lifecycle and ownership. It exposes metadata projections, never resolved config or credential bytes. */
 export class SessionRegistry {
   readonly #records = new Map<string, Generation>();
@@ -401,6 +418,12 @@ export class SessionRegistry {
       transient: TransientSecrets;
       limits?: Partial<SessionLimits>;
       scheduler?: SessionScheduler;
+      /**
+       * SST-034: called once per terminal generation at Ready (never for SFTP or tunnels). The observer sees exactly
+       * the frames handed to the view's consumer, and its `end` runs exactly once from a registry-owned resource,
+       * which every teardown path disposes: remote end, failure, close, closeOwner, lock and dispose.
+       */
+      observeTerminal?(session: ObservedTerminal): TerminalObserver | undefined;
     },
   ) {
     this.#limits = {
@@ -784,7 +807,9 @@ export class SessionRegistry {
               if (!this.#live(current) || current.state !== "Connecting") { this.#discard(current, channel); return false; }
               if (!this.#own(current, channel)) return false;
               if (typeof channel.open !== "function") { this.#fail(current, "invalid-request"); return false; }
-              current.channel = channel;
+              const observed = this.#observe(current, channel);
+              if (!observed) return false;
+              current.channel = observed;
               current.state = "Ready";
               this.#scheduler.clear(current.connectTimer);
               delete current.connectTimer;
@@ -862,6 +887,11 @@ export class SessionRegistry {
               this.#fail(current, "invalid-request");
               return false;
             }
+            if (kind === "terminal") {
+              const observed = this.#observe(current, channel as TerminalChannel);
+              if (!observed) return false;
+              channel = observed;
+            }
             current.channel = channel;
             current.state = "Ready";
             this.#scheduler.clear(current.connectTimer);
@@ -933,6 +963,32 @@ export class SessionRegistry {
     void promise.catch(() => {});
     this.#emit(current);
     return promise;
+  }
+  /** The view's channel, teed to an observer when one is given; undefined when the generation ended meanwhile. */
+  #observe(current: Generation, channel: TerminalChannel): TerminalChannel | undefined {
+    let observer: TerminalObserver | undefined;
+    try { observer = this.options.observeTerminal?.(this.#observed(current)); } catch { observer = undefined; }
+    if (!observer) return channel;
+    const watched = observer;
+    let ended = false;
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      try { watched.end(); } catch { /* An observer never interrupts teardown. */ }
+    };
+    // Owned after the channel, so teardown disposes the channel (no more output) before the observer ends.
+    if (!this.#own(current, { dispose: end })) { end(); return undefined; }
+    return teeTerminal(channel, watched);
+  }
+  #observed(current: Generation): ObservedTerminal {
+    const { target, local } = current;
+    const host = target && (target.address.includes(":") ? `[${target.address}]` : target.address);
+    return {
+      ownerId: current.ownerId, sessionId: current.id, generation: current.generation, hostId: current.hostId, local: !!local,
+      label: local ? "This Mac" : target?.label ?? "Unknown host",
+      endpoint: local ? local.shell : target ? `${target.username ? `${target.username}@` : ""}${host}:${target.port}` : null,
+      environment: local ? null : target?.environment ?? null,
+    };
   }
   #own(current: Generation, resource: SessionResource): boolean {
     if (

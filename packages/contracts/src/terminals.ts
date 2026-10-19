@@ -1,4 +1,5 @@
 import { exactObject, isCounter, isOwner, type Owner } from "./index.ts";
+import { isTerminalRecording, type TerminalRecording } from "./recording.ts";
 
 /** One maximum paste (256 KiB) plus its 12 bracket bytes fits one write, so it is accepted or refused whole. */
 export const MAX_TERMINAL_WRITE = 294_912;
@@ -37,6 +38,8 @@ export interface TerminalSession {
   end: TerminalEnd | null;
   /** Why this generation failed or was closed by ssterm (e.g. `locked`); null for a plain local close. */
   error: TerminalErrorCode | null;
+  /** SST-034: present only while this generation is captured (or capture was wanted and failed closed). */
+  recording?: TerminalRecording;
 }
 export interface TerminalState { owner: Owner; sequence: number; sessions: TerminalSession[] }
 export interface TerminalStateRequest { owner: Owner }
@@ -70,8 +73,11 @@ function isTerminalSessionTarget(v: unknown): v is NonNullable<TerminalSession["
 }
 export function isTerminalSession(v: unknown): v is TerminalSession {
   const fields = ["sessionId", "generation", "hostId", "phase", "target", "end", "error"];
-  if (!(exactObject(v, fields) || exactObject(v, [...fields, "local"]))) return false;
+  if (v === null || typeof v !== "object") return false;
   const local = Object.hasOwn(v, "local");
+  const recording = Object.hasOwn(v, "recording");
+  if (!exactObject(v, [...fields, ...(local ? ["local"] : []), ...(recording ? ["recording"] : [])])) return false;
+  if (recording && !isTerminalRecording(v.recording)) return false;
   return identifier(v.sessionId) && positive(v.generation) &&
     (local ? v.hostId === null && v.target === null && exactObject(v.local, ["shell", "platform"]) &&
       text(v.local.shell, 256) && v.local.shell.startsWith("/") && v.local.platform === "darwin" : identifier(v.hostId)) &&

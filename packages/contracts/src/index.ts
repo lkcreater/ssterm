@@ -35,6 +35,12 @@ import type { TerminalSettings, SettingsRequest, UpdateSettingsRequest } from ".
 export * from "./settings.ts";
 import type { WorkspaceTemplatesRequest, WorkspaceTemplatesResponse, WorkspaceTemplateView, SaveWorkspaceTemplateRequest, DeleteWorkspaceTemplateRequest, DeleteWorkspaceTemplateResponse } from './workspace-templates.ts';
 export * from './workspace-templates.ts';
+import type {
+  RecordingState, RecordingStateRequest, ConfigureRecordingRequest, ConfigureRecordingResponse, DeleteRecordingsRequest,
+  ExportRecordingRequest, ExportRecordingResponse, SuggestCommandsRequest, SuggestCommandsResponse, ForgetCommandRequest,
+  ForgetCommandResponse,
+} from './recording.ts';
+export * from './recording.ts';
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
   | "invalid-request"
@@ -162,6 +168,12 @@ export interface DesktopAPI {
   stopTunnel(request: TunnelRuleRequest): Promise<Result<StopTunnelResponse>>;
   settings(request: SettingsRequest): Promise<Result<TerminalSettings>>;
   updateSettings(request: UpdateSettingsRequest): Promise<Result<TerminalSettings>>;
+  recordingState(request: RecordingStateRequest): Promise<Result<RecordingState>>;
+  configureRecording(request: ConfigureRecordingRequest): Promise<Result<ConfigureRecordingResponse>>;
+  deleteRecordings(request: DeleteRecordingsRequest): Promise<Result<RecordingState>>;
+  exportRecording(request: ExportRecordingRequest): Promise<Result<ExportRecordingResponse>>;
+  suggestCommands(request: SuggestCommandsRequest): Promise<Result<SuggestCommandsResponse>>;
+  forgetCommand(request: ForgetCommandRequest): Promise<Result<ForgetCommandResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -251,6 +263,12 @@ export const channels = Object.freeze({
   stopTunnel: "ssterm:stop-tunnel",
   settings: "ssterm:settings",
   updateSettings: "ssterm:update-settings",
+  recordingState: "ssterm:recording-state",
+  configureRecording: "ssterm:configure-recording",
+  deleteRecordings: "ssterm:delete-recordings",
+  exportRecording: "ssterm:export-recording",
+  suggestCommands: "ssterm:suggest-commands",
+  forgetCommand: "ssterm:forget-command",
 });
 
 const messages: Record<ErrorCode, string> = {

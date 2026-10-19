@@ -7,7 +7,7 @@ import {
   type TerminalTarget, type CloseTerminalRequest, type TerminalActionResponse, type WriteTerminalRequest, type ResizeTerminalRequest,
   type AckTerminalRequest, type TerminalErrorCode, type ConnectHostRequest, type ConnectHostResponse,
 } from "@ssterm/contracts";
-import type { SessionErrorCode, SessionRegistry, SessionResult, SessionSnapshot, SessionState } from "@ssterm/services";
+import type { Recorder, SessionErrorCode, SessionRegistry, SessionResult, SessionSnapshot, SessionState } from "@ssterm/services";
 import type { TerminalStream } from "@ssterm/domain";
 import type { WindowBoundary } from "./boundary";
 import { sessionOwnerId } from "./session-runtime";
@@ -179,6 +179,11 @@ export function createKindSessions<V, Extra = never>(options: {
       }, true);
     },
     revokeOwner,
+    /** Publishes the owner's state again when something outside the registry changed its projection. */
+    republish(ownerId: string) {
+      const current = disposed ? undefined : registrations.get(ownerId);
+      if (current) publish(current);
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -192,10 +197,17 @@ export function createTerminalController(options: {
   registry: LifecycleRegistry & Pick<SessionRegistry, "terminal" | "connectLocal">;
   checkAccess?: () => Promise<boolean>;
   checkLocalAccess?: () => Promise<boolean>;
+  /** SST-034: projects each generation's recording badge and republishes when it changes. */
+  recording?: Pick<Recorder, "status" | "onChange">;
 }) {
+  const view = (snapshot: SessionSnapshot): TerminalSession => {
+    const recording = options.recording?.status(snapshot.id, snapshot.generation);
+    return recording ? { ...project(snapshot), recording } : project(snapshot);
+  };
   const sessions = createKindSessions<TerminalSession, TerminalOutput>({ kind: "terminal", registry: options.registry, checkAccess: options.checkAccess,
     checkLocalAccess: options.checkLocalAccess,
-    stateChannel: channels.terminalStateChanged, view: project, isState: isTerminalState });
+    stateChannel: channels.terminalStateChanged, view, isState: isTerminalState });
+  const unsubscribe = options.recording?.onChange((ownerId) => sessions.republish(ownerId));
   type Live = NonNullable<ReturnType<typeof sessions.registration>>;
   /** Runs `use` only on the exact owner/session/generation stream while it is live and Ready. */
   const withStream = (request: TerminalTarget, use: (stream: TerminalStream, registration: Live) => Result<TerminalActionResponse>): Result<TerminalActionResponse> => {
@@ -275,7 +287,10 @@ export function createTerminalController(options: {
     },
     dismissTerminal: sessions.dismiss,
     revokeOwner: sessions.revokeOwner,
-    dispose: sessions.dispose,
+    dispose() {
+      unsubscribe?.();
+      sessions.dispose();
+    },
   };
 }
 export type TerminalController = ReturnType<typeof createTerminalController>;

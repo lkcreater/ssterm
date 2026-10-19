@@ -16,6 +16,11 @@ import {
   isSftpState, isFilePathRequest, isResolvePathRequest, isListingOutcome, isAttributesOutcome, isResolvedPathOutcome,
   type SftpState, type FilePathRequest, type FileSource,
   isSettingsRequest, isUpdateSettingsRequest, isTerminalSettings, type SettingsRequest, type UpdateSettingsRequest,
+  isRecordingStateRequest, isRecordingState, isConfigureRecordingRequest, isConfigureRecordingResponse, isDeleteRecordingsRequest,
+  isExportRecordingRequest, isExportRecordingResponse, isSuggestCommandsRequest, isSuggestCommandsResponse, isForgetCommandRequest,
+  isForgetCommandResponse,
+  type RecordingStateRequest, type ConfigureRecordingRequest, type DeleteRecordingsRequest, type ExportRecordingRequest,
+  type SuggestCommandsRequest, type ForgetCommandRequest,
   isCatalogState, isCatalogStateRequest, isPrepareCatalogChangeRequest, isCatalogPrepareResponse,
   isApplyCatalogChangeRequest, isCatalogApplyResponse, isConnectHostRequest, isConnectHostResponse,
   type CatalogState, type CatalogStateRequest, type PrepareCatalogChangeRequest, type ApplyCatalogChangeRequest,
@@ -681,6 +686,32 @@ export function createDesktopBridge(transport: BridgeTransport): {
     updateSettings(request: UpdateSettingsRequest) {
       if (!isUpdateSettingsRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.updateSettings, [{ owner: { ...request.owner }, changes: { ...request.changes } }], isTerminalSettings);
+    },
+    recordingState(request: RecordingStateRequest) {
+      if (!isRecordingStateRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.recordingState, [{ owner: { ...request.owner } }], isRecordingState);
+    },
+    configureRecording(request: ConfigureRecordingRequest) {
+      if (!isConfigureRecordingRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.configureRecording, [{ owner: { ...request.owner }, policy: { ...request.policy } }], isConfigureRecordingResponse);
+    },
+    deleteRecordings(request: DeleteRecordingsRequest) {
+      if (!isDeleteRecordingsRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.deleteRecordings, [{ owner: { ...request.owner }, target: { ...request.target } }], isRecordingState);
+    },
+    exportRecording(request: ExportRecordingRequest) {
+      if (!isExportRecordingRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.exportRecording, [{ owner: { ...request.owner }, target: { ...request.target } }], isExportRecordingResponse);
+    },
+    suggestCommands(request: SuggestCommandsRequest) {
+      if (!isSuggestCommandsRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.suggestCommands, [{ owner: { ...request.owner }, sessionId: request.sessionId, generation: request.generation,
+        prefix: request.prefix }], isSuggestCommandsResponse);
+    },
+    forgetCommand(request: ForgetCommandRequest) {
+      if (!isForgetCommandRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.forgetCommand, [{ owner: { ...request.owner }, sessionId: request.sessionId, generation: request.generation,
+        text: request.text }], isForgetCommandResponse);
     },
     openLink(request: OpenLinkRequest) {
       if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));

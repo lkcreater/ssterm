@@ -35,7 +35,9 @@ import { createSftpController, registerSftpHandlers, type SftpController } from 
 import { createLocalFiles } from "@ssterm/adapters/local-files";
 import { createRemoteEditFiles } from "@ssterm/adapters/remote-edit-files";
 import { createRemoteEditEditor } from "@ssterm/adapters/remote-edit-editor";
-import { createRemoteEditService } from "@ssterm/services";
+import { createRemoteEditService, createRecorder, type Recorder } from "@ssterm/services";
+import { createRecordingFiles } from "@ssterm/adapters/recording-files";
+import { registerRecordingHandlers } from "./recordings";
 import { createRemoteEditController, registerRemoteEditHandlers, withRemoteEditPrompt, type RemoteEditController } from "./remote-edit";
 import { createLocalTransferFiles } from "@ssterm/adapters/local-transfers";
 import { createTransferController, registerTransferHandlers, withTransferPrompt, type TransferController } from "./transfers";
@@ -119,6 +121,9 @@ let removeAppLockHandlers: (() => void) | undefined;
 let tunnelControls: TunnelController | undefined;
 let removeTunnelHandlers: (() => void) | undefined;
 let removeSnippetHandlers: (() => void) | undefined;
+// SST-034 session logs and command history (opt-in).
+let recorder: Recorder | undefined;
+let removeRecordingHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
     case "corrupt":
@@ -435,12 +440,22 @@ if (ownsInstance) {
       closeStorage();
       return;
     }
+    // SST-034: opt-in capture in its own private directory, never in catalog.sqlite. Without storage or a secure store
+    // the same recorder fails closed and visibly (Not recording) and Delete still works.
+    const capture = createRecorder({
+      files: createRecordingFiles({ root: join(app.getPath("userData"), "recordings") }),
+      keys: () => secrets?.recording,
+    });
+    recorder = capture;
+    // Bounded scan and retention; no Keychain access. A failure leaves capture off.
+    await capture.ready;
     if (repository) {
       const savedHostSessions = createSavedHostSessions({
         repository,
         provider: secretProvider,
         transient: transientSecrets,
         power: powerMonitor,
+        observeTerminal: capture.observe,
       });
       desktopSessions = savedHostSessions;
       knownHostPolicy = savedHostSessions.policy;
@@ -493,8 +508,11 @@ if (ownsInstance) {
           ok: false,
           error: { code: "unavailable", message: "Configuration is unavailable." },
         }),
+        observeTerminal: capture.observe,
       });
     }
+    // After the registry ended every observer: drop decrypted history and abort plaintext exports.
+    desktopSessions.onLock(() => recorder?.lock());
     credentials = createCredentialsController({ registry: desktopSessions.registry });
     removeCredentialHandlers = registerCredentialHandlers({
       ipc: ipcMain,
@@ -507,11 +525,30 @@ if (ownsInstance) {
       // App-lock authorization is enforced by WindowBoundary for every IPC. A local shell
       // needs no saved catalog configuration or secure-store capability after screen unlock.
       checkLocalAccess: async () => true,
+      recording: capture,
     });
     removeTerminalHandlers = registerTerminalHandlers({
       ipc: ipcMain,
       boundary,
       controller: () => terminals,
+    });
+    const recordingRegistry = desktopSessions.registry;
+    removeRecordingHandlers = registerRecordingHandlers({
+      ipc: ipcMain,
+      boundary,
+      recorder: () => recorder,
+      registry: () => recordingRegistry,
+      // The first main-owned save dialog; `dialog` is read at call time so runtime tests can stub it.
+      chooseDestination: async (owner, suggestedName) => {
+        const window = BrowserWindow.fromId(owner.windowId);
+        if (!window || window.isDestroyed()) return undefined;
+        const chosen = await dialog.showSaveDialog(window, {
+          defaultPath: join(app.getPath("downloads"), suggestedName),
+          message: "This export is plaintext. Once saved it leaves ssterm's control: retention and Delete no longer apply to it.",
+          properties: ["createDirectory", "showOverwriteConfirmation"],
+        });
+        return chosen.canceled || !chosen.filePath ? undefined : chosen.filePath;
+      },
     });
     sftp = createSftpController({
       registry: desktopSessions.registry,
@@ -687,6 +724,7 @@ app.on("before-quit", (event) => {
   removeCatalogHandlers?.();
   removeIdentityHandlers?.();
   removeSnippetHandlers?.();
+  removeRecordingHandlers?.();
   removeTunnelHandlers?.();
   appLock?.dispose();
   removeAppLockHandlers?.();
@@ -699,7 +737,9 @@ app.on("before-quit", (event) => {
     Promise.resolve(tunnels?.dispose()).catch(() => undefined),
     new Promise<void>((done) => setTimeout(done, 2_000)),
   ]);
-  void Promise.all([tunnelsClosed, remoteEditsClosed.then(() => desktopSessions?.shutdown())]).finally(() => {
+  // Session disposal ends every capture observer first; the recorder then drains its queues (bounded) and zeroes keys.
+  const sessionsClosed = remoteEditsClosed.then(() => desktopSessions?.shutdown()).then(() => recorder?.dispose()).catch(() => undefined);
+  void Promise.all([tunnelsClosed, sessionsClosed]).finally(() => {
     closeStorage();
     shutdownComplete = true;
     app.quit();

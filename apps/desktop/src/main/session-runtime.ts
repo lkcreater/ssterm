@@ -21,12 +21,15 @@ export function createDesktopSessions(options: {
   transient: TransientSecrets;
   power: SessionPowerEvents;
   limits?: RegistryOptions["limits"];
+  /** SST-034 capture tap (the recorder's `observe`). */
+  observeTerminal?: RegistryOptions["observeTerminal"];
 }) {
   const registry = new SessionRegistry({
     resolve: options.resolve,
     transient: options.transient,
     limits: options.limits,
     localAdapter: options.localAdapter,
+    observeTerminal: options.observeTerminal,
     // Storage/provider failures and callers without an adapter remain fail closed.
     adapter: options.adapter ?? {
       start: (context) => context.failed("subsystem-unavailable"),
