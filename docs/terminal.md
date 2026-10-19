@@ -35,3 +35,7 @@ There is no renderer connect command; E2E starts sessions from main through the 
 ## Local terminal — SST-029
 
 The explicit [local terminal](local-terminal.md) uses the same framed byte stream and owner/generation fences through a main-only node-pty adapter. It identifies LOCAL / This Mac without a saved host or SSH endpoint. Native flow/exit/job cleanup and platform support are separate gates from SSH; see [ADR 0005](adr/0005-local-terminal-platforms.md).
+
+## Recording tee — SST-034
+
+The stream still has one consumer. When [recording](recording.md) is on, the registry's `observeTerminal` option wraps a terminal generation's channel at Ready so its `open` forwards each frame to the view's consumer first and then to a main-only observer; the observer's `end` is a registry-owned resource, so it runs exactly once on every teardown path, after the channel is disposed. Output is the only source: input bytes are still wiped after each write and are never recorded. The badge rides `TerminalSession.recording` on the existing terminal state stream. A throwing observer cannot affect the stream; the slow-disk policy is in [terminal flow](terminal-flow.md#recording-on--sst-034).

@@ -71,7 +71,7 @@ flowchart TD
 | SnippetService | CRUD/Paste/Run ไป active target | target lookup, line ending และ dispatch semantics |
 | MetadataRepository | transactional writes/query/migrate | storage driver, indexes/versioning และ recovery |
 
-ไม่มี generic IPC function ที่รับ arbitrary module/method/path renderer ได้เฉพาะ typed commands และ sanitized events; secrets ไม่ใส่ใน serialized renderer state, terminal history หรือ logs Secret input ที่ผู้ใช้กรอกใน UI เป็น transient ส่งผ่าน restricted secret command แล้วล้าง state ไม่อ้างว่าทำให้ไม่มี plaintext ใน memory ทุกช่วง
+ไม่มี generic IPC function ที่รับ arbitrary module/method/path renderer ได้เฉพาะ typed commands และ sanitized events; secrets ไม่ใส่ใน serialized renderer state, terminal history หรือ logs (SST-034: typed input ไม่ถูกบันทึกเลย; session logs แบบ opt-in เข้ารหัสและมีเฉพาะสิ่งที่ terminal แสดง — ดู [recording](../recording.md)) Secret input ที่ผู้ใช้กรอกใน UI เป็น transient ส่งผ่าน restricted secret command แล้วล้าง state ไม่อ้างว่าทำให้ไม่มี plaintext ใน memory ทุกช่วง
 
 ## Domain model ที่เสนอ
 
@@ -148,7 +148,7 @@ Command/event design ที่ต้องปิดรายละเอีย�
 
 ## Later boundaries
 
-Cloud/team ทำเป็น service protocol ใหม่แยก local vault; encrypted envelopes, key lifecycle, migration, conflict/tombstones, device identity และ revoke เป็น gate ก่อน implementation ของ sync Logs/AI/broadcast ต้องมี target/retention semantics ต่างหาก Local PTY, Mosh/FIDO, proxy/chaining, remote/dynamic tunnels และ cross-platform เป็น optional adapters/capabilities ไม่ให้กลายเป็น dependency ของ SSH MVP
+Cloud/team ทำเป็น service protocol ใหม่แยก local vault; encrypted envelopes, key lifecycle, migration, conflict/tombstones, device identity และ revoke เป็น gate ก่อน implementation ของ sync Logs/AI/broadcast ต้องมี target/retention semantics ต่างหาก (logs/history: [recording](../recording.md); AI เป็น privacy spec เท่านั้น: [ai-scope](../ai-scope.md)) Local PTY, Mosh/FIDO, proxy/chaining, remote/dynamic tunnels และ cross-platform เป็น optional adapters/capabilities ไม่ให้กลายเป็น dependency ของ SSH MVP
 
 SST-007 implements the HostCatalog/config resolver contracts in [domain/services catalog Modules](../catalog.md), including immutable config capture, explicit search scope and revision-fenced destructive previews. No catalog renderer command is added.
 

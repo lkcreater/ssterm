@@ -4,7 +4,7 @@ SST-033/T041 is delivered (2026-10-18): saved workspace configuration and explic
 
 ## Templates
 
-Open **Workspace tools** from the titlebar, including when no terminals are open. **Save workspace template** stores the current tabs, split directions/ratios, active pane/tab and Focus mode, with saved-host references. An optional saved snippet is a reference to its existing encrypted body. Templates contain no terminal history, command text, credentials, or live session IDs.
+Open **Workspace tools** from the titlebar, including when no terminals are open. **Save workspace template** stores the current tabs, split directions/ratios, active pane/tab and Focus mode, with saved-host references. An optional saved snippet is a reference to its existing encrypted body. Templates contain no terminal history, command text, credentials, or live session IDs (opt-in [recordings](recording.md) live only in their own encrypted folder).
 
 Restoring appends fresh SSH sessions using the referenced hosts' current settings. Existing sessions keep their layout, generations and history. Duplicate references to the same host open distinct sessions. The app does not restore remote processes or infer a working directory. Authentication and host-key prompts use the existing policies.
 

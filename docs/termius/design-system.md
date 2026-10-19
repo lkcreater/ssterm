@@ -174,6 +174,8 @@ For example: `● Connected · prod-api-01 · PROD · ubuntu@10.0.1.25:22`.
 | Input / Search | Surface with border | Border emphasis | Blue focus ring | Error text + icon |
 | Tree item | Compact with indent | Row highlight | Blue selection cue | Muted / unavailable |
 | Connection badge | Icon + label | — | Independent of tab selection | State-specific icon + label |
+| Recording badge (SST-034) | `recording` variant: primary (blue) border/text on card, dot icon + "Recording" | Tooltip says what is saved | Independent of the connection badge beside it | `warning` variant (connecting amber): circle-off icon + "Not recording" with the reason, or dot + "Recording · gaps"; icon-only under 340 px with the state as its accessible name |
+| Command suggestions (SST-034) | Popover surface over the terminal frame, monospace rows without ligatures | Row highlight | Accent fill + blue left edge, `aria-selected` | Footer note: reported by the shell, Return inserts without running |
 | Dialog | Elevated surface | — | Focused primary action | Destructive copy and confirmation |
 | Toast | Compact, actionable | — | — | Success/warning/error icon + text |
 | Transfer row | File + direction + progress | Highlight | Details on selection | Retry/cancel affordances |

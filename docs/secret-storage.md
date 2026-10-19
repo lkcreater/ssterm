@@ -56,3 +56,7 @@ After all runs, `security dump-keychain` attribute output (no secret data) showe
 ## Remaining scope
 
 No UI/IPC consumes these capabilities yet (SST-017/023/024). SST-007 catalog mutations queue secret cleanup without calling the provider. SST-008 adds session lock/generation/resource closure; full app-lock UI/action/provider integration remains SST-015 and consumers. See [ADR limitations](adr/0003-secret-storage-and-content-protection.md#limitations).
+
+## Recording keys — SST-034
+
+`SecretService.recording` implements the `RecordingKeys` seam used only by the main-side [recorder](recording.md): `prepare()` creates the vault content key through `initializeContentKey` when none exists and no ciphertext does (never replacing one; snippets without a key reference give `constraint`); `seal(items)` wraps per-file data keys and `open(items)` unwraps them, each serialized with the other secret operations and reading the provider exactly once per call however many items it carries (an empty `seal` is the availability probe). Outcomes are typed: `{ok:true, …}` or `{ok:false, reason}` with the existing `KeyUnavailable` vocabulary (`uninitialized`, `missing`, `locked`, `denied`, `unavailable`, `error`); an item from another vault or one that fails authentication opens to `undefined`. The vault key is zeroed before the call settles and never leaves the service; callers zero-fill returned data keys. Nothing here writes SQL or the journal.

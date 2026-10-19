@@ -10,7 +10,7 @@ New sessions get a tab; Split right or down opens a new session to the same host
 
 ## Shortcuts and closing
 
-One capture listener matches shortcuts by physical key where needed so they work under Thai and other layouts: ⌘D / ⇧⌘D split, ⌘W close pane, ⇧⌘↩ Focus/Split, ⌥⌘ arrows move between panes, ⌘1–⌘9 tabs, ⇧⌘] / ⇧⌘[ next and previous tab, ⌃⌘S sidebar, ⌘, settings, ⌘/ shortcut list. Ctrl and Option combinations still reach the shell, and shortcuts never send input. Close Window moved to ⇧⌘W so ⌘W closes a pane. Closing a pane or tab with a connected session asks in-app (Cancel focused, then disconnect and close); ended or connecting panes close directly. Closing the window or quitting while sessions are connected asks with a native sheet listing them with PROD, then the existing bounded quit runs.
+One capture listener matches shortcuts by physical key where needed so they work under Thai and other layouts: ⌘D / ⇧⌘D split, ⌘W close pane, ⇧⌘↩ Focus/Split, ⌥⌘ arrows move between panes, ⌘1–⌘9 tabs, ⇧⌘] / ⇧⌘[ next and previous tab, ⌃⌘S sidebar, ⌘, settings, ⌘/ shortcut list. In a terminal pane ⌘; opens command-history suggestions ([recording](recording.md)); while that list is open every workspace chord is suspended. Ctrl and Option combinations still reach the shell, and shortcuts never send input. Close Window moved to ⇧⌘W so ⌘W closes a pane. Closing a pane or tab with a connected session asks in-app (Cancel focused, then disconnect and close); ended or connecting panes close directly. Closing the window or quitting while sessions are connected asks with a native sheet listing them with PROD, then the existing bounded quit runs.
 
 ## Settings
 

@@ -16,7 +16,7 @@ Paste is intercepted before xterm in the focused pane. The text is sanitized: C0
 
 Plain URLs (`@xterm/addon-web-links`) and OSC 8 hyperlinks open only on Cmd+click. The renderer sends `openLink({owner, url})`; main authorizes the sender and owner, accepts only http/https without embedded credentials and at most 2,048 characters, shows a native confirmation with the exact URL (Cancel default) and only then calls `shell.openExternal`. A plain click does nothing.
 
-Cmd+F opens a search bar for the focused pane (`@xterm/addon-search`) with match decorations and an “n of m” count; Enter and Shift+Enter move between matches and Esc closes it and returns focus to the terminal. Search input never reaches the remote. Only Cmd+F is intercepted from the terminal; Ctrl and Option combinations go to the shell. The explicit application menu keeps Edit, zoom and fullscreen; reload and DevTools exist only in development builds, because a reload rotates the window owner and closes every session.
+Cmd+F opens a search bar for the focused pane (`@xterm/addon-search`) with match decorations and an “n of m” count; Enter and Shift+Enter move between matches and Esc closes it and returns focus to the terminal. Search input never reaches the remote. Only Cmd+F and, since SST-034, Cmd+; ([command-history suggestions](recording.md), matched by the physical Semicolon key under non-Latin layouts) are intercepted from the terminal; Tab, Ctrl and Option combinations go to the shell. The explicit application menu keeps Edit, zoom and fullscreen; reload and DevTools exist only in development builds, because a reload rotates the window owner and closes every session.
 
 ## Verification
 

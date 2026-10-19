@@ -31,7 +31,8 @@ The explicit action is the unlock (identities rule). An open, save or delete tha
 - Deleting a tag elsewhere bumps the snippet's revision, so an open editor's next save reports a conflict; the draft stays visible for copying, but there is no merge.
 - The renderer learns a lock through pushed catalog state; an open that unlocks before that push arrives is then shown as locked (safe, may need one more *Open again*).
 - Labels with lone surrogates are not rejected (shared catalog label rule).
-- A lost Keychain key makes existing bodies unrecoverable by design. After the first snippet, SST-006's migration refusal for protected vaults applies to future schema changes.
+- A lost Keychain key makes existing bodies unrecoverable by design. A schema migration must declare that it preserves protected content to run on a vault with snippets; every shipped step does.
+- An echoed snippet body (Paste or Run shows it on screen) appears in a [session log](recording.md) when recording is on, encrypted under the same vault key lineage; typed and pasted input itself is never recorded.
 
 # Snippet Paste / Run — SST-024
 

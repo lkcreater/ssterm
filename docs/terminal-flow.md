@@ -48,3 +48,7 @@ The independent tester ran the suites (193/22/19), three repeats of the flow spe
 ## Boundaries and rollback
 
 Unmeasured: real networks with latency (the 2 MiB SSH window then dominates), windows hidden longer than five minutes (Chromium background throttling; `backgroundThrottling` unchanged) and live memory at 32 sessions. Rollback restores the previous constants and the five-write paste split; there is no data change.
+
+## Recording on — SST-034
+
+[Session recording](recording.md) tees each frame in main after the view's consumer: a copy into a 64 KiB buffer and one AES-256-GCM seal per full segment, synchronously; file writes are asynchronous. It never holds credit or acknowledgements: a slow disk drops output above 8 MiB pending (32 MiB for all recordings) with an authenticated gap record, so the flow design above is unchanged. A second flood test runs with recording on and keeps the same gates, plus a main event-loop delay gate (p99 ≤ 4 ms, perf_hooks histogram) and byte accounting (export length + recorded gap bytes = bytes the view received). Four runs on this machine: 21.3–36.0 MiB/s, max unacknowledged ≤ 273 KiB, no long task, loop delay p99 2.03–2.37 ms (max 10–23 ms), 0 gaps, 20 400 648 of 20 400 648 bytes in the log. The recording-off flood, now also measured for loop delay: 26.9–34.4 MiB/s, p99 1.62–2.24 ms, max 3–20 ms.
