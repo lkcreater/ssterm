@@ -1,6 +1,6 @@
 # Execution record — MVP and authorized later scope
 
-**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-036 crypto protocol/key lifecycle specification and conformance `DONE`; [delivery](sst-036-delivery.md). SST-038 is next in the authorized SST-029–038 order. Manual release checks, Developer ID and notarization remain pending. Earlier stage/authorization snapshots below are historical and superseded by their final records.
+**เริ่มบันทึก:** 2026-10-14 · **Latest completed ticket:** SST-038 bounded Mosh / FIDO capability investigation `DONE`; [delivery](sst-038-delivery.md). SST-035 is next in the authorized SST-029–038 order. Manual release checks, Developer ID and notarization remain pending. Earlier stage/authorization snapshots below are historical and superseded by their final records.
 
 ## Authorization / acceptance
 
@@ -1238,3 +1238,21 @@ The initial ledger and documentation-drafting sentence above are historical. ANA
 Independent final checks: new crypto/control 60/60; focused crypto/protection/secrets/app-lock 96/96; full unit 648 total / 646 passed / 0 failed or cancelled / 2 skipped (Docker bash fixture unavailable and Homebrew bash 5 absent), exit 0. Final typecheck and build PASS; no application/package harness imports; changed relative links and whitespace checks PASS. Root's separate SSH regression check passed 41/41 after an interrupted/inconclusive duplicate full-suite attempt; the independent full run is the authoritative full-suite result. Current Node is 24.11.1; setup npm 11.6.2, tester npm 11.0.0. No Electron E2E/package rerun for this isolated docs/test change; SST-034 retains the runtime baseline.
 
 Review closed the high control/enrollment transcript gap and medium parser-bound/stale-operation ambiguities. Subsequent checks aligned original admission metadata across rollover, bounded 256-device framing and recovery previous-owner verification. No unresolved critical/high finding in this change. Existing online tooling audit reports 7 high/0 critical in the shadcn/braces dependency chain; lockfile unchanged. Descriptor/payload import, durable journals, real recovery/enrollment and multi-device tests remain SST-035 gates; teams remain SST-037. Local commit only; no push or publishing. SST-038 is next in the already-authorized order.
+
+## SST-038 execution plan — bounded Mosh / FIDO capabilities (2026-10-20)
+
+**Authorization:** user instructed “ทำงานถัดไปได้เลย”; starts SST-038/T044 under the recorded later-scope order. Owned Docker Mosh bootstrap/network recovery investigation; FIDO ADR only, no hardware. No production app integration, proprietary runtime investigation, hosting or push.
+
+**Analysis:** no Mosh/FIDO implementation exists in application packages. Existing SSH fixture does not contain Mosh. Docker initially stopped; opened Docker Desktop with approval and confirmed daemon access. No cached project fixture image is present. Upstream claims, owned runtime observations and proposed integration must remain separate.
+
+**Ownership / sequence:** root owns this plan, documentation/ADR/status/delivery and integration; fixture coder owns only `tests/fixtures/mosh/**` (isolated Docker image, bounded PTY/UDP investigation and sanitized receipt). Independent tester and reviewer inspect final artifacts; root resolves findings before local commit. FIDO uses primary OpenSSH documentation only; PIN/touch/cancel remain untested hardware gates.
+
+**Acceptance / verification:** build owned `ssterm-mosh-fixture:sst-038`; run documented fixture command once it exists. Verify SSH bootstrap with strict host checking, native Mosh terminal marker, bounded UDP outage/recovery, source-port rebind, Unicode/resize where feasible, termination and exact owned cleanup. Record image/package identity and no session-key/raw-output receipts. Document unsupported/unverified cases candidly. Run Python syntax/static checks for fixture, focused actual runtime, Markdown links and `git diff --check`; app typecheck/build/runtime suites need not rerun if no application/build input changes. Never mark runtime acceptance passed on setup alone. After three unchanged failures preserve diagnostics and resolve blocker.
+
+**Rollback:** revert isolated fixture/docs commit; no catalog migration, app behavior, installed credentials or user data changes. Generated images/containers are project-owned and no volumes or production resources are used. Final local commit authorized; SST-035 follows only after this gate.
+
+### SST-038 final record — 2026-10-20
+
+ANALYZE, DESIGN, PLAN, IMPLEMENT, independent TEST and REVIEW completed. Native owned Linux arm64 Mosh probe passed 11/11 plus exact-container removal, independently repeated on the same image; runner ownership regression tests passed 4/4. Python syntax, relative links, isolated imports and `git diff --check` passed. Two initial bootstrap failures were diagnosed and fixed with terminal environment/native wrapper options; they are not passing evidence. Independent review resolved the failed-create cleanup ownership issue and generic hardware acceptance mismatch; no remaining critical/high findings.
+
+[Report](../spikes/mosh-fido-capabilities.md), [ADR 0007](../adr/0007-mosh-and-security-key-capability-gates.md) and [delivery](sst-038-delivery.md) separate actual runtime observations from upstream claims and future gates. FIDO is ADR only; no hardware testing, macOS packaging, application integration or physical network roaming claim. No app/build inputs changed, so application suites were not rerun. Independent DELIVER review confirmed scope/evidence consistency and reran ownership tests 4/4, syntax/receipt/diff checks successfully. Authorized local commit follows; no push/hosting/publication. SST-035 is next in the authorized order.

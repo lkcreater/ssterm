@@ -1,6 +1,9 @@
 # Tickets สำหรับ ssterm
 
-**SST-036: sync cryptography / key lifecycle `DONE` (specification and conformance)** — [protocol](../sync-crypto.md), [ADR 0006](../adr/0006-sync-cryptography-and-key-lifecycle.md), [delivery](../agent-runs/sst-036-delivery.md). New crypto suite 60/60; final focused 96/96; full unit 648 total / 646 passed / 2 skipped; typecheck/build PASS. Independent review has no unresolved critical/high findings. No production sync, dependency, IPC or schema change. SST-038 is next in the authorized order. Existing manual release/signing checks remain pending.
+**SST-038: Mosh / FIDO capability investigation `DONE`** — [report](../spikes/mosh-fido-capabilities.md), [ADR 0007](../adr/0007-mosh-and-security-key-capability-gates.md), [delivery](../agent-runs/sst-038-delivery.md). Owned Linux arm64 Mosh probe passed 11/11 plus exact-container removal in implementation and independent test runs; FIDO is ADR-only, all hardware gates untested. No production transport/IPC/schema/dependency changes. SST-035 is next in the authorized order. Manual release/signing checks remain pending.
+
+
+**SST-036: sync cryptography / key lifecycle `DONE` (specification and conformance)** — [protocol](../sync-crypto.md), [ADR 0006](../adr/0006-sync-cryptography-and-key-lifecycle.md), [delivery](../agent-runs/sst-036-delivery.md). New crypto suite 60/60; final focused 96/96; full unit 648 total / 646 passed / 2 skipped; typecheck/build PASS. Independent review has no unresolved critical/high findings. No production sync, dependency, IPC or schema change. SST-038 is delivered next in the record above; existing manual release/signing checks remain pending.
 
 **SST-034: recordings / history / suggestions `DONE` (automated)** — [behavior](../recording.md), [AI privacy scope](../ai-scope.md), [delivery](../agent-runs/sst-034-delivery.md): opt-in encrypted local capture, retention/export/delete, shell-reported history and insert-only suggestions. Review fixes cover size-cap data loss, header ordering, Forget/Delete/lock/export races and bounded quit; packaged verification also closes the SFTP focus race. Unit 587 passed / 1 skipped (588 total), full development 79/79 plus final integration 10/10, final packaged 80/80. Schema remains 4; AI sends nothing and has no provider. This is the earlier runtime baseline; see the SST-036 status above. Existing manual release/signing checks remain pending.
 
@@ -51,7 +54,7 @@ UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) �
 | SST-035 | Independent cloud sync | Later | P2 | L | 036,038 |
 | SST-036 | Crypto protocol / key lifecycle review | Done | P2 | L | 028 |
 | SST-037 | Team vault / ACL / revocation | Later | P2 | L | 035,036 |
-| SST-038 | Remaining evidence / Mosh / hardware capability spikes | Later | P2 | L | 028 |
+| SST-038 | Remaining evidence / Mosh / hardware capability spikes | Done | P2 | L | 028 |
 | SST-039 | Local app lock (password / Google) | Post-MVP | P1 | M | 006,016,028 |
 
 Dependency numbers ย่อหมายถึง `SST-` prefix งานบาง phase ทำคู่ขนานได้เมื่อ dependency พร้อม; phase ไม่ใช่คำสั่งให้เริ่มก่อน confirm
@@ -442,9 +445,11 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 
 ### SST-038 — Remaining evidence / Mosh / hardware capability spikes
 
+**Status:** `DONE` within the authorized Mosh lab / FIDO ADR-only scope — [delivery](../agent-runs/sst-038-delivery.md). No production Mosh/FIDO support is claimed.
+
 **Evidence:** N04/N05/N-T06–08, original unanswered questions. **Outcome:** residual unknowns แยกเป็น bounded investigations.
 
-**Acceptance:** each investigation เลือก explicit artifact/device/scenario; report observation/inference/unknown พร้อม identity/source; Mosh bootstrap/network recovery and FIDO PIN/touch/cancel tested on authorized fixture/device; native decompilation ใช้ engine เมื่อพร้อมและไม่เปลี่ยน setup โดยไม่มี approved scope. **Validation:** focused evidence + capability matrix. **Tasks:** runtime UI evidence if requested; native/API tracing; Mosh/hardware ADRs.
+**Authorized acceptance (supersedes original generic hardware scope):** owned Docker Mosh bootstrap/network recovery with artifact identity, focused evidence and capability matrix; FIDO investigation/ADR only because no hardware is available. FIDO PIN/touch/cancel/device verification and additional proprietary runtime/native investigations are deferred gates, not completion claims. Separate observation, upstream claim, inference and unknown. **Validation:** real owned Mosh fixture, sanitized receipt, independent test/review and ADR. **Tasks:** Mosh lab and capability report; hardware ADR and explicit future hardware matrix. See [recorded choice](../agent-runs/implementation-plan.md#later-scope-authorization--sst-029-to-sst-038-2026-10-17).
 
 ### SST-039 — Local app lock (password / Google)
 
