@@ -1,0 +1,54 @@
+{
+  "source": "gcmEncryptExtIV256.rsp",
+  "sourceSha256": "4448b4998c3f58cd9f5542ddf7c573189a721ff3d3ac24cd5177bb4910a787f8",
+  "vectors": [
+    {
+      "parameters": {
+        "Keylen": 256,
+        "IVlen": 96,
+        "PTlen": 0,
+        "AADlen": 0,
+        "Taglen": 128
+      },
+      "Count": "0",
+      "Key": "b52c505a37d78eda5dd34f20c22540ea1b58963cf8e5bf8ffa85f9f2492505b4",
+      "IV": "516c33929df5a3284ff463d7",
+      "PT": "",
+      "AAD": "",
+      "CT": "",
+      "Tag": "bdc1ac884d332457a1d2664f168c76f0"
+    },
+    {
+      "parameters": {
+        "Keylen": 256,
+        "IVlen": 96,
+        "PTlen": 128,
+        "AADlen": 128,
+        "Taglen": 128
+      },
+      "Count": "0",
+      "Key": "92e11dcdaa866f5ce790fd24501f92509aacf4cb8b1339d50c9c1240935dd08b",
+      "IV": "ac93a1a6145299bde902f21a",
+      "PT": "2d71bcfa914e4ac045b2aa60955fad24",
+      "AAD": "1e0889016f67601c8ebea4943bc23ad6",
+      "CT": "8995ae2e6df3dbf96fac7b7137bae67f",
+      "Tag": "eca5aa77d51d4a0a14d9c51e1da474ab"
+    },
+    {
+      "parameters": {
+        "Keylen": 256,
+        "IVlen": 96,
+        "PTlen": 256,
+        "AADlen": 128,
+        "Taglen": 128
+      },
+      "Count": "0",
+      "Key": "37ccdba1d929d6436c16bba5b5ff34deec88ed7df3d15d0f4ddf80c0c731ee1f",
+      "IV": "5c1b21c8998ed6299006d3f9",
+      "PT": "ad4260e3cdc76bcc10c7b2c06b80b3be948258e5ef20c508a81f51e96a518388",
+      "AAD": "22ed235946235a85a45bc5fad7140bfa",
+      "CT": "3b335f8b08d33ccdcad228a74700f1007542a4d1e7fc1ebe3f447fe71af29816",
+      "Tag": "1fbf49cc46f458bf6e88f6370975e6d4"
+    }
+  ]
+}

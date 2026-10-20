@@ -1,6 +1,8 @@
 # Tickets สำหรับ ssterm
 
-**SST-034: recordings / history / suggestions `DONE` (automated)** — [behavior](../recording.md), [AI privacy scope](../ai-scope.md), [delivery](../agent-runs/sst-034-delivery.md): opt-in encrypted local capture, retention/export/delete, shell-reported history and insert-only suggestions. Review fixes cover size-cap data loss, header ordering, Forget/Delete/lock/export races and bounded quit; packaged verification also closes the SFTP focus race. Unit 587 passed / 1 skipped (588 total), full development 79/79 plus final integration 10/10, final packaged 80/80. Schema remains 4; AI sends nothing and has no provider. SST-036 is next in the authorized order. Existing manual release/signing checks remain pending.
+**SST-036: sync cryptography / key lifecycle `DONE` (specification and conformance)** — [protocol](../sync-crypto.md), [ADR 0006](../adr/0006-sync-cryptography-and-key-lifecycle.md), [delivery](../agent-runs/sst-036-delivery.md). New crypto suite 60/60; final focused 96/96; full unit 648 total / 646 passed / 2 skipped; typecheck/build PASS. Independent review has no unresolved critical/high findings. No production sync, dependency, IPC or schema change. SST-038 is next in the authorized order. Existing manual release/signing checks remain pending.
+
+**SST-034: recordings / history / suggestions `DONE` (automated)** — [behavior](../recording.md), [AI privacy scope](../ai-scope.md), [delivery](../agent-runs/sst-034-delivery.md): opt-in encrypted local capture, retention/export/delete, shell-reported history and insert-only suggestions. Review fixes cover size-cap data loss, header ordering, Forget/Delete/lock/export races and bounded quit; packaged verification also closes the SFTP focus race. Unit 587 passed / 1 skipped (588 total), full development 79/79 plus final integration 10/10, final packaged 80/80. Schema remains 4; AI sends nothing and has no provider. This is the earlier runtime baseline; see the SST-036 status above. Existing manual release/signing checks remain pending.
 
 **ทุก ticket อยู่ใน repo; ไม่ได้เปิด external issue.** M0 ที่อนุมัติส่งมอบแล้ว ณ 2026-10-15: SST-001 `DONE`/commit `ad9ed51` ก่อนเริ่ม SST-002; SST-002 `DONE` ตาม [runtime report](../spikes/ssh-compatibility.md); SST-003/T004–T005 documentation-only `DONE`; SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) และ SST-029–038 เป็น later scope
 
@@ -47,7 +49,7 @@ UI acceptance ใช้ [Design System v1.0 — Signal Blue](design-system.md) �
 | SST-033 | Templates / broadcast / multi-host snippets | DONE | P2 | L | 018,024,028 |
 | SST-034 | Logs / history / autocomplete / AI scope | DONE | P2 | L | 028 |
 | SST-035 | Independent cloud sync | Later | P2 | L | 036,038 |
-| SST-036 | Crypto protocol / key lifecycle review | Later | P2 | L | 028 |
+| SST-036 | Crypto protocol / key lifecycle review | Done | P2 | L | 028 |
 | SST-037 | Team vault / ACL / revocation | Later | P2 | L | 035,036 |
 | SST-038 | Remaining evidence / Mosh / hardware capability spikes | Later | P2 | L | 028 |
 | SST-039 | Local app lock (password / Google) | Post-MVP | P1 | M | 006,016,028 |
@@ -425,6 +427,8 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 **Acceptance:** approved protocol/versioning; conflict/tombstone/offline merge/device enrollment; selective secret policy explicit; encrypted payload/metadata boundaries verified with test vectors; no Termius cloud compatibility claim. **Validation:** own multi-device lab/recovery/migration/merge tests. **Tasks:** sync spec/backend/client; encrypted envelope; reconciliation.
 
 ### SST-036 — Crypto protocol / key lifecycle review
+
+**Status:** `DONE` (specification and conformance) — [delivery](../agent-runs/sst-036-delivery.md), [ADR 0006](../adr/0006-sync-cryptography-and-key-lifecycle.md), [protocol](../sync-crypto.md); documentation and isolated conformance tests only. Production sync remains SST-035.
 
 **Evidence:** N07/N-T08/W09. **Outcome:** threat model และ reviewed independent construction.
 
