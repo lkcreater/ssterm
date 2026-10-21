@@ -18,7 +18,20 @@ import { hostChainProblem } from "./index.ts";
 export type ConfigSource =
   | { kind: "default" }
   | { kind: "host" | "group"; id: Id; revision: number };
+/** Main-only provenance. No credential or executable capability is stored in captured configuration. */
+export interface TeamManagedSource {
+  kind: "team";
+  teamId: string;
+  principalId: string;
+  deviceId: string;
+  recordId: string;
+  policyHash: string;
+  metadataHash: string;
+  credentialHash: string;
+  leaseId: string;
+}
 export interface ResolvedHostConfig {
+  source?: Readonly<TeamManagedSource>;
   hostRef: { id: Id; revision: number; label: string; groupId: Id | null };
   address: string;
   environment: Host["environment"];

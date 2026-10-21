@@ -20,6 +20,9 @@ async function gated(page: Page) {
     if (!boot.ok) return "bootstrap";
     const catalog = await window.ssterm.catalogState({ owner: boot.value.owner });
     const sync = await window.ssterm.syncState({ owner: boot.value.owner });
+    const team = await window.ssterm.teamState({ owner: boot.value.owner });
+    const mutation = await window.ssterm.teamCommand({ owner: boot.value.owner, action: { type: "fetch" } });
+    if (!catalog.ok && catalog.error.code === "unauthorized" && (team.ok || team.error.code !== "unauthorized" || mutation.ok || mutation.error.code !== "unauthorized")) return "team-gate-bypassed";
     if (!catalog.ok && catalog.error.code === "unauthorized" && (sync.ok || sync.error.code !== "unauthorized")) return "sync-gate-bypassed";
     return catalog.ok ? "open" : catalog.error.code;
   });

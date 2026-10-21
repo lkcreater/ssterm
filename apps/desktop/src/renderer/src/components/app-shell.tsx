@@ -14,6 +14,7 @@ import {
   Settings2Icon,
   ShieldCheckIcon,
   SquareTerminalIcon,
+  UsersIcon,
   WorkflowIcon,
 } from "lucide-react";
 import { usePanelRef } from "react-resizable-panels";
@@ -88,6 +89,7 @@ import { IdentitiesPage } from "@/components/identities/identities-page";
 import { SnippetsPage } from "@/components/snippets/snippets-page";
 import { TunnelsPage } from "@/components/tunnels/tunnels-page";
 import { RecordingsPage } from "@/components/recordings/recordings-page";
+import { TeamWorkspace } from "@/components/team/team-workspace";
 import { useTunnels } from "@/hooks/use-tunnels";
 import {
   DeleteGroupDialog,
@@ -152,7 +154,7 @@ const storageProblems: Record<
   },
 };
 
-type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities" | "snippets" | "tunnels" | "recordings";
+type Page = "hosts" | "terminals" | "files" | "known-hosts" | "identities" | "snippets" | "tunnels" | "recordings" | "team";
 type CatalogDialog =
   | { kind: "host"; id?: string; groupId?: string | null }
   | { kind: "group"; id?: string; parentId?: string | null }
@@ -167,6 +169,7 @@ const titles: Record<Page, string> = {
   snippets: "Snippets",
   tunnels: "Port forwarding",
   recordings: "Recordings",
+  team: "Team vault",
 };
 const phaseStates = {
   connecting: "connecting",
@@ -307,6 +310,20 @@ export function AppShell() {
       localLaunch.current = false;
       setStartingLocal(false);
     }
+  }
+
+  async function connectTeam(virtualHostId: string) {
+    const bridge = window.ssterm;
+    if (!owner || !bridge) return;
+    setPage("terminals");
+    try {
+      const result = await bridge.connectHost({ owner, hostId: virtualHostId });
+      if (result.ok) return controller.reveal(result.value.sessionId);
+      toast.add({ title: "Couldn't connect to Team host", description: connectMessages[result.error.code] ?? "Fetch Team membership and review this target before trying again.", type: "error" });
+    } catch {
+      toast.add({ title: "Couldn't connect to Team host", description: "Team access is unavailable. Fetch current membership and try again.", type: "error" });
+    }
+    setPage("team");
   }
 
   /** One remote browser per window: another host replaces the current one (browse-only, no prompt). */
@@ -489,6 +506,17 @@ export function AppShell() {
                     <SidebarMenu>
                       <SidebarMenuItem>
                         <SidebarMenuButton
+                          isActive={page === "team"}
+                          aria-current={page === "team" ? "page" : undefined}
+                          onClick={() => setPage("team")}
+                          disabled={!ready}
+                        >
+                          <UsersIcon />
+                          <span>Team vault</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
                           isActive={page === "terminals"}
                           aria-current={page === "terminals" ? "page" : undefined}
                           onClick={() => setPage("terminals")}
@@ -659,6 +687,8 @@ export function AppShell() {
                         </EmptyContent>
                       </Empty>
                     </div>
+                  ) : page === "team" && owner && ready ? (
+                    <TeamWorkspace key={`${owner.windowId}:${owner.generation}:${state?.lockEpoch}`} owner={owner} onConnect={connectTeam} />
                   ) : page === "identities" && owner && state && ready ? (
                     <IdentitiesPage owner={owner} catalog={catalog} state={state} />
                   ) : page === "tunnels" && owner && state && ready ? (
@@ -666,7 +696,7 @@ export function AppShell() {
                   ) : page === "recordings" && owner ? (
                     // Works while storage is blocked too: capture there fails closed, and Delete still works.
                     <RecordingsPage owner={owner} onOpenSettings={() => setOverlay("settings")} />
-                  ) : page !== "identities" && page !== "snippets" && page !== "tunnels" && page !== "recordings" && state && ready ? (
+                  ) : page !== "identities" && page !== "snippets" && page !== "tunnels" && page !== "recordings" && page !== "team" && state && ready ? (
                     <HostsPage
                       catalog={catalog}
                       state={state}
@@ -833,6 +863,7 @@ export function AppShell() {
               {statusIdentity?.label ?? "Unknown target"}
             </span>
             {statusLocal ? <Badge variant="secondary">LOCAL</Badge> : null}
+            {terminalsShown && active?.target?.source === "team" ? <Badge variant="secondary">Team</Badge> : null}
             {statusTarget?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
             {statusIdentity?.endpoint ? (
               <span className="host-target truncate">

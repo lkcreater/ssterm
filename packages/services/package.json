@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./sync": "./src/sync.ts"
+    "./sync": "./src/sync.ts",
+    "./team": "./src/team.ts",
+    "./team-session-guard": "./src/team-session-guard.ts"
   },
   "dependencies": {
     "@ssterm/adapters": "0.1.0",

@@ -641,7 +641,7 @@ function PaneMenu({
               <LayersIcon /> Snippets… <DropdownMenuShortcut>⇧⌘S</DropdownMenuShortcut>
             </DropdownMenuItem>
           ) : null}
-          {onOpenSftp && session.hostId && !session.local ? (
+          {onOpenSftp && session.hostId && !session.local && session.target?.source !== "team" ? (
             <DropdownMenuItem onClick={() => { if (session.hostId) onOpenSftp(session.hostId); }}>
               <FolderOpenIcon /> Open in SFTP
             </DropdownMenuItem>

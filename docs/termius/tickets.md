@@ -443,6 +443,8 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 
 ### SST-037 — Team vault / ACL / revocation
 
+**Status:** `DONE` through automated gates within the bounded Team-v1 scope — [behavior](../team-vault.md), [delivery](../agent-runs/sst-037-delivery.md). Owner/Editor/Connector/Viewer are separate human roles; only Owner mutates shared passwords/membership/recovery. No deployment, SSH private-key sharing or managed SFTP/tunnels/jumps/templates is claimed. Existing manual release/signing checks remain pending.
+
 **Evidence:** W11. **Outcome:** team access model of own backend.
 
 **Acceptance:** roles/membership enforcement backend+client; revoke/offline cached access limitations explicit; rekey/shared credential lifecycle and audit trail; view/connect/edit permissions tested; tenant boundaries validated. **Validation:** multi-user ACL/revocation/cached-device tests. **Tasks:** authorization spec; team services/UI; revocation/rekey.

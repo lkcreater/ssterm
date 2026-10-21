@@ -810,6 +810,7 @@ export function SessionHeader({
         </TooltipContent>
       </Tooltip>
       {local ? <Badge variant="secondary" className="pane-badge">LOCAL</Badge> : null}
+      {target?.source === "team" ? <Badge variant="secondary" className="pane-badge" aria-label="Team vault host">Team</Badge> : null}
       {target?.environment === "PROD" ? <Badge variant="production" className="pane-badge">PROD</Badge> : null}
       {recording ? <RecordingBadge recording={recording} /> : null}
       <ConnectionStatus state={statuses[phase]} />

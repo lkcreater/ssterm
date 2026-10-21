@@ -433,3 +433,6 @@ export type KnownHostChange = {
 } | { type: 'verify-known-host'; id: Id; expectedRevision: number; verifiedAt: string }
   | { type: 'replace-known-host'; id: Id; expectedRevision: number; data: { algorithm: string; publicKey: string; fingerprint: string; acceptedAt: string } }
   | { type: 'revoke-known-host'; id: Id; expectedRevision: number };
+
+export type { TeamManagedSource } from "./catalog.ts";
+export { isTeamVirtualHostId, TEAM_VIRTUAL_HOST_PREFIX } from "./team.ts";

@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
-import { createTerminalController, registerTerminalHandlers, terminalChannels } from "../../apps/desktop/src/main/terminals.ts";
+import { createTerminalController, registerTerminalHandlers, terminalChannels, project } from "../../apps/desktop/src/main/terminals.ts";
 import { WindowBoundary } from "../../apps/desktop/src/main/boundary.ts";
 import { sessionOwnerId } from "../../apps/desktop/src/main/session-runtime.ts";
 import { SessionRegistry, TransientSecrets, type SessionContext } from "../../packages/services/src/index.ts";
@@ -635,4 +635,21 @@ test("terminal state excludes SFTP sessions and every terminal command on an SFT
     assert.equal(f.registry.snapshot(ownerId, connected.value.id)[0]!.generation, 1, "no terminal reconnect started");
     assert.equal(f.states().length, published, "SFTP lifecycle publishes no terminal state");
   } finally { f.controller.dispose(); await f.registry.dispose(); }
+});
+
+test("terminal provenance projects only the finite Team marker and rejects arbitrary source data", () => {
+  const target = { label: "Team fixture", address: "127.0.0.1", port: 2222, username: "fixture", environment: "PROD" as const,
+    hostRevision: 1, catalogRevision: 1 };
+  const base = { id: "session-1", generation: 1, hostId: "host-1", kind: "terminal" as const, state: "Ready" as const,
+    cleanup: "none" as const, target };
+  const ordinary = project(base);
+  assert(ordinary.target && !Object.hasOwn(ordinary.target, "source"));
+  const managed = project({ ...base, target: { ...target, source: "team" } });
+  assert.equal(managed.target?.source, "team");
+  const state = (session: typeof managed) => ({ owner, sequence: 0, sessions: [session] });
+  assert(isTerminalState(state(managed))); assert(isTerminalState(state(ordinary)));
+  for (const source of [undefined, null, "personal", "Team", { kind: "team", password: "fixture" }]) {
+    assert.equal(isTerminalState({ owner, sequence: 0, sessions: [{ ...managed, target: { ...managed.target, source } }] }), false);
+  }
+  assert.equal(isTerminalState({ owner, sequence: 0, sessions: [{ ...managed, target: { ...managed.target, leaseId: "fixture" } }] }), false);
 });

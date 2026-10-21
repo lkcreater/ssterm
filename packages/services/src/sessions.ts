@@ -145,6 +145,7 @@ export interface SessionSnapshot {
   local?: LocalSessionMetadata;
   state: SessionState;
   target?: {
+    source?: "team";
     label: string;
     address: string;
     port: number;
@@ -164,6 +165,7 @@ export interface SessionResource {
   readonly drained?: Promise<void>;
 }
 export interface SessionContext {
+  readonly ownerId: string;
   readonly id: string;
   readonly kind: SessionKind;
   readonly generation: number;
@@ -181,6 +183,14 @@ export interface SessionContext {
 }
 export interface SessionAdapter {
   start(context: SessionContext): void | Promise<void>;
+}
+/** The exact attempt is registered before an asynchronous managed-host authorization begins. */
+export interface SessionResolveContext {
+  readonly ownerId: string;
+  readonly sessionId: string;
+  readonly generation: number;
+  readonly kind: SessionKind;
+  readonly signal: AbortSignal;
 }
 export interface LocalSessionMetadata {
   shell: string;
@@ -410,6 +420,7 @@ export class SessionRegistry {
     private readonly options: {
       resolve(
         hostId: string,
+        context: SessionResolveContext,
       ):
         | StoreResult<ResolvedHostConfig>
         | Promise<StoreResult<ResolvedHostConfig>>;
@@ -828,7 +839,9 @@ export class SessionRegistry {
           try { await adapter.start(context); } catch { this.#fail(current, "local-spawn-failed"); }
           return;
         }
-        const result = await this.options.resolve(hostId);
+        const result = await this.options.resolve(hostId, Object.freeze({
+          ownerId, sessionId: id, generation, kind, signal: current.controller.signal,
+        }));
         if (!this.#live(current)) return;
         if (!result.ok) {
           this.#fail(current, "invalid-config");
@@ -838,6 +851,7 @@ export class SessionRegistry {
         const config = current.config;
         // Kept after teardown releases config so an ended session still names its target.
         current.target = {
+          ...(config.source?.kind === "team" ? { source: "team" as const } : {}),
           label: config.hostRef.label,
           address: config.address,
           port: config.port.value,
@@ -849,6 +863,7 @@ export class SessionRegistry {
         this.#emit(current);
         if (!this.#live(current)) return;
         const context: SessionContext = Object.freeze({
+          ownerId,
           id,
           kind,
           generation,

@@ -48,7 +48,7 @@ export function project(snapshot: SessionSnapshot): TerminalSession {
     hostId: snapshot.hostId,
     ...(snapshot.local ? { local: { ...snapshot.local } } : {}),
     phase: phases[snapshot.state],
-    target: target ? { label: target.label, environment: target.environment, endpointHost: target.address,
+    target: target ? { ...(target.source === "team" ? { source: "team" as const } : {}), label: target.label, environment: target.environment, endpointHost: target.address,
       endpointPort: target.port, username: target.username } : null,
     end: snapshot.end ? { ...snapshot.end } : null,
     error: snapshot.error ? errors[snapshot.error.code] ?? "subsystem-unavailable" : null,

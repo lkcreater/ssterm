@@ -60,3 +60,6 @@ export { AppLockService, newRecoveryCode, SCRYPT_PARAMS, type AppLockStore, type
 export { beginAuthorization, completeAuthorization, verifyIdToken, googleReachable, OAuthError, GOOGLE_ENDPOINTS, GOOGLE_LOOPBACK_PORT, GOOGLE_CALLBACK_PATH, GOOGLE_REDIRECT_URI, redirectUri, type GoogleClient, type GoogleEndpoints, type OAuthFailure } from "./google-oauth.ts";
 export { createRemoteEditService, type RemoteEditInput } from "./remote-edit.ts";
 export { createRecorder, DEFAULT_RECORDER_LIMITS, type Recorder, type RecorderLimits } from "./recorder.ts";
+
+export type { SessionResolveContext } from "./sessions.ts";
+export { TeamSessionGuard, type ManagedTeamSessionClient } from "./team-session-guard.ts";

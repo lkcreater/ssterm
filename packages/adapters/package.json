@@ -22,7 +22,11 @@
     "./sync-recovery": "./src/sync-recovery.ts",
     "./sync-repository": "./src/sync-repository.ts",
     "./sync-keychain": "./src/sync-keychain.ts",
-    "./sync-transport": "./src/sync-transport.ts"
+    "./sync-transport": "./src/sync-transport.ts",
+    "./team-policy": "./src/team-policy.ts",
+    "./team-transport": "./src/team-transport.ts",
+    "./team-repository": "./src/team-repository.ts",
+    "./team-keychain": "./src/team-keychain.ts"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.1",

@@ -1,3 +1,6 @@
+import { TeamClient } from "@ssterm/services/team";
+import { openTeamRepository, type TeamRepository } from "@ssterm/adapters/team-repository";
+import { registerTeamHandlers } from "./team";
 import { SyncClient } from "@ssterm/services/sync";
 import { openSyncRepository, type SyncRepository } from "@ssterm/adapters/sync-repository";
 import { registerSyncHandlers, guardSyncCatalog } from "./sync";
@@ -126,6 +129,10 @@ let tunnelControls: TunnelController | undefined;
 let removeTunnelHandlers: (() => void) | undefined;
 let removeSnippetHandlers: (() => void) | undefined;
 // SST-034 session logs and command history (opt-in).
+let teamClient: TeamClient | undefined;
+let teamRepository: TeamRepository | undefined;
+let teamHandlers: ReturnType<typeof registerTeamHandlers> | undefined;
+let teamGuard: ReturnType<typeof createSavedHostSessions>["teamGuard"];
 let syncClient: SyncClient | undefined;
 let syncRepository: SyncRepository | undefined;
 let syncHandlers: ReturnType<typeof registerSyncHandlers> | undefined;
@@ -229,6 +236,7 @@ const boundary = new WindowBoundary(
   },
   () => storageHealth,
   (owner) => {
+    teamClient?.lock(); teamGuard?.lock(); teamHandlers?.purge();
     syncClient?.lock();
     syncHandlers?.purge();
     credentials?.revokeOwner(owner);
@@ -482,7 +490,7 @@ async function initializeSync(): Promise<void> {
       if (!window || window.isDestroyed()) return undefined;
       const chosen = await dialog.showOpenDialog(window, { message: "Choose your encrypted sync recovery kit. Your unlock recovery code cannot open it.", properties: ["openFile"] });
       if (chosen.canceled || !chosen.filePaths[0] || !appLock?.open() || !current()) return undefined;
-      const file = await openFile(chosen.filePaths[0], fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      const file = await openFile(chosen.filePaths[0], fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK);
       try {
         const limit = 8 * 1024 * 1024 + 2048;
         const stat = await file.stat(); if (!stat.isFile() || stat.size > limit) return undefined;
@@ -496,6 +504,123 @@ async function initializeSync(): Promise<void> {
   });
 }
 
+async function initializeTeam(): Promise<void> {
+  if (repository && secrets) {
+    try {
+      const { KeychainTeamKeyStore } =
+        await import("@ssterm/adapters/team-keychain");
+      const { PRODUCTION_SECRET_NAMESPACE } =
+        await import("@ssterm/adapters/keychain");
+      const namespace = secretNamespace(
+        process.env,
+        PRODUCTION_SECRET_NAMESPACE,
+      );
+      if (namespace) {
+        await mkdir(join(app.getPath("userData"), "team"), {
+          recursive: true,
+          mode: 0o700,
+        });
+        teamRepository = openTeamRepository(
+          join(app.getPath("userData"), "team", "team.sqlite"),
+        );
+        teamClient = new TeamClient({
+          repository: teamRepository,
+          keyStore: new KeychainTeamKeyStore(namespace),
+        });
+      }
+    } catch {
+      teamRepository?.close();
+      teamRepository = undefined;
+      teamClient = undefined;
+    }
+  }
+  teamHandlers = registerTeamHandlers({
+    ipc: ipcMain,
+    boundary,
+    client: () => teamClient,
+    lockSessions: () => teamGuard?.lock(),
+    saveKit: async (owner, kit, current) => {
+      const window = BrowserWindow.fromId(owner.windowId);
+      if (!window || window.isDestroyed() || kit.byteLength > 512 * 1024)
+        return false;
+      const currentOwner = () => {
+        const currentOwnerValue = boundary.ownerOf(window.webContents);
+        return (
+          !quitting &&
+          !!appLock?.open() &&
+          currentOwnerValue?.windowId === owner.windowId &&
+          currentOwnerValue.generation === owner.generation &&
+          current()
+        );
+      };
+      const chosen = await dialog.showSaveDialog(window, {
+        defaultPath: join(
+          app.getPath("documents"),
+          "ssterm-team-recovery.ssterm",
+        ),
+        message:
+          "This encrypted kit needs its separate team recovery secret. Keep both independently of this Mac.",
+        properties: ["showOverwriteConfirmation", "createDirectory"],
+      });
+      if (chosen.canceled || !chosen.filePath || !currentOwner()) return false;
+      const stage = join(
+        dirname(chosen.filePath),
+        `.ssterm-recovery-${randomUUID()}.tmp`,
+      );
+      try {
+        const file = await openFile(stage, "wx", 0o600);
+        try {
+          await file.writeFile(kit);
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        if (!currentOwner()) return false;
+        await rename(stage, chosen.filePath);
+        return true;
+      } finally {
+        await unlink(stage).catch(() => undefined);
+      }
+    },
+    openKit: async (owner, current) => {
+      const window = BrowserWindow.fromId(owner.windowId);
+      if (!window || window.isDestroyed()) return undefined;
+      const chosen = await dialog.showOpenDialog(window, {
+        message:
+          "Choose your encrypted team recovery kit. Your unlock recovery code cannot open it.",
+        properties: ["openFile"],
+      });
+      if (
+        chosen.canceled ||
+        !chosen.filePaths[0] ||
+        !appLock?.open() ||
+        !current()
+      )
+        return undefined;
+      const file = await openFile(
+        chosen.filePaths[0],
+        fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+      );
+      try {
+        const limit = 512 * 1024;
+        const stat = await file.stat();
+        if (!stat.isFile() || stat.size > limit) return undefined;
+        const bytes = Buffer.alloc(limit + 1);
+        let size = 0;
+        while (size <= limit) {
+          const chunk = await file.read(bytes, size, bytes.length - size, null);
+          if (!chunk.bytesRead) break;
+          size += chunk.bytesRead;
+        }
+        if (size > limit || !current()) return undefined;
+        return Buffer.from(bytes.subarray(0, size));
+      } finally {
+        await file.close();
+      }
+    },
+  });
+}
+
 // A locked registry reopens only while saved hosts can be resolved; a missing secure store fails per saved ref instead.
 const checkAccess = async () => storageHealth.status === "ready" && !!repository;
 
@@ -504,6 +629,7 @@ if (ownsInstance) {
     if (quitting) return;
     await initializeStorage();
     await initializeAppLock();
+    await initializeTeam();
     if (quitting) {
       closeStorage();
       return;
@@ -519,6 +645,7 @@ if (ownsInstance) {
     await capture.ready;
     if (repository) {
       const savedHostSessions = createSavedHostSessions({
+        team: teamClient,
         repository,
         provider: secretProvider,
         transient: transientSecrets,
@@ -526,6 +653,7 @@ if (ownsInstance) {
         observeTerminal: capture.observe,
       });
       desktopSessions = savedHostSessions;
+      teamGuard = savedHostSessions.teamGuard;
       knownHostPolicy = savedHostSessions.policy;
       knownHosts = createKnownHostsController({
         policy: knownHostPolicy,
@@ -581,7 +709,7 @@ if (ownsInstance) {
     }
     // After the registry ended every observer: drop decrypted history and abort plaintext exports.
     desktopSessions.onLock(() => recorder?.lock());
-    desktopSessions.onLock(() => { syncClient?.lock(); syncHandlers?.purge(); });
+    desktopSessions.onLock(() => { syncClient?.lock(); syncHandlers?.purge();teamClient?.lock(); teamGuard?.lock(); teamHandlers?.purge(); });
     await initializeSync();
     credentials = createCredentialsController({ registry: desktopSessions.registry });
     removeCredentialHandlers = registerCredentialHandlers({
@@ -773,6 +901,8 @@ app.on("before-quit", (event) => {
   boundary.dispose();
   syncClient?.lock();
   syncHandlers?.dispose();
+  teamClient?.lock(); teamHandlers?.dispose();
+  const teamClosed=Promise.race([Promise.resolve(teamClient?.dispose()).catch(()=>undefined),new Promise<void>(done=>setTimeout(done,2000))]);
   const syncClosed = Promise.race([Promise.resolve(syncClient?.dispose()).catch(() => undefined), new Promise<void>(done => setTimeout(done, 2_000))]);
   credentials?.dispose();
   knownHosts?.dispose();
@@ -812,7 +942,8 @@ app.on("before-quit", (event) => {
   ]);
   // Session disposal ends every capture observer first; the recorder then drains its queues (bounded) and zeroes keys.
   const sessionsClosed = remoteEditsClosed.then(() => desktopSessions?.shutdown()).then(() => recorder?.dispose()).catch(() => undefined);
-  void Promise.all([tunnelsClosed, sessionsClosed, syncClosed]).finally(() => {
+  void Promise.all([tunnelsClosed, sessionsClosed, syncClosed,teamClosed]).finally(() => {
+    teamRepository?.close();
     syncRepository?.close();
     closeStorage();
     shutdownComplete = true;

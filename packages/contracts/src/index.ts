@@ -1,3 +1,5 @@
+import type { TeamStateRequest, TeamCommandRequest, TeamView, TeamReply } from "./team.ts";
+export * from "./team.ts";
 import type { SyncStateRequest, SyncCommandRequest, SyncView, SyncReply } from "./sync.ts";
 export * from "./sync.ts";
 import type { RemoteEditState, StartRemoteEditRequest, StartRemoteEditResponse, RemoteEditRequest, UploadRemoteEditRequest } from './remote-edit.ts';
@@ -89,6 +91,8 @@ export interface WindowStateEvent {
   focused: boolean;
 }
 export interface DesktopAPI {
+  teamState(request: TeamStateRequest): Promise<Result<TeamView>>;
+  teamCommand(request: TeamCommandRequest): Promise<Result<TeamReply>>;
   syncState(request: SyncStateRequest): Promise<Result<SyncView>>;
   syncCommand(request: SyncCommandRequest): Promise<Result<SyncReply>>;
   bootstrap(): Promise<Result<BootstrapData>>;
@@ -186,6 +190,8 @@ export interface DesktopAPI {
 
 // These names are never exposed through contextBridge.
 export const channels = Object.freeze({
+  teamState: "ssterm:team-state",
+  teamCommand: "ssterm:team-command",
   syncState: "ssterm:sync-state",
   syncCommand: "ssterm:sync-command",
   bootstrap: "ssterm:bootstrap",

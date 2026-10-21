@@ -1,7 +1,7 @@
 /** Main-only saved-host composition. No transport or secret capability crosses preload. */
 import type { MetadataRepository, SecretProvider } from "@ssterm/domain";
-import { resolveHostConfig } from "@ssterm/domain";
-import { KnownHostPolicy, createSavedHostSshAdapter, type TransientSecrets, type SessionLimits } from "@ssterm/services";
+import { resolveHostConfig, isTeamVirtualHostId } from "@ssterm/domain";
+import { KnownHostPolicy, createSavedHostSshAdapter, TeamSessionGuard, type ManagedTeamSessionClient, type TransientSecrets, type SessionLimits } from "@ssterm/services";
 import { MAX_TERMINAL_WRITE } from "@ssterm/contracts";
 import { sshKeepalive, terminalBounds, type SshKeepalive, type TerminalBounds } from "@ssterm/adapters/ssh";
 import { createLocalPtyAdapter } from "@ssterm/adapters/local-pty";
@@ -25,6 +25,8 @@ export function createSavedHostSessions(options: {
   terminal?: TerminalBounds;
   /** Main-only dead-peer detection (default 15 s × 3). */
   keepalive?: SshKeepalive;
+  /** Opt-in, main-only team client. Permanent managed UUIDs are checked before the personal catalog. */
+  team?: ManagedTeamSessionClient;
   /** SST-034 capture tap (the recorder's `observe`). */
   observeTerminal?: Parameters<typeof createDesktopSessions>[0]["observeTerminal"];
 }) {
@@ -32,24 +34,45 @@ export function createSavedHostSessions(options: {
   if (terminal.inputBacklog < MAX_TERMINAL_WRITE) throw new RangeError("invalid-terminal-bounds");
   const keepalive = sshKeepalive(options.keepalive);
   const policy = new KnownHostPolicy({ repository: options.repository });
+  let teamGuard: TeamSessionGuard | undefined;
   const sessions = createDesktopSessions({
     transient: options.transient,
     power: options.power,
     limits: options.limits,
     observeTerminal: options.observeTerminal,
     localAdapter: createLocalPtyAdapter(),
-    resolve: (hostId) => {
+    resolve: (hostId, context) => {
+      // A known managed binding/tombstone never falls through, including denial and provider failures.
+      if (teamGuard?.hasBinding(hostId)) return teamGuard.resolve(hostId, context);
+      if (isTeamVirtualHostId(hostId)) return {
+        ok: false as const, error: { code: "invalid-request" as const, message: "The managed host is unavailable." },
+      };
       const snapshot = options.repository.snapshot();
       return snapshot.ok ? resolveHostConfig(snapshot.value, hostId) : snapshot;
     },
     // Without a secure store, saved refs still fail closed as credentials-unavailable, while
     // prompt-only identities (no saved ref) and keyboard-interactive keep working.
-    adapter: createSavedHostSshAdapter({ provider: options.provider ?? unavailableSecrets, policy, terminal, keepalive }),
+    adapter: createSavedHostSshAdapter({
+      provider: options.provider ?? unavailableSecrets, policy, terminal, keepalive,
+      ...(options.team ? { loadManagedPassword: (input) => options.team!.loadManagedPassword(input) } : {}),
+    }),
   });
+  if (options.team) {
+    teamGuard = new TeamSessionGuard({
+      client: options.team,
+      close(context) {
+        const current = sessions.registry.snapshot(context.ownerId).find((record) => record.id === context.sessionId);
+        if (current?.generation === context.generation) void sessions.registry.close(context.ownerId, context.sessionId);
+      },
+    });
+    sessions.onLock(() => teamGuard?.lock());
+  }
   return {
     ...sessions,
     policy,
+    teamGuard,
     shutdown() {
+      teamGuard?.dispose();
       policy.dispose();
       return sessions.shutdown();
     },

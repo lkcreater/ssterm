@@ -1,6 +1,9 @@
 # Task checklist
 
-**SST-035: independent personal encrypted sync `DONE` (automated)** — [behavior](../sync.md), [delivery](../agent-runs/sst-035-delivery.md). Opt-in manual Publish/Fetch/Review/Apply; self-hosted Node/SQLite, separate Keychain keys/journals, enrollment/recovery/rotation, per-record conflicts/tombstones and latest-control enforcement. Final unit707 total/706 pass/1 skip (Homebrew bash5 absent), focused sync119/119, development full81/81 and final packaged83/83. No deployment or credential sharing; catalog schema4 unchanged. SST-037 is next. Existing manual release/signing checks remain pending.
+**SST-037 / T046: Team vault `DONE` (automated)** — [behavior](../team-vault.md), [delivery](../agent-runs/sst-037-delivery.md). Separate human ACL and metadata/credential domains, explicit Owner-shared passwords, principal-wide revoke/rekey, managed terminal gates and independent Team recovery. Final unit769 total/768 pass/1 skip; full packaged85/85 plus exact-final focused10/10. The authorized SST-029–038 range is complete within its recorded bounds; manual release/signing checks remain pending.
+
+
+**SST-035: independent personal encrypted sync `DONE` (automated)** — [behavior](../sync.md), [delivery](../agent-runs/sst-035-delivery.md). Opt-in manual Publish/Fetch/Review/Apply; self-hosted Node/SQLite, separate Keychain keys/journals, enrollment/recovery/rotation, per-record conflicts/tombstones and latest-control enforcement. Final unit707 total/706 pass/1 skip (Homebrew bash5 absent), focused sync119/119, development full81/81 and final packaged83/83. No deployment or credential sharing; catalog schema4 unchanged. See the SST-037 record above. Existing manual release/signing checks remain pending.
 
 
 **SST-038: Mosh / FIDO capability investigation `DONE`** — [report](../spikes/mosh-fido-capabilities.md), [ADR 0007](../adr/0007-mosh-and-security-key-capability-gates.md), [delivery](../agent-runs/sst-038-delivery.md). Owned Linux arm64 Mosh probe passed 11/11 plus exact-container removal in implementation and independent test runs; FIDO is ADR-only, all hardware gates untested. No production transport/IPC/schema/dependency changes. SST-035 is delivered in the newer record above. Manual release/signing checks remain pending.
@@ -96,7 +99,7 @@ SST-029–038 follow the [recorded authorization and choices](../agent-runs/impl
 - [x] **T043 / SST-036:** threat model/independent crypto key lifecycle/test vectors/review — DONE (specification/conformance; [protocol](../sync-crypto.md), [delivery](../agent-runs/sst-036-delivery.md)); production integration remains SST-035
 - [x] **T044 / SST-038:** owned Docker Mosh bootstrap/network recovery investigation and FIDO ADR only; hardware PIN/touch/cancel and proprietary runtime/native work deferred by recorded scope
 - [x] **T045 / SST-035:** own backend/device enrollment/encrypted sync/conflict/tombstones — automated DONE ([behavior](../sync.md), [delivery](../agent-runs/sst-035-delivery.md)); personal v1 bounds/exclusions apply, teams SST-037
-- [ ] **T046 / SST-037:** team ACL/membership/enforcement/revocation/rekey/audit
+- [x] **T046 / SST-037:** team ACL/membership/enforcement/revocation/rekey/audit — automated DONE ([behavior](../team-vault.md), [delivery](../agent-runs/sst-037-delivery.md)); managed terminal/password bounds and manual release limits apply
 
 ## Design system — งานย่อยเพิ่มตาม Signal Blue spec
 

@@ -4,6 +4,15 @@ import { connectThroughProxy, createSshConnection, preparePrivateKey, type SshCr
 import type { KnownHostPolicy } from "./known-hosts.ts";
 import type { SessionAdapter, SessionContext, SessionErrorCode, PromptFieldId } from "./sessions.ts";
 
+export interface ManagedSshPassword {
+  bytes: Uint8Array;
+  dispose(): void;
+}
+export type ManagedSshPasswordLoader = (input: {
+  session: { ownerId: string; sessionId: string; generation: number; kind: SessionContext["kind"]; signal: AbortSignal };
+  source: NonNullable<ResolvedHostConfig["source"]>;
+}) => Promise<{ ok: true; value: ManagedSshPassword } | { ok: false; code: string }>;
+
 /** Main-only composition. Resolved metadata is captured by the registry; bytes are fetched only after host trust. */
 export function createSavedHostSshAdapter(options: {
   provider: SecretProvider;
@@ -11,6 +20,8 @@ export function createSavedHostSshAdapter(options: {
   /** Validated by the caller that constructs it (main composition). */
   terminal?: TerminalBounds;
   keepalive?: SshKeepalive;
+  /** Must perform a fresh online authorization after host trust, even if the initial lease is still valid. */
+  loadManagedPassword?: ManagedSshPasswordLoader;
 }): SessionAdapter {
   return {
     start(context) {
@@ -19,6 +30,13 @@ export function createSavedHostSshAdapter(options: {
       // SST-030: jump hosts (outermost first), then the target. Each hop is a separate SSH connection over the
       // previous hop's direct-tcpip stream, with its own host-key check and its own identity's credentials only.
       const hops: readonly ResolvedHostConfig[] = [...(config.jumps ?? []), config];
+      if (hops.some((hop) => hop.source) && (
+        !config.source || context.kind !== "terminal" || !!config.proxy || !!config.jumps?.length ||
+        !options.loadManagedPassword || config.auth.identity?.method !== "password"
+      )) {
+        context.failed("subsystem-unavailable");
+        return;
+      }
       if (hops.some((hop) => !hop.auth.identity || hop.auth.selection !== "identity")) {
         context.failed("credentials-required");
         return;
@@ -60,7 +78,9 @@ export function createSavedHostSshAdapter(options: {
               }
               return !initial || context.authenticating();
             },
-            authenticate: () => loadCredential(context, options.provider, hop),
+            authenticate: () => hop.source
+              ? loadManagedCredential(context, options.loadManagedPassword!)
+              : loadCredential(context, options.provider, hop),
             open: last ? open : "tunnel",
             ready: last ? (channel) => context.ready(channel) : (channel) => {
               resolve(channel as TunnelChannel);
@@ -108,6 +128,42 @@ export function createSavedHostSshAdapter(options: {
       })().catch(() => fail("subsystem-unavailable"));
     },
   };
+}
+
+/** Managed credentials never enter the personal provider or a renderer credential prompt. */
+async function loadManagedCredential(context: SessionContext, load: ManagedSshPasswordLoader): Promise<SshCredential | undefined> {
+  const { signal } = context;
+  let acquired: ManagedSshPassword | undefined;
+  let password: Buffer | undefined;
+  const purge = () => { password?.fill(0); };
+  signal.addEventListener("abort", purge, { once: true });
+  try {
+    if (signal.aborted) return;
+    const result = await load({
+      session: { ownerId: context.ownerId, sessionId: context.id, generation: context.generation, kind: context.kind, signal },
+      source: context.config.source!,
+    });
+    if (!result.ok) { if (!signal.aborted) context.failed("auth-denied"); return; }
+    acquired = result.value;
+    if (signal.aborted) return;
+    if (!(acquired.bytes instanceof Uint8Array) || acquired.bytes.length === 0 || acquired.bytes.length > 16_384) {
+      context.failed("credentials-unavailable"); return;
+    }
+    password = Buffer.from(acquired.bytes);
+    const owned = password;
+    return {
+      type: "password", password: owned,
+      dispose() { signal.removeEventListener("abort", purge); owned.fill(0); },
+    };
+  } catch { if (!signal.aborted) context.failed("credentials-unavailable"); return; }
+  finally {
+    let cleanupFailed = false;
+    try { acquired?.dispose(); } catch { cleanupFailed = true; }
+    // Original owned bytes are wiped even if a buggy provider's dispose throws.
+    if (acquired?.bytes instanceof Uint8Array) acquired.bytes.fill(0);
+    if (cleanupFailed) { purge(); if (!signal.aborted) context.failed("credentials-unavailable"); }
+    if (!password || signal.aborted) signal.removeEventListener("abort", purge);
+  }
 }
 
 /** Credentials of exactly one hop: its own identity and key; nothing is shared with or offered to another hop. */

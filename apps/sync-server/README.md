@@ -22,3 +22,5 @@ node --experimental-transform-types tests/fixtures/sync/docker.mjs
 ```
 
 The smoke creates a UUID-labeled container without a data mount, verifies restart persistence/ciphertext access controls, and removes only the container whose ownership label matches. It does not configure hosting.
+
+Team vault service has separate authority, storage and credentials; see [Team server operator guide](TEAM.md).

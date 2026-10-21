@@ -242,3 +242,5 @@ Rollback of this ticket is documents/tests only. Later rollback disables incompa
 - [Canonical Ed25519 key encodings: RFC 8410](https://www.rfc-editor.org/rfc/rfc8410.html).
 - [AES-GCM: NIST SP 800-38D](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf); [key management/security strengths: NIST SP 800-57 Part 1 Rev. 5](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf).
 - [C2SP Wycheproof primary vectors](https://github.com/C2SP/wycheproof); [HPKE: RFC 9180](https://www.rfc-editor.org/rfc/rfc9180.html).
+
+SST-037 production adoption: [Team vault](team-vault.md) reuses the reviewed primitives with separate human ACL, Owner authority and metadata/credential domains; [delivery](agent-runs/sst-037-delivery.md) records its additional admission, replay, journal, native and runtime gates. Internal review does not constitute an external cryptographic audit.

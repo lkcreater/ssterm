@@ -8,6 +8,7 @@
     "./workspace-templates": "./src/workspace-templates.ts",
     "./remote-edit": "./src/remote-edit.ts",
     "./recording": "./src/recording.ts",
-    "./sync": "./src/sync.ts"
+    "./sync": "./src/sync.ts",
+    "./team": "./src/team.ts"
   }
 }

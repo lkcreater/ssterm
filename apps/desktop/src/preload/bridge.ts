@@ -1,3 +1,4 @@
+import { isTeamStateRequest,isTeamCommandRequest,isTeamView,isTeamReply,type TeamStateRequest,type TeamCommandRequest } from "@ssterm/contracts";
 import { isSyncStateRequest, isSyncCommandRequest, isSyncView, isSyncReply, type SyncStateRequest, type SyncCommandRequest } from "@ssterm/contracts";
 import {
   channels,
@@ -687,6 +688,16 @@ export function createDesktopBridge(transport: BridgeTransport): {
     updateSettings(request: UpdateSettingsRequest) {
       if (!isUpdateSettingsRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.updateSettings, [{ owner: { ...request.owner }, changes: { ...request.changes } }], isTerminalSettings);
+    },
+    teamState(request: TeamStateRequest) {
+      if (!isTeamStateRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.teamState,[{owner:{...request.owner}}],isTeamView);
+    },
+    async teamCommand(request: TeamCommandRequest) {
+      if (!isTeamCommandRequest(request)) return failure("invalid-request");
+      const action=structuredClone(request.action);
+      try {return await invoke(channels.teamCommand,[{owner:{...request.owner},action}],isTeamReply);}
+      finally {if(action.type==='share-password')action.password.fill(0);}
     },
     syncState(request: SyncStateRequest) {
       if (!isSyncStateRequest(request)) return Promise.resolve(failure("invalid-request"));

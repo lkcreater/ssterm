@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.11.1" },
+  "engines": {
+    "node": ">=24.11.1"
+  },
   "scripts": {
     "init": "node --experimental-transform-types src/cli.ts init",
-    "start": "node --experimental-transform-types src/cli.ts start"
+    "start": "node --experimental-transform-types src/cli.ts start",
+    "team:init": "node --experimental-transform-types src/team-cli.ts init",
+    "team:start": "node --experimental-transform-types src/team-cli.ts start"
   }
 }

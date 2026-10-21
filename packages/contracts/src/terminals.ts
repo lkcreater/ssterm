@@ -28,6 +28,8 @@ export interface TerminalSession {
   local?: { shell: string; platform: "darwin" };
   phase: TerminalPhase;
   target: {
+    /** Sanitized provenance; internal team IDs, grants and credentials never cross this boundary. */
+    source?: "team";
     label: string;
     environment: "DEV" | "STAGING" | "PROD" | null;
     endpointHost: string;
@@ -67,7 +69,9 @@ export function isTerminalEnd(v: unknown): v is TerminalEnd {
   return exactObject(v, ["kind"]) && v.kind === "eof";
 }
 function isTerminalSessionTarget(v: unknown): v is NonNullable<TerminalSession["target"]> {
-  return exactObject(v, ["label", "environment", "endpointHost", "endpointPort", "username"]) && text(v.label, 400) &&
+  const source = v !== null && typeof v === "object" && Object.hasOwn(v, "source");
+  return exactObject(v, ["label", "environment", "endpointHost", "endpointPort", "username", ...(source ? ["source"] : [])]) &&
+    (!source || v.source === "team") && text(v.label, 400) &&
     ["DEV", "STAGING", "PROD", null].includes(v.environment as string | null) && text(v.endpointHost, 253) &&
     between(v.endpointPort, 65_535) && (v.username === null || text(v.username, 1024));
 }

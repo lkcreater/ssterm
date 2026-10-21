@@ -1,5 +1,8 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
+**Current implementation note — SST-037:** [Team vault](../team-vault.md) uses separate team authority, dual metadata/credential domains, private team schema1 and Keychain journals. Team terminals use a reserved managed-host namespace and fresh post-trust online authorization; personal sync and catalog schema4 remain independent. [Delivery and verification](../agent-runs/sst-037-delivery.md).
+
+
 **Current implementation note — SST-035:** [personal sync](../sync.md) and [delivery](../agent-runs/sst-035-delivery.md) implement opt-in manual self-hosted encrypted sync behind main-only crypto/Keychain/transport/journal interfaces. Catalog schema4/local protection remain unchanged; dedicated sync schema1 and explicit review/materialization apply. Device roles are personal capabilities, not team human ACL; SST-037 remains separate. Earlier milestone snapshots below are historical.
 
 **SST-031: remote and dynamic forwarding `DONE`** — [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031): remote `tcpip-forward` with assigned port, loopback SOCKS5, schema 2 migration with backup; unit 440/440, E2E 64/64, packaged 65/65. Later-scope range SST-029–038 authorized (ทำงาน SST-029 - SST-038 ให้จบ); next SST-030. SST-028 manual checks (T035, DS06/T052), SST-027 manual Thai IME/VoiceOver and Developer ID/notarization remain pending

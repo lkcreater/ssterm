@@ -93,7 +93,7 @@ async function audit(page: Page) {
       if (!name) findings.push({ kind: "name", detail: describe(element) });
     }
     const workspace = document.querySelector(".app-workspace")!;
-    const overflow = [workspace, ...workspace.querySelectorAll(".catalog-page, .workspace-page, [data-testid$='-page']")]
+    const overflow = [workspace, ...workspace.querySelectorAll(".catalog-page, .workspace-page, [data-testid$='-page'], [data-testid='team-workspace']")]
       .filter((node) => visible(node) && node.scrollWidth - node.clientWidth > 1).map((node) => describe(node));
     for (const detail of overflow) findings.push({ kind: "overflow", detail });
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -174,6 +174,7 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await page.getByRole("button", { name: "Recordings", exact: true }).click();
       await expect(page.getByTestId("recordings-page").getByRole("table")).toBeVisible();
     } },
+    { name: "team-vault", open: async()=>{await page.getByRole("button",{name:"Team vault",exact:true}).click();await expect(page.getByTestId("team-workspace").getByRole("button",{name:"Create encrypted team",exact:true})).toBeVisible();} },
     { name: "terminals-empty", open: () => page.getByRole("button", { name: /^Terminals/u }).click() },
   ];
   const findings: Finding[] = [];

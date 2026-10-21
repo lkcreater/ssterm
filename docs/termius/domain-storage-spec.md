@@ -1,5 +1,8 @@
 # Domain / privacy / storage specification — SST-003
 
+**Current implementation note — SST-037:** [Team vault](../team-vault.md) has its own private schema1 store, ciphertext snapshots, authority/data high-water, provider/publication journals and permanent virtual-host bindings. It does not add personal catalog hosts or change catalog schema4. Human roles and team credential access are separate from personal sync device capabilities.
+
+
 **2026-10-15 · Proposed ssterm contracts · `DONE` (specification; independent TEST/REVIEW passed).**
 [Authorization / execution plan](../agent-runs/implementation-plan.md#sst-003-execution-plan--2026-10-15): SST-003/T004–T005 only. This document specifies future behavior; it adds no application schema, code, database, encryption implementation or Keychain operation. SST-004 onward remains approval-gated. It describes independent ssterm decisions, not verified Termius behavior.
 
