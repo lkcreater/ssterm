@@ -610,6 +610,65 @@ export class SecretService {
       expectedRevision
     }]));
   }
+  /** Main-only sync capture. Owned plaintext buffers must be wiped by the caller; nothing is persisted here. */
+  exportSnippetBodies(ids: readonly Id[], fence: () => boolean = () => true): Promise<{ status: 'ready'; bodies: { id: Id; body: Buffer }[] } | { status: 'failed' }> {
+    return this.serial(async () => {
+      const bodies: { id: Id; body: Buffer }[] = [];
+      const current = this.options.repository.snapshot();
+      if (!current.ok || ids.length > 256 || new Set(ids).size !== ids.length || !fence()) return { status: 'failed' };
+      if (!ids.length) return { status: 'ready', bodies };
+      const loaded = await this.contentKey(current.value);
+      if ('reason' in loaded) return { status: 'failed' };
+      try {
+        let total = 0;
+        for (const id of ids) {
+          const snippet = current.value.snippets.find(row => row.id === id);
+          if (!snippet) throw new Error('unavailable');
+          const body = open(loaded.key, { vaultId: current.value.vault.id, snippetId: id, field: 'body' }, snippet);
+          bodies.push({ id, body });
+          total += body.length;
+          if (total > MAX_BODY || !fence()) throw new Error('unavailable');
+        }
+        return { status: 'ready', bodies };
+      } catch {
+        for (const item of bodies) item.body.fill(0);
+        return { status: 'failed' };
+      } finally { loaded.key.fill(0); }
+    });
+  }
+  /** Prepare one atomic catalog import; content-key initialization is a separate reconciled operation. */
+  prepareSnippetImport(request: {
+    expectedCatalogRevision: number;
+    snippets: { id: Id; label: string; body: Uint8Array; expectedRevision?: number }[];
+    fence?: () => boolean;
+  }): Promise<{ status: 'ready'; changes: MetadataChange[]; catalogRevision: number } | { status: 'failed' }> {
+    return this.serial(async () => {
+      const current = this.options.repository.snapshot();
+      if (!current.ok || current.value.catalogRevision !== request.expectedCatalogRevision || request.snippets.length > 256 ||
+        new Set(request.snippets.map(item => item.id)).size !== request.snippets.length || request.fence?.() === false) return { status: 'failed' };
+      const s = current.value;
+      if (!request.snippets.length) return { status: 'ready', changes: [], catalogRevision: s.catalogRevision };
+      const loaded = await this.contentKey(s);
+      if ('reason' in loaded) return { status: 'failed' };
+      try {
+        const changes: MetadataChange[] = [];
+        let total = 0;
+        for (const item of request.snippets) {
+          if (!(item.body instanceof Uint8Array) || (total += item.body.length) > MAX_BODY) return { status: 'failed' };
+          const existing = s.snippets.find(row => row.id === item.id);
+          if (existing && existing.revision !== item.expectedRevision) return { status: 'failed' };
+          if (existing) open(loaded.key, { vaultId: s.vault.id, snippetId: item.id, field: 'body' }, existing).fill(0);
+          const data = { label: item.label, bodyEnvelope: seal(loaded.key, { vaultId: s.vault.id, snippetId: item.id, field: 'body' }, item.body),
+            envelopeVersion: ENVELOPE_VERSION, keyRef: s.vault.contentKeyRef!, protectionFormat: PROTECTION_FORMAT };
+          changes.push(existing ? { type: 'update-snippet', id: item.id, expectedRevision: existing.revision, data } : { type: 'create-snippet', id: item.id, data });
+        }
+        const now = this.options.repository.snapshot();
+        if (!now.ok || now.value.catalogRevision !== s.catalogRevision || request.fence?.() === false) return { status: 'failed' };
+        return { status: 'ready', changes, catalogRevision: s.catalogRevision };
+      } catch { return { status: 'failed' }; }
+      finally { loaded.key.fill(0); }
+    });
+  }
   openSnippet(id: Id, ttlMs = DEFAULT_TRANSIENT_MS): Promise<SnippetOpenResult> {
     return this.serial(async () => {
       const current = this.options.repository.snapshot();

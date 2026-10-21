@@ -1,3 +1,4 @@
+import { SyncSettings } from "@/components/sync/sync-settings";
 import { useId, useState } from "react";
 import { AlertCircleIcon, FileClockIcon } from "lucide-react";
 import { RECORDING_BOUNDS, type Owner, type RecordingPolicy, type TerminalSettings } from "@ssterm/contracts";
@@ -54,10 +55,11 @@ export function SettingsDialog({
   onOpenRecordings?(): void;
 }) {
   const id = useId();
+  const [syncBusy, setSyncBusy] = useState(false);
   const disabled = !!disabledReason;
   const perPane = effectiveScrollback(settings.terminalScrollback, terminals);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next, details) => { if (!next && syncBusy) { details.cancel(); return; } onOpenChange(next); }}>
       <DialogContent className="max-h-[calc(100%-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
@@ -140,6 +142,7 @@ export function SettingsDialog({
           </dl>
           {owner && open ? <RecordingSettings owner={owner} onOpenRecordings={onOpenRecordings} /> : null}
           {owner ? <SignInSettings owner={owner} /> : null}
+          {owner && open ? <SyncSettings owner={owner} onBusyChange={setSyncBusy} onLock={() => onOpenChange(false)} /> : null}
         </FieldGroup>
       </DialogContent>
     </Dialog>

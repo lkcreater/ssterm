@@ -1,6 +1,6 @@
 # Independent sync cryptography — SST-036
 
-**Protocol specification, not enabled sync.** [ADR 0006](adr/0006-sync-cryptography-and-key-lifecycle.md) selects this independent construction. The application still uses schema 4 and existing local protection; no server, account, device enrollment, key export or external request is introduced by this ticket. The reference suite checks the selected primitives and bounded protocol behavior, not a deployed E2EE system or external cryptographic audit.
+**SST-036 protocol specification, adopted by opt-in personal sync in SST-035.** See [personal sync](sync.md) for the current implementation and limits. [ADR 0006](adr/0006-sync-cryptography-and-key-lifecycle.md) selects this independent construction. The application still uses catalog schema4 and existing local protection; SST-036 itself introduced no server, account, enrollment, export or external request. SST-035 adopts these bytes behind separate opt-in boundaries. The reference suite checks the selected primitives and bounded protocol behavior, not a deployed E2EE system or external cryptographic audit.
 
 ## Assumptions and threat model
 

@@ -1,7 +1,11 @@
+import { SyncClient } from "@ssterm/services/sync";
+import { openSyncRepository, type SyncRepository } from "@ssterm/adapters/sync-repository";
+import { registerSyncHandlers, guardSyncCatalog } from "./sync";
 import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, session, shell } from "electron";
-import { isAbsolute, join, relative } from "node:path";
-import { realpathSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative } from "node:path";
+import { realpathSync, constants as fsConstants } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdir, open as openFile, rename, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
   channels,
@@ -122,6 +126,9 @@ let tunnelControls: TunnelController | undefined;
 let removeTunnelHandlers: (() => void) | undefined;
 let removeSnippetHandlers: (() => void) | undefined;
 // SST-034 session logs and command history (opt-in).
+let syncClient: SyncClient | undefined;
+let syncRepository: SyncRepository | undefined;
+let syncHandlers: ReturnType<typeof registerSyncHandlers> | undefined;
 let recorder: Recorder | undefined;
 let removeRecordingHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
@@ -222,6 +229,8 @@ const boundary = new WindowBoundary(
   },
   () => storageHealth,
   (owner) => {
+    syncClient?.lock();
+    syncHandlers?.purge();
     credentials?.revokeOwner(owner);
     knownHosts?.revokeOwner(owner);
     catalog?.revokeOwner(owner);
@@ -428,6 +437,65 @@ async function initializeAppLock(): Promise<void> {
   removeAppLockHandlers = registerAppLockHandlers({ ipc: ipcMain, boundary, controller: () => appLock });
 }
 
+/** No network or key reads until explicit, owner-authorized sync actions. */
+async function initializeSync(): Promise<void> {
+  const canApplySync = () => { const snapshot = repository?.snapshot(); return !!snapshot?.ok && !snapshot.value.tunnelRules.some(rule => tunnels?.active(rule.id)); };
+  if (repository && secrets) {
+    try {
+      const { KeychainSyncKeyStore } = await import("@ssterm/adapters/sync-keychain");
+      const { PRODUCTION_SECRET_NAMESPACE } = await import("@ssterm/adapters/keychain");
+      const namespace = secretNamespace(process.env, PRODUCTION_SECRET_NAMESPACE);
+      if (namespace) {
+        await mkdir(join(app.getPath("userData"), "sync"), { recursive: true, mode: 0o700 });
+        syncRepository = openSyncRepository(join(app.getPath("userData"), "sync", "sync.sqlite"));
+        syncClient = new SyncClient({
+          repository: syncRepository, catalog: guardSyncCatalog(repository, canApplySync), keyStore: new KeychainSyncKeyStore(namespace),
+          secrets: {
+            initialize: async () => { const result = await secrets!.initializeContentKey(); return result.status === "ready" || result.status === "published"; },
+            exportBodies: async (ids) => { const result = await secrets!.exportSnippetBodies(ids); if (result.status !== "ready") throw new Error("Sync unavailable."); return result.bodies; },
+            prepare: (request) => secrets!.prepareSnippetImport(request),
+          },
+        });
+      }
+    } catch { syncRepository?.close(); syncRepository = undefined; syncClient = undefined; }
+  }
+  syncHandlers = registerSyncHandlers({
+    ipc: ipcMain, boundary, client: () => syncClient,
+    canApply: canApplySync,
+    saveKit: async (owner, kit, current) => {
+      const window = BrowserWindow.fromId(owner.windowId);
+      if (!window || window.isDestroyed() || kit.byteLength > 8 * 1024 * 1024 + 2048) return false;
+      const currentOwner = () => { const currentOwnerValue = boundary.ownerOf(window.webContents); return !quitting && !!appLock?.open() && currentOwnerValue?.windowId === owner.windowId && currentOwnerValue.generation === owner.generation && current(); };
+      const chosen = await dialog.showSaveDialog(window, { defaultPath: join(app.getPath("documents"), "ssterm-sync-recovery.ssterm"), message: "This encrypted kit needs its separate sync recovery secret. Keep both independently of this Mac.", properties: ["showOverwriteConfirmation", "createDirectory"] });
+      if (chosen.canceled || !chosen.filePath || !currentOwner()) return false;
+      const stage = join(dirname(chosen.filePath), `.ssterm-recovery-${randomUUID()}.tmp`);
+      try {
+        const file = await openFile(stage, "wx", 0o600);
+        try { await file.writeFile(kit); await file.sync(); } finally { await file.close(); }
+        if (!currentOwner()) return false;
+        await rename(stage, chosen.filePath);
+        return true;
+      } finally { await unlink(stage).catch(() => undefined); }
+    },
+    openKit: async (owner, current) => {
+      const window = BrowserWindow.fromId(owner.windowId);
+      if (!window || window.isDestroyed()) return undefined;
+      const chosen = await dialog.showOpenDialog(window, { message: "Choose your encrypted sync recovery kit. Your unlock recovery code cannot open it.", properties: ["openFile"] });
+      if (chosen.canceled || !chosen.filePaths[0] || !appLock?.open() || !current()) return undefined;
+      const file = await openFile(chosen.filePaths[0], fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      try {
+        const limit = 8 * 1024 * 1024 + 2048;
+        const stat = await file.stat(); if (!stat.isFile() || stat.size > limit) return undefined;
+        const bytes = Buffer.alloc(limit + 1);
+        let size = 0;
+        while (size <= limit) { const chunk = await file.read(bytes, size, bytes.length - size, null); if (!chunk.bytesRead) break; size += chunk.bytesRead; }
+        if (size > limit || !current()) return undefined;
+        return Buffer.from(bytes.subarray(0, size));
+      } finally { await file.close(); }
+    },
+  });
+}
+
 // A locked registry reopens only while saved hosts can be resolved; a missing secure store fails per saved ref instead.
 const checkAccess = async () => storageHealth.status === "ready" && !!repository;
 
@@ -513,6 +581,8 @@ if (ownsInstance) {
     }
     // After the registry ended every observer: drop decrypted history and abort plaintext exports.
     desktopSessions.onLock(() => recorder?.lock());
+    desktopSessions.onLock(() => { syncClient?.lock(); syncHandlers?.purge(); });
+    await initializeSync();
     credentials = createCredentialsController({ registry: desktopSessions.registry });
     removeCredentialHandlers = registerCredentialHandlers({
       ipc: ipcMain,
@@ -701,6 +771,9 @@ app.on("before-quit", (event) => {
   }
   quitting = true;
   boundary.dispose();
+  syncClient?.lock();
+  syncHandlers?.dispose();
+  const syncClosed = Promise.race([Promise.resolve(syncClient?.dispose()).catch(() => undefined), new Promise<void>(done => setTimeout(done, 2_000))]);
   credentials?.dispose();
   knownHosts?.dispose();
   terminals?.dispose();
@@ -739,7 +812,8 @@ app.on("before-quit", (event) => {
   ]);
   // Session disposal ends every capture observer first; the recorder then drains its queues (bounded) and zeroes keys.
   const sessionsClosed = remoteEditsClosed.then(() => desktopSessions?.shutdown()).then(() => recorder?.dispose()).catch(() => undefined);
-  void Promise.all([tunnelsClosed, sessionsClosed]).finally(() => {
+  void Promise.all([tunnelsClosed, sessionsClosed, syncClosed]).finally(() => {
+    syncRepository?.close();
     closeStorage();
     shutdownComplete = true;
     app.quit();

@@ -1,3 +1,5 @@
+import type { SyncStateRequest, SyncCommandRequest, SyncView, SyncReply } from "./sync.ts";
+export * from "./sync.ts";
 import type { RemoteEditState, StartRemoteEditRequest, StartRemoteEditResponse, RemoteEditRequest, UploadRemoteEditRequest } from './remote-edit.ts';
 export * from './remote-edit.ts';
 import type { CredentialState, CredentialStateRequest, AnswerCredentialsRequest, CancelCredentialPromptRequest, CredentialActionResponse } from "./credentials.ts";
@@ -87,6 +89,8 @@ export interface WindowStateEvent {
   focused: boolean;
 }
 export interface DesktopAPI {
+  syncState(request: SyncStateRequest): Promise<Result<SyncView>>;
+  syncCommand(request: SyncCommandRequest): Promise<Result<SyncReply>>;
   bootstrap(): Promise<Result<BootstrapData>>;
   credentialState(request: CredentialStateRequest): Promise<Result<CredentialState>>;
   onCredentialState(callback: (state: CredentialState) => void): () => void;
@@ -182,6 +186,8 @@ export interface DesktopAPI {
 
 // These names are never exposed through contextBridge.
 export const channels = Object.freeze({
+  syncState: "ssterm:sync-state",
+  syncCommand: "ssterm:sync-command",
   bootstrap: "ssterm:bootstrap",
   credentialState: "ssterm:credential-state",
   credentialStateChanged: "ssterm:credential-state-changed",

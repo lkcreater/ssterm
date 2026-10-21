@@ -19,6 +19,8 @@ async function gated(page: Page) {
     const boot = await window.ssterm.bootstrap();
     if (!boot.ok) return "bootstrap";
     const catalog = await window.ssterm.catalogState({ owner: boot.value.owner });
+    const sync = await window.ssterm.syncState({ owner: boot.value.owner });
+    if (!catalog.ok && catalog.error.code === "unauthorized" && (sync.ok || sync.error.code !== "unauthorized")) return "sync-gate-bypassed";
     return catalog.ok ? "open" : catalog.error.code;
   });
 }

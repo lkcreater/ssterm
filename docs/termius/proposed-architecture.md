@@ -1,5 +1,7 @@
 # Architecture ที่เสนอสำหรับ ssterm
 
+**Current implementation note — SST-035:** [personal sync](../sync.md) and [delivery](../agent-runs/sst-035-delivery.md) implement opt-in manual self-hosted encrypted sync behind main-only crypto/Keychain/transport/journal interfaces. Catalog schema4/local protection remain unchanged; dedicated sync schema1 and explicit review/materialization apply. Device roles are personal capabilities, not team human ACL; SST-037 remains separate. Earlier milestone snapshots below are historical.
+
 **SST-031: remote and dynamic forwarding `DONE`** — [tunnels](../tunnels.md#remote-and-dynamic-socks5-forwarding--sst-031): remote `tcpip-forward` with assigned port, loopback SOCKS5, schema 2 migration with backup; unit 440/440, E2E 64/64, packaged 65/65. Later-scope range SST-029–038 authorized (ทำงาน SST-029 - SST-038 ให้จบ); next SST-030. SST-028 manual checks (T035, DS06/T052), SST-027 manual Thai IME/VoiceOver and Developer ID/notarization remain pending
 
 **ผู้ใช้เลือก UI stack แล้ว: React + Electron + shadcn/ui + Tailwind CSS; อนุมัติ M0 เมื่อ 2026-10-14 และ documentation-only SST-003 เมื่อ 2026-10-15.** SST-001 ADR และ SST-002 isolated spike `DONE` แล้ว ณ 2026-10-15; [SSH compatibility result](../spikes/ssh-compatibility.md) เลือก ssh2 1.17.0 สำหรับ adapter ถัดไป SST-003/T004–T005 อยู่ `DONE` ตาม [spec](domain-storage-spec.md); production SST-001–026 ส่งมอบแล้ว; SST-027/028 ส่วนอัตโนมัติส่งมอบแล้ว (manual checks และ Developer ID รอ) รายละเอียด services อื่นยังเป็น design proposal ไม่ใช่ production implementation

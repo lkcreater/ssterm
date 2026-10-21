@@ -1,3 +1,4 @@
+import { isSyncStateRequest, isSyncCommandRequest, isSyncView, isSyncReply, type SyncStateRequest, type SyncCommandRequest } from "@ssterm/contracts";
 import {
   channels,
   isRemoteEditState, isStartRemoteEditRequest, isStartRemoteEditResponse, isRemoteEditRequest, isUploadRemoteEditRequest,
@@ -686,6 +687,14 @@ export function createDesktopBridge(transport: BridgeTransport): {
     updateSettings(request: UpdateSettingsRequest) {
       if (!isUpdateSettingsRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.updateSettings, [{ owner: { ...request.owner }, changes: { ...request.changes } }], isTerminalSettings);
+    },
+    syncState(request: SyncStateRequest) {
+      if (!isSyncStateRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.syncState, [{ owner: { ...request.owner } }], isSyncView);
+    },
+    syncCommand(request: SyncCommandRequest) {
+      if (!isSyncCommandRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.syncCommand, [{ owner: { ...request.owner }, action: structuredClone(request.action) }], isSyncReply);
     },
     recordingState(request: RecordingStateRequest) {
       if (!isRecordingStateRequest(request)) return Promise.resolve(failure("invalid-request"));

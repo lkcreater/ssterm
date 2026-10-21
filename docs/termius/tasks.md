@@ -1,7 +1,9 @@
 # Task checklist
 
-**SST-038: Mosh / FIDO capability investigation `DONE`** — [report](../spikes/mosh-fido-capabilities.md), [ADR 0007](../adr/0007-mosh-and-security-key-capability-gates.md), [delivery](../agent-runs/sst-038-delivery.md). Owned Linux arm64 Mosh probe passed 11/11 plus exact-container removal in implementation and independent test runs; FIDO is ADR-only, all hardware gates untested. No production transport/IPC/schema/dependency changes. SST-035 is next in the authorized order. Manual release/signing checks remain pending.
+**SST-035: independent personal encrypted sync `DONE` (automated)** — [behavior](../sync.md), [delivery](../agent-runs/sst-035-delivery.md). Opt-in manual Publish/Fetch/Review/Apply; self-hosted Node/SQLite, separate Keychain keys/journals, enrollment/recovery/rotation, per-record conflicts/tombstones and latest-control enforcement. Final unit707 total/706 pass/1 skip (Homebrew bash5 absent), focused sync119/119, development full81/81 and final packaged83/83. No deployment or credential sharing; catalog schema4 unchanged. SST-037 is next. Existing manual release/signing checks remain pending.
 
+
+**SST-038: Mosh / FIDO capability investigation `DONE`** — [report](../spikes/mosh-fido-capabilities.md), [ADR 0007](../adr/0007-mosh-and-security-key-capability-gates.md), [delivery](../agent-runs/sst-038-delivery.md). Owned Linux arm64 Mosh probe passed 11/11 plus exact-container removal in implementation and independent test runs; FIDO is ADR-only, all hardware gates untested. No production transport/IPC/schema/dependency changes. SST-035 is delivered in the newer record above. Manual release/signing checks remain pending.
 
 **SST-036: sync cryptography / key lifecycle `DONE` (specification and conformance)** — [protocol](../sync-crypto.md), [ADR 0006](../adr/0006-sync-cryptography-and-key-lifecycle.md), [delivery](../agent-runs/sst-036-delivery.md). New crypto suite 60/60; final focused 96/96; full unit 648 total / 646 passed / 2 skipped; typecheck/build PASS. Independent review has no unresolved critical/high findings. No production sync, dependency, IPC or schema change. SST-038 is delivered next in the record above; existing manual release/signing checks remain pending.
 
@@ -93,7 +95,7 @@ SST-029–038 follow the [recorded authorization and choices](../agent-runs/impl
 - [x] **T042 / SST-034:** opt-in encrypted logs/history/suggestions, retention/export/delete and AI privacy-only scope — automated DONE ([behavior](../recording.md), [delivery](../agent-runs/sst-034-delivery.md)); no AI provider or data transmission
 - [x] **T043 / SST-036:** threat model/independent crypto key lifecycle/test vectors/review — DONE (specification/conformance; [protocol](../sync-crypto.md), [delivery](../agent-runs/sst-036-delivery.md)); production integration remains SST-035
 - [x] **T044 / SST-038:** owned Docker Mosh bootstrap/network recovery investigation and FIDO ADR only; hardware PIN/touch/cancel and proprietary runtime/native work deferred by recorded scope
-- [ ] **T045 / SST-035:** own backend/device enrollment/encrypted sync/conflict/tombstones
+- [x] **T045 / SST-035:** own backend/device enrollment/encrypted sync/conflict/tombstones — automated DONE ([behavior](../sync.md), [delivery](../agent-runs/sst-035-delivery.md)); personal v1 bounds/exclusions apply, teams SST-037
 - [ ] **T046 / SST-037:** team ACL/membership/enforcement/revocation/rekey/audit
 
 ## Design system — งานย่อยเพิ่มตาม Signal Blue spec

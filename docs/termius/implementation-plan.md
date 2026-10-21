@@ -14,7 +14,7 @@
 
 Logo/icon ใช้ supplied SST-style artwork ใน [docs/logo](../logo/README.md) เป็น reference: `brand-logo.png` สำหรับ brand lockup, `icon-logo.png` สำหรับ derived app icons และ `design-logo.png` สำหรับ presentation; exports/alpha-edge QA/macOS packaging อยู่ DS06/T052 ยังไม่เริ่มทำ
 
-**Later SST-029–038 (authorized separately from MVP):** follow the [recorded choices and dependency order](../agent-runs/implementation-plan.md#later-scope-authorization--sst-029-to-sst-038-2026-10-17). macOS local PTY and a declared additional-OS matrix, host chaining/proxy, forwarding, remote editing and workspace tools are delivered through automated gates; SST-034/036/038 are delivered within their recorded scopes; SST-035 is next. AI remains a privacy spec only, sync remains self-hosted without deployment, and FIDO remains ADR-only within the authorized range.
+**Later SST-029–038 (authorized separately from MVP):** follow the [recorded choices and dependency order](../agent-runs/implementation-plan.md#later-scope-authorization--sst-029-to-sst-038-2026-10-17). macOS local PTY and a declared additional-OS matrix, host chaining/proxy, forwarding, remote editing and workspace tools are delivered through automated gates; SST-034/036/038 and bounded personal sync SST-035 are delivered within their recorded scopes; SST-037 is next. AI remains a privacy spec only, sync remains self-hosted without deployment, and FIDO remains ADR-only within the authorized range.
 
 MVP ใช้ original UI/branding ของ ssterm; published workflow เป็น reference และ proposals อาจต่างจาก Termius เช่น explicit save และ Paste composer; ไม่รับประกัน pixel match, database/API/cloud compatibility หรือ remote process continuity
 
