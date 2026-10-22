@@ -159,7 +159,7 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
   });
   await page.emulateMedia({ reducedMotion: "reduce" });
 
-  const pages: { name: string; open(): Promise<void> }[] = [
+  const pages: { name: string; open(): Promise<void>; close?(): Promise<void> }[] = [
     { name: "servers", open: async () => {
       await page.getByRole("button", { name: /^All servers/u }).click();
       await page.getByTestId("hosts-page").locator("button[data-host-id]").first().click();
@@ -169,6 +169,10 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await page.getByRole("button", { name: "Snippets", exact: true }).click();
       await page.getByTestId("snippets-page").locator("button[data-snippet-id]").first().click();
       await expect(page.getByTestId("snippet-editor").getByLabel("Script")).toBeVisible();
+    }, close: async () => {
+      // SST-040/06: the editor is a right drawer; Esc closes it (nothing typed) before the next page.
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("snippet-drawer")).toHaveCount(0);
     } },
     { name: "port-forwarding", open: () => page.getByRole("button", { name: /^Port forwarding/u }).click() },
     { name: "known-hosts", open: () => page.getByRole("button", { name: "Known hosts", exact: true }).click() },
@@ -179,7 +183,7 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await page.getByRole("button", { name: "Recordings", exact: true }).click();
       await expect(page.getByTestId("recordings-page").getByRole("table")).toBeVisible();
     } },
-    { name: "team-vault", open: async()=>{await page.getByRole("button",{name:"Team vault",exact:true}).click();await expect(page.getByTestId("team-workspace").getByRole("button",{name:"Create encrypted team",exact:true})).toBeVisible();} },
+    { name: "team-vault", open: async()=>{await page.getByRole("button",{name:"Team vault",exact:true}).click();await expect(page.getByTestId("team-workspace").getByRole("button",{name:"Set up Team vault",exact:true})).toBeVisible();} },
     { name: "terminals-empty", open: () => page.getByRole("button", { name: /^Terminals/u }).click() },
   ];
   const findings: Finding[] = [];
@@ -200,6 +204,7 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
         findings.push(...focus.findings.map((detail) => ({ page: view.name, size, kind: "focus", detail })));
       }
       await page.screenshot({ path: testInfo.outputPath(`${view.name}-${size}.png`) });
+      await view.close?.();
     }
     // Dialogs: Settings and Keyboard shortcuts, then Esc returns focus to the opener.
     for (const [name, dialog] of [["Settings", "settings"], ["Keyboard shortcuts", "shortcuts"]] as const) {

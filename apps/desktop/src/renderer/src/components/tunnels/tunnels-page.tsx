@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import {
   ArrowRightIcon,
@@ -27,17 +27,9 @@ import {
   type TunnelType,
 } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Drawer, firstUsable, useDrawerClose } from "@/components/drawer";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -48,7 +40,6 @@ import { call, imeEnterGuard } from "@/components/identities/secret-input";
 import { endpointText } from "@/lib/catalog-filter";
 import { addressError, labelError, serverFieldErrors, type FieldErrors } from "@/lib/catalog-validation";
 
-const layout = "flex max-h-[calc(100dvh-2rem)] flex-col [overflow-wrap:anywhere] sm:max-w-lg motion-reduce:animate-none";
 const heading = () => document.querySelector<HTMLElement>('[data-testid="tunnels-page"] h2');
 
 export const tunnelErrorText: Record<TunnelErrorCode, string> = {
@@ -105,9 +96,11 @@ function TunnelStatusView({ status }: { status?: TunnelStatus }) {
   );
 }
 
+// `key` makes each open a fresh drawer instance; `opener` is where focus returns when it is still there.
 type Dialogs =
-  | { kind: "edit"; id?: string }
-  | { kind: "delete"; id: string };
+  | { kind: "edit"; id?: string; key: number; opener: HTMLElement | null }
+  // The rule is captured at open: it stays shown (and its revision is what Delete confirms) while the drawer closes.
+  | { kind: "delete"; rule: CatalogTunnelRule; key: number; opener: HTMLElement | null };
 
 export function TunnelsPage({
   owner,
@@ -120,7 +113,14 @@ export function TunnelsPage({
   state: CatalogState;
   tunnels?: TunnelState;
 }) {
-  const [dialog, setDialog] = useState<Dialogs>();
+  const [dialog, setDialogState] = useState<Dialogs>();
+  const serial = useRef(0);
+  const setDialog = (next: { kind: "edit"; id?: string } | { kind: "delete"; rule: CatalogTunnelRule } | undefined) =>
+    setDialogState(next && {
+      ...next,
+      key: ++serial.current,
+      opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    });
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const mark = (id: string, on: boolean) => setBusy((current) => {
     const next = new Set(current);
@@ -154,7 +154,7 @@ export function TunnelsPage({
   }
   const editing = dialog?.kind === "edit" ? dialog : undefined;
   const editingRule = editing?.id ? rules.find((rule) => rule.id === editing.id) : undefined;
-  const deleting = dialog?.kind === "delete" ? rules.find((rule) => rule.id === dialog.id) : undefined;
+  const deleting = dialog?.kind === "delete" ? dialog.rule : undefined;
 
   return (
     <div className="catalog-page" data-testid="tunnels-page">
@@ -256,7 +256,7 @@ export function TunnelsPage({
                   <Button size="icon-sm" variant="ghost" aria-label={`Edit ${rule.label}`} onClick={() => setDialog({ kind: "edit", id: rule.id })}>
                     <PencilIcon aria-hidden="true" />
                   </Button>
-                  <Button size="icon-sm" variant="ghost" aria-label={`Delete ${rule.label}`} onClick={() => setDialog({ kind: "delete", id: rule.id })}>
+                  <Button size="icon-sm" variant="ghost" aria-label={`Delete ${rule.label}`} onClick={() => setDialog({ kind: "delete", rule })}>
                     <Trash2Icon aria-hidden="true" />
                   </Button>
                 </div>
@@ -268,6 +268,8 @@ export function TunnelsPage({
       {/* A rule deleted elsewhere closes its editor instead of turning it into "new". */}
       {editing && (!editing.id || editingRule) ? (
         <RuleEditor
+          key={editing.key}
+          returnFocus={() => firstUsable(editing.opener, heading())}
           owner={owner}
           catalog={catalog}
           state={state}
@@ -279,6 +281,8 @@ export function TunnelsPage({
       ) : null}
       {deleting ? (
         <DeleteRuleDialog
+          key={dialog?.key}
+          returnFocus={() => firstUsable(dialog?.opener, heading())}
           owner={owner}
           catalog={catalog}
           rule={deleting}
@@ -292,6 +296,7 @@ export function TunnelsPage({
 }
 
 const typeText: Record<TunnelType, string> = { local: "Local", remote: "Remote", dynamic: "SOCKS" };
+const ruleTitle: Record<TunnelType, string> = { local: "local forwarding rule", remote: "remote forwarding rule", dynamic: "SOCKS proxy rule" };
 const typeItems = [
   { value: "local", label: "Local: a port on this Mac" },
   { value: "remote", label: "Remote: a port on the server" },
@@ -325,6 +330,7 @@ function RuleEditor({
   rule,
   running,
   failed,
+  returnFocus,
   onClose,
 }: {
   owner: Owner;
@@ -334,12 +340,14 @@ function RuleEditor({
   running: boolean;
   /** A failed status describes the old settings; it is cleared before saving. */
   failed: boolean;
+  returnFocus(): HTMLElement | true;
   onClose(): void;
 }) {
   // Captured when the dialog opened: a save that stopped the tunnel must still restart it on retry.
   const restart = useRef(running);
   const stopped = useRef(false);
-  const [draft, setDraft] = useState<Draft>(() => ({
+  const formId = useId();
+  const [initial] = useState<Draft>(() => ({
     label: rule?.label ?? "",
     hostId: rule?.hostId ?? state.hosts[0]?.id ?? "",
     type: rule?.type ?? "local",
@@ -348,9 +356,14 @@ function RuleEditor({
     destinationHost: rule?.destinationHost ?? "127.0.0.1",
     destinationPort: rule?.destinationPort != null ? String(rule.destinationPort) : "",
   }));
+  const [draft, setDraft] = useState<Draft>(initial);
+  // What the rule holds now: after "Saved, but not restarted" closing discards nothing, but further edits are dirty again.
+  const [baseline, setBaseline] = useState<Draft>(initial);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [problem, setProblem] = useState<{ title: string; text: string }>();
   const [saving, setSaving] = useState(false);
+  const dirty = (Object.keys(baseline) as (keyof Draft)[]).some((name) => baseline[name] !== draft[name]);
+  const close = useDrawerClose({ dirty, busy: saving });
   const fail = (text: string) => setProblem(stopped.current
     ? { title: "The tunnel is stopped", text: `The tunnel was stopped and has not been restarted. ${text}` }
     : { title: "The rule was not saved", text });
@@ -362,7 +375,8 @@ function RuleEditor({
   };
 
   async function save() {
-    if (saving) return;
+    // An Enter that lands in the form while the discard step opens must not save behind it.
+    if (saving || close.discarding) return;
     const bindPort = portValue(draft.bindPort);
     const destinationPort = portValue(draft.destinationPort);
     const remote = draft.type === "remote";
@@ -380,6 +394,7 @@ function RuleEditor({
     };
     setErrors(local);
     if (Object.values(local).some(Boolean)) return first.current?.focus();
+    const submitted = draft;
     setSaving(true);
     setProblem(undefined);
     const data = {
@@ -415,29 +430,45 @@ function RuleEditor({
       }
       const applied = await catalog.apply(prepared.value.token);
       if (!applied.ok) return fail(requestText(applied.error.code));
+      setBaseline(submitted);
       if (restart.current && rule) {
         const restarted = await call((bridge) => bridge.startTunnel({ owner, ruleId: rule.id }));
         const reason = !restarted.ok ? requestText(restarted.error.code)
           : restarted.value.status === "failed" ? tunnelErrorText[restarted.value.code] : undefined;
         if (reason) return setProblem({ title: "Saved, but not restarted", text: reason });
       }
-      onClose();
+      close.discard();
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
-      <DialogContent className={layout} data-testid="tunnel-editor" initialFocus={first} finalFocus={() => heading() ?? true}>
-        <DialogHeader>
-          <DialogTitle>{rule ? "Edit forwarding rule" : "New forwarding rule"}</DialogTitle>
-          <DialogDescription>Saving never starts the tunnel. Start it from the list when you need it.</DialogDescription>
-        </DialogHeader>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      initialFocus={first}
+      finalFocus={returnFocus}
+      data-testid="tunnel-editor"
+      data-type={draft.type}
+      title={`${rule ? "Edit" : "New"} ${ruleTitle[draft.type]}`}
+      target={rule ? <span className="min-w-0 break-all">{rule.label}</span> : undefined}
+      description="Saving never starts the tunnel. Start it from the list when you need it."
+      discardText="Your changes to this rule will be lost."
+      footer={
+        <>
+          <Button variant="outline" disabled={saving} onClick={close.request}>Cancel</Button>
+          <Button type="submit" form={formId} disabled={saving}>
+            {saving ? <Spinner data-icon="inline-start" /> : null}
+            {restart.current ? "Save and restart" : rule ? "Save" : "Save rule"}
+          </Button>
+        </>
+      }
+    >
         <form
-          className="-mx-4 grid min-h-0 gap-4 overflow-y-auto px-4 py-1"
+          className="grid min-w-0 gap-4"
           noValidate
-          id="tunnel-rule-form"
+          id={formId}
           onSubmit={(event) => {
             event.preventDefault();
             void save();
@@ -567,15 +598,7 @@ function RuleEditor({
           </div>
           {errors.tunnel ? <FieldError>{errors.tunnel}</FieldError> : null}
         </form>
-        <DialogFooter>
-          <Button variant="outline" disabled={saving} onClick={onClose}>Cancel</Button>
-          <Button type="submit" form="tunnel-rule-form" disabled={saving}>
-            {saving ? <Spinner data-icon="inline-start" /> : null}
-            {restart.current ? "Save and restart" : rule ? "Save" : "Save rule"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </Drawer>
   );
 }
 
@@ -585,6 +608,7 @@ function DeleteRuleDialog({
   rule,
   running,
   failed,
+  returnFocus,
   onClose,
 }: {
   owner: Owner;
@@ -592,10 +616,12 @@ function DeleteRuleDialog({
   rule: CatalogTunnelRule;
   running: boolean;
   failed: boolean;
+  returnFocus(): HTMLElement | true;
   onClose(): void;
 }) {
   const cancel = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
+  const close = useDrawerClose({ busy });
   const [problem, setProblem] = useState<string>();
   async function confirm() {
     if (busy) return;
@@ -612,34 +638,38 @@ function DeleteRuleDialog({
       if (prepared.value.kind === "invalid") return setProblem(serverFieldErrors(prepared.value.fields).tunnel ?? "The rule could not be deleted.");
       const applied = await catalog.apply(prepared.value.token);
       if (!applied.ok) return setProblem(requestText(applied.error.code));
-      onClose();
+      close.discard();
     } finally {
       setBusy(false);
     }
   }
   return (
-    <AlertDialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-      <AlertDialogContent initialFocus={cancel} finalFocus={() => heading() ?? true} className={layout} data-testid="delete-tunnel-dialog">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-all">Delete {rule.label}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {running ? "The tunnel is running. It is stopped first, closing its open connections, and then the rule is removed." : "The rule is removed from this Mac."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {problem ? (
-          <Alert variant="destructive">
-            <TriangleAlertIcon />
-            <AlertTitle>Nothing more was changed</AlertTitle>
-            <AlertDescription>{problem}</AlertDescription>
-          </Alert>
-        ) : null}
-        <AlertDialogFooter>
-          <Button ref={cancel} variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      finalFocus={returnFocus}
+      data-testid="delete-tunnel-dialog"
+      title={<span className="break-all">Delete {rule.label}?</span>}
+      target={<Badge variant="outline">{typeText[rule.type]}</Badge>}
+      description={running ? "The tunnel is running. It is stopped first, closing its open connections, and then the rule is removed." : "The rule is removed from this Mac."}
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" disabled={busy} onClick={close.request}>Cancel</Button>
           <Button variant="destructive" disabled={busy} onClick={() => void confirm()}>
             {busy ? <Spinner data-icon="inline-start" /> : null}{running ? "Stop and delete" : "Delete rule"}
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </>
+      }
+    >
+      {problem ? (
+        <Alert variant="destructive">
+          <TriangleAlertIcon />
+          <AlertTitle>Nothing more was changed</AlertTitle>
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
+      ) : null}
+    </Drawer>
   );
 }

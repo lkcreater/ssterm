@@ -4,7 +4,7 @@
 
 ## Behavior
 
-- **Snippets page** in the sidebar: a searchable list and an editor with name, script body (monospace, no wrapping, scrolls), tag toggles and a New tag field. Save (button or ⌘S), Revert, Close, and Delete with a confirmation whose Cancel is focused. Leaving an unsaved editor asks first. The page stays mounted, so a draft survives switching pages.
+- **Snippets page** in the sidebar: a searchable list. New snippet or a row opens the **editor drawer** (SST-040/06) from the right edge, with name, script body (monospace, no wrapping, scrolls), tag toggles and a New tag field; a row's body is decrypted only when it is opened. Save (button or ⌘S) keeps the drawer open; Revert; Close. Delete is a confirmation step inside the same drawer (Cancel focused; Esc steps back). Esc, Close or × on an unsaved editor shows the discard step first. Closing returns focus to the row (or the opener).
 - **Saving never runs anything.** No session is opened and no bytes are sent; the page says so.
 - **Search** matches every term against names and tag names (NFC, case-insensitive). Bodies are never searched or indexed.
 - **Validation**: name 1–200 characters without control characters; body at most 1 MiB of UTF-8 and no lone surrogates; tags must exist. Problems appear on the field; main repeats every check and returns typed field errors.
@@ -19,7 +19,7 @@
 
 ## Lock
 
-The explicit action is the unlock (identities rule). An open, save or delete that started before a later lock returns no plaintext and commits nothing: main fences the commit synchronously. On a lock, main republishes catalog state with a higher `lockEpoch`; the renderer closes the editor, discards the draft and offers *Open again*.
+The explicit action is the unlock (identities rule). An open, save or delete that started before a later lock returns no plaintext and commits nothing: main fences the commit synchronously. On a lock, main republishes catalog state with a higher `lockEpoch`; the renderer unmounts the editor form inside the drawer (dropping plaintext and draft) and offers *Open again*.
 
 ## Verification
 

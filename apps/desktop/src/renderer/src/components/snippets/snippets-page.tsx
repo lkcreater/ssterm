@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import {
   CheckIcon,
   LayersIcon,
   LockKeyholeIcon,
   PlusIcon,
-  SaveIcon,
   SearchIcon,
   SearchXIcon,
   ShieldCheckIcon,
@@ -21,14 +20,7 @@ import {
   type SnippetProtectionProblem,
 } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { Drawer, firstUsable, useDrawerClose } from "@/components/drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -43,7 +35,8 @@ import { compareLabel, normalized } from "@/lib/catalog-filter";
 import { labelError, serverFieldErrors } from "@/lib/catalog-validation";
 import { bodyBytes, bodyError, filterSnippets, saveFieldError, sizeText } from "@/lib/snippet-filter";
 
-type Selection = { kind: "new" } | { kind: "snippet"; id: string };
+/** One open of the editor drawer; `key` makes each open a fresh instance. `id` undefined: a new snippet. */
+type Editing = { key: number; id?: string; opener: HTMLElement | null };
 type Notice = { title: string; text: string };
 type Draft = { label: string; body: string; tagIds: string[] };
 
@@ -96,50 +89,27 @@ function NoticeAlert({ notice }: { notice: Notice }) {
 
 export function SnippetsPage({ owner, catalog, state }: { owner: Owner; catalog: Catalog; state: CatalogState }) {
   const [search, setSearch] = useState("");
-  const [selection, setSelection] = useState<Selection>();
-  // Each opened editor is a fresh session; creating a snippet keeps the session (and focus) alive.
-  const [session, setSession] = useState(0);
-  // The lock epoch an editor opened under: a later lock drops its plaintext and unsaved draft.
-  const [openedEpoch, setOpenedEpoch] = useState(state.lockEpoch);
-  const [pending, setPending] = useState<Selection | "close">();
-  const [deleting, setDeleting] = useState<CatalogSnippet>();
-  const dirty = useRef(false);
+  const [editing, setEditing] = useState<Editing>();
+  const serial = useRef(0);
   const list = useRef<HTMLUListElement>(null);
   const tags = useMemo(() => new Map(state.tags.map((tag) => [tag.id, tag])), [state.tags]);
   const shown = useMemo(() => filterSnippets(state.snippets, state.tags, search), [state.snippets, state.tags, search]);
-  const selectedRow = selection?.kind === "snippet" ? state.snippets.find((row) => row.id === selection.id) : undefined;
-  const locked = !!selection && state.lockEpoch > openedEpoch;
-
-  // A snippet deleted elsewhere closes its editor. A just-created one may not be in the pushed state yet.
-  const seen = useRef<string>(undefined);
-  useEffect(() => {
-    if (selection?.kind !== "snippet") return;
-    if (selectedRow) seen.current = selectedRow.id;
-    else if (seen.current === selection.id) {
-      dirty.current = false;
-      setSelection(undefined);
-    }
-  }, [selection, selectedRow]);
-  useEffect(() => {
-    if (!locked) return;
-    dirty.current = false;
-    // The draft is already gone; there is nothing left to discard.
-    setPending(undefined);
-  }, [locked]);
-
-  const open = (next: Selection | undefined) => {
-    dirty.current = false;
-    setSelection(next);
-    setSession((n) => n + 1);
-    setOpenedEpoch(state.lockEpoch);
+  // The open drawer reports its snippet (a new one gets an id once saved), for the row highlight and focus return.
+  const [currentId, setCurrentIdState] = useState<string>();
+  const currentIdRef = useRef<string>(undefined);
+  const setCurrentId = (id: string | undefined) => {
+    currentIdRef.current = id;
+    setCurrentIdState(id);
   };
-  const request = (next: Selection | "close") => {
-    if (dirty.current && !locked) return setPending(next);
-    open(next === "close" ? undefined : next);
+  const row = (id: string | undefined) =>
+    id ? list.current?.querySelector<HTMLElement>(`button[data-snippet-id="${CSS.escape(id)}"]`) : undefined;
+  const open = (id?: string) => {
+    setCurrentId(id);
+    setEditing({ key: ++serial.current, id, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null });
   };
   const empty = state.snippets.length === 0;
   const newButton = (
-    <Button size="sm" onClick={() => request({ kind: "new" })}>
+    <Button size="sm" onClick={() => open()}>
       <PlusIcon data-icon="inline-start" /> New snippet
     </Button>
   );
@@ -149,16 +119,16 @@ export function SnippetsPage({ owner, catalog, state }: { owner: Owner; catalog:
       <PageHeader
         title="Snippets"
         subtitle={`Reusable commands, encrypted on this Mac · ${state.snippets.length} ${state.snippets.length === 1 ? "snippet" : "snippets"}`}
-        actions={empty && !selection ? null : newButton}
+        actions={empty ? null : newButton}
       />
       <p className="flex items-center gap-2 type-caption text-muted-foreground">
         <ShieldCheckIcon className="size-4 shrink-0" aria-hidden="true" />
-        Snippet bodies are encrypted on this Mac. Saving never runs a command.
+        Snippet bodies are encrypted on this Mac. Opening one decrypts it; saving never runs a command.
       </p>
       {state.truncated ? (
         <p className="type-caption text-muted-foreground">Showing the first {MAX_CATALOG_ITEMS.toLocaleString()} items of each kind.</p>
       ) : null}
-      {empty && !selection ? (
+      {empty ? (
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -168,184 +138,303 @@ export function SnippetsPage({ owner, catalog, state }: { owner: Owner; catalog:
             <EmptyDescription>Save commands and scripts you reuse. Their contents are encrypted and stay on this Mac.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button onClick={() => request({ kind: "new" })}>
+            <Button onClick={() => open()}>
               <PlusIcon data-icon="inline-start" /> New snippet
             </Button>
           </EmptyContent>
         </Empty>
       ) : (
-        <div className="catalog-split">
-          <div className="flex min-h-0 min-w-0 flex-col gap-2">
-            <InputGroup>
-              <InputGroupAddon>
-                <SearchIcon aria-hidden="true" />
-              </InputGroupAddon>
-              <InputGroupInput
-                type="search"
-                aria-label="Search snippets"
-                placeholder="Search names and tags"
-                value={search}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </InputGroup>
-            <span role="status" className="sr-only">
-              {search.trim() ? `${shown.length} ${shown.length === 1 ? "snippet matches" : "snippets match"}` : ""}
-            </span>
-            {shown.length === 0 && !empty ? (
-              <Empty>
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <SearchXIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>No snippets match</EmptyTitle>
-                  <EmptyDescription>Search looks at snippet names and tags, never at their contents.</EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                  <Button variant="outline" onClick={() => setSearch("")}>Clear search</Button>
-                </EmptyContent>
-              </Empty>
-            ) : (
-              <ul
-                ref={list}
-                className="catalog-list"
-                aria-label="Snippets"
-                onKeyDown={(event) => {
-                  const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>("button[data-snippet-id]") ?? [])];
-                  const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-                  const step: Record<string, number> = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: buttons.length - 1 };
-                  const next = buttons[step[event.key] ?? -1];
-                  if (index < 0 || !next) return;
-                  event.preventDefault();
-                  next.focus();
-                }}
-              >
-                {shown.map((snippet, index) => {
-                  const current = selection?.kind === "snippet" && selection.id === snippet.id;
-                  const focusable = current || (selection?.kind !== "snippet" && index === 0);
-                  return (
-                    <li key={snippet.id}>
-                      <button
-                        type="button"
-                        className="catalog-row"
-                        data-snippet-id={snippet.id}
-                        tabIndex={focusable ? 0 : -1}
-                        aria-current={current ? "true" : undefined}
-                        onClick={() => {
-                          if (!current || locked) request({ kind: "snippet", id: snippet.id });
-                        }}
-                      >
-                        <span className="min-w-0 truncate font-medium" title={snippet.label}>{snippet.label}</span>
-                        {snippet.tagIds.length ? (
-                          <span className="flex min-w-0 flex-wrap gap-1">
-                            {snippet.tagIds.map((id) => {
-                              const tag = tags.get(id);
-                              return tag ? (
-                                <Badge key={id} variant="secondary" className="max-w-full" title={tag.label}>
-                                  <span className="min-w-0 truncate">{tag.label}</span>
-                                </Badge>
-                              ) : null;
-                            })}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-          {!selection ? (
-            <div className="catalog-detail">
-              <p className="text-sm text-muted-foreground">Choose a snippet to open it, or create a new one.</p>
-            </div>
-          ) : locked ? (
-            <section className="catalog-detail" aria-label="Snippet closed" data-testid="snippet-locked">
-              <div className="flex items-center gap-2">
-                <LockKeyholeIcon className="size-4 shrink-0" aria-hidden="true" />
-                <h3 className="type-label">The workspace locked</h3>
-              </div>
-              <p className="text-sm">The open snippet was closed and any unsaved changes were discarded. Open it again to continue.</p>
-              <div className="flex flex-wrap gap-2">
-                {selection.kind === "snippet" ? (
-                  <Button size="sm" onClick={() => open(selection)}>Open again</Button>
-                ) : null}
-                <Button size="sm" variant="outline" onClick={() => open(undefined)}>Close</Button>
-              </div>
-            </section>
-          ) : (
-            <SnippetEditor
-              key={session}
-              owner={owner}
-              catalog={catalog}
-              state={state}
-              snippet={selectedRow}
-              onDirty={(value) => { dirty.current = value; }}
-              onCreated={(id) => setSelection({ kind: "snippet", id })}
-              onClose={() => request("close")}
-              onDelete={(row) => setDeleting(row)}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+          <InputGroup className="max-w-md">
+            <InputGroupAddon>
+              <SearchIcon aria-hidden="true" />
+            </InputGroupAddon>
+            <InputGroupInput
+              type="search"
+              aria-label="Search snippets"
+              placeholder="Search names and tags"
+              value={search}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setSearch(event.target.value)}
             />
+          </InputGroup>
+          <span role="status" className="sr-only">
+            {search.trim() ? `${shown.length} ${shown.length === 1 ? "snippet matches" : "snippets match"}` : ""}
+          </span>
+          {shown.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <SearchXIcon />
+                </EmptyMedia>
+                <EmptyTitle>No snippets match</EmptyTitle>
+                <EmptyDescription>Search looks at snippet names and tags, never at their contents.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="outline" onClick={() => setSearch("")}>Clear search</Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <ul
+              ref={list}
+              className="catalog-list"
+              aria-label="Snippets"
+              onKeyDown={(event) => {
+                const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>("button[data-snippet-id]") ?? [])];
+                const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                const step: Record<string, number> = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: buttons.length - 1 };
+                const next = buttons[step[event.key] ?? -1];
+                if (index < 0 || !next) return;
+                event.preventDefault();
+                next.focus();
+              }}
+            >
+              {shown.map((snippet, index) => {
+                const current = !!editing && currentId === snippet.id;
+                const focusable = current || ((!editing || !shown.some((row) => row.id === currentId)) && index === 0);
+                return (
+                  <li key={snippet.id}>
+                    <button
+                      type="button"
+                      className="catalog-row"
+                      data-snippet-id={snippet.id}
+                      tabIndex={focusable ? 0 : -1}
+                      aria-current={current ? "true" : undefined}
+                      onClick={() => open(snippet.id)}
+                    >
+                      <span className="min-w-0 truncate font-medium" title={snippet.label}>{snippet.label}</span>
+                      {snippet.tagIds.length ? (
+                        <span className="flex min-w-0 flex-wrap gap-1">
+                          {snippet.tagIds.map((id) => {
+                            const tag = tags.get(id);
+                            return tag ? (
+                              <Badge key={id} variant="secondary" className="max-w-full" title={tag.label}>
+                                <span className="min-w-0 truncate">{tag.label}</span>
+                              </Badge>
+                            ) : null;
+                          })}
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       )}
-      <AlertDialog open={pending !== undefined} onOpenChange={(value) => { if (!value) setPending(undefined); }}>
-        <AlertDialogContent className="motion-reduce:animate-none" data-testid="discard-snippet-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-            <AlertDialogDescription>The changes to this snippet have not been saved.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <Button variant="outline" autoFocus onClick={() => setPending(undefined)}>Keep editing</Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                const next = pending;
-                setPending(undefined);
-                open(next === "close" || next === undefined ? undefined : next);
-              }}
-            >
-              Discard
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {deleting ? (
-        <DeleteSnippetDialog
+      {editing ? (
+        <SnippetDrawer
+          key={editing.key}
           owner={owner}
-          snippet={deleting}
-          onClose={() => setDeleting(undefined)}
-          onDeleted={() => {
-            setDeleting(undefined);
-            open(undefined);
+          catalog={catalog}
+          state={state}
+          snippetId={editing.id}
+          onCurrent={setCurrentId}
+          returnFocus={(deleted) =>
+            deleted
+              ? firstUsable(list.current?.querySelector<HTMLElement>(`button[data-snippet-id]:not([data-snippet-id="${CSS.escape(deleted)}"])`), heading())
+              : firstUsable(row(currentIdRef.current), editing.opener, heading())}
+          onClose={() => {
+            setEditing(undefined);
+            setCurrentIdState(undefined);
           }}
-          afterDelete={() =>
-            list.current?.querySelector<HTMLElement>(`button[data-snippet-id]:not([data-snippet-id="${CSS.escape(deleting.id)}"])`) ?? heading()}
         />
       ) : null}
     </div>
   );
 }
 
-function SnippetEditor({
+/**
+ * The snippet editor as a right drawer. The body is decrypted only when the user opens a snippet, lives only in this
+ * drawer's state, and is dropped when the workspace locks (the form unmounts) or the drawer closes. Delete is a
+ * confirmation step inside the same drawer.
+ */
+function SnippetDrawer({
   owner,
   catalog,
   state,
-  snippet,
-  onDirty,
-  onCreated,
+  snippetId,
+  onCurrent,
+  returnFocus,
   onClose,
-  onDelete,
 }: {
   owner: Owner;
   catalog: Catalog;
   state: CatalogState;
   /** Undefined: a new snippet. */
-  snippet?: CatalogSnippet;
-  onDirty(dirty: boolean): void;
-  onCreated(id: string): void;
+  snippetId?: string;
+  onCurrent(id: string | undefined): void;
+  /** `deleted`: the id just deleted (its row is gone). */
+  returnFocus(deleted?: string): HTMLElement | true;
   onClose(): void;
-  onDelete(snippet: CatalogSnippet): void;
+}) {
+  const formId = useId();
+  const [id, setId] = useState(snippetId);
+  // Each form session decrypts once; Open again after a lock starts a new one.
+  const [session, setSession] = useState(0);
+  // The lock epoch the form opened under: a later lock drops its plaintext and unsaved draft.
+  const [openedEpoch, setOpenedEpoch] = useState(state.lockEpoch);
+  const [step, setStep] = useState<"edit" | "delete">("edit");
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteNotice, setDeleteNotice] = useState<Notice>();
+  const [ready, setReady] = useState(!snippetId);
+  const deleted = useRef(false);
+  const dirty = useRef(false);
+  const stepCancel = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const row = id ? state.snippets.find((item) => item.id === id) : undefined;
+  const locked = state.lockEpoch > openedEpoch;
+  const close = useDrawerClose({ dirty: () => dirty.current && !locked, busy: saving || deleting });
+  const { discard, keep } = close;
+
+  // A snippet deleted elsewhere closes its editor. A just-created one may not be in the pushed state yet.
+  const seen = useRef(false);
+  useEffect(() => {
+    if (row) seen.current = true;
+    else if (seen.current && !deleted.current) {
+      dirty.current = false;
+      discard();
+    }
+  }, [row]);
+  useEffect(() => {
+    if (!locked) return;
+    // The draft is already gone; there is nothing left to discard (a discard step already showing ends too).
+    dirty.current = false;
+    keep();
+    setStep("edit");
+    setReady(false);
+  }, [locked]);
+  useEffect(() => {
+    if (step === "delete") stepCancel.current?.focus();
+  }, [step]);
+
+  async function remove() {
+    if (deleting || !row) return;
+    setDeleting(true);
+    setDeleteNotice(undefined);
+    const result = await call((bridge) => bridge.deleteSnippet({ owner, snippetId: row.id, expectedRevision: row.revision }));
+    setDeleting(false);
+    if (!result.ok) return setDeleteNotice(requestNotice(result.error.code, "deleted"));
+    deleted.current = true;
+    dirty.current = false;
+    discard();
+  }
+
+  const title = step === "delete" ? `Delete ${row?.label ?? "snippet"}?` : id ? "Edit snippet" : "New snippet";
+  return (
+    <Drawer
+      close={step === "delete" ? { ...close, request: () => { if (!deleting) setStep("edit"); } } : close}
+      onClose={onClose}
+      // A new snippet starts at Name; an existing one at Close while it decrypts (never at Delete), then Name.
+      initialFocus={snippetId ? closeButton : true}
+      finalFocus={() => returnFocus(deleted.current ? id : undefined)}
+      data-testid="snippet-drawer"
+      title={<span className="break-all">{title}</span>}
+      target={id && row && step === "edit" ? <span className="min-w-0 break-all">{row.label}</span> : undefined}
+      description={step === "delete" ? undefined : "The script is encrypted on this Mac. Saving never runs it."}
+      discardText="The changes to this snippet have not been saved."
+      footer={
+        step === "delete" ? (
+          <>
+            <Button ref={stepCancel} variant="outline" disabled={deleting} onClick={() => setStep("edit")}>Cancel</Button>
+            {/* A double click on Delete must not land on this replacement button. */}
+            <Button variant="destructive" disabled={deleting || !row} onClick={(event) => { if (event.detail <= 1) void remove(); }}>
+              {deleting ? <Spinner data-icon="inline-start" /> : null}Delete snippet
+            </Button>
+          </>
+        ) : (
+          <>
+            {/* Not gated on a successful decrypt: deleting needs no key, so an unreadable snippet can still be removed. */}
+            {row && !locked ? (
+              <Button variant="outline" className="mr-auto" disabled={saving} onClick={() => { setDeleteNotice(undefined); setStep("delete"); }}>
+                <Trash2Icon data-icon="inline-start" /> Delete
+              </Button>
+            ) : null}
+            <Button ref={closeButton} variant="outline" disabled={saving} onClick={close.request}>Close</Button>
+            {locked ? null : (
+              <Button type="submit" form={formId} disabled={saving || !ready}>
+                {saving ? <Spinner data-icon="inline-start" /> : null}
+                {id ? "Save" : "Save snippet"}
+              </Button>
+            )}
+          </>
+        )
+      }
+    >
+      {step === "delete" ? (
+        <section role="alert" aria-labelledby={`${formId}-delete`} className="grid gap-2" data-testid="delete-snippet-confirm">
+          <h3 id={`${formId}-delete`} className="font-medium text-foreground">This cannot be undone</h3>
+          <p className="text-muted-foreground">
+            The snippet and its tag assignments are removed from this Mac. Tags themselves are kept.
+          </p>
+          {deleteNotice ? <NoticeAlert notice={deleteNotice} /> : null}
+        </section>
+      ) : null}
+      {locked ? (
+        <section className="grid gap-3" aria-label="Snippet closed" data-testid="snippet-locked">
+          <div className="flex items-center gap-2">
+            <LockKeyholeIcon className="size-4 shrink-0" aria-hidden="true" />
+            <h3 className="type-label">The workspace locked</h3>
+          </div>
+          <p className="text-sm">The open snippet was closed and any unsaved changes were discarded. Open it again to continue.</p>
+          {id && row ? (
+            <div>
+              <Button size="sm" onClick={() => { setOpenedEpoch(state.lockEpoch); setReady(!id); setSession((n) => n + 1); }}>Open again</Button>
+            </div>
+          ) : null}
+        </section>
+      ) : (
+        // Hidden, not unmounted, during the delete step: an unsaved draft survives Cancel.
+        <div className={step === "delete" ? "hidden" : "grid min-w-0 gap-4"}>
+          <SnippetEditor
+            key={session}
+            formId={formId}
+            owner={owner}
+            catalog={catalog}
+            state={state}
+            snippet={id ? row : undefined}
+            discarding={close.discarding}
+            onDirty={(value) => { dirty.current = value; }}
+            onReady={() => setReady(true)}
+            onSaving={setSaving}
+            onCreated={(created) => {
+              setId(created);
+              onCurrent(created);
+            }}
+          />
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
+function SnippetEditor({
+  formId,
+  owner,
+  catalog,
+  state,
+  snippet,
+  discarding,
+  onDirty,
+  onReady,
+  onSaving,
+  onCreated,
+}: {
+  formId: string;
+  owner: Owner;
+  catalog: Catalog;
+  state: CatalogState;
+  /** Undefined: a new snippet. */
+  snippet?: CatalogSnippet;
+  /** The drawer's discard step is showing: a submit landing now must not save behind it. */
+  discarding: boolean;
+  onDirty(dirty: boolean): void;
+  onReady(): void;
+  onSaving(saving: boolean): void;
+  onCreated(id: string): void;
 }) {
   const [target, setTarget] = useState(snippet ? { id: snippet.id, revision: snippet.revision } : undefined);
   const [phase, setPhase] = useState<"loading" | "ready" | "failed">(snippet ? "loading" : "ready");
@@ -353,7 +442,11 @@ function SnippetEditor({
   const [draft, setDraft] = useState<Draft>(baseline);
   const [errors, setErrors] = useState<{ label?: string; body?: string; tag?: string }>({});
   const [notice, setNotice] = useState<Notice>();
-  const [saving, setSaving] = useState(false);
+  const [saving, setSavingState] = useState(false);
+  const setSaving = (value: boolean) => {
+    setSavingState(value);
+    onSaving(value);
+  };
   // Synchronous guard: two submits before a render must not create two snippets.
   const inFlight = useRef(false);
   const [status, setStatus] = useState("");
@@ -366,6 +459,12 @@ function SnippetEditor({
   const bytes = useMemo(() => bodyBytes(draft.body), [draft.body]);
 
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  // The fields appear once the body is decrypted: start there, unless the user already moved on inside the drawer.
+  useEffect(() => {
+    if (phase !== "ready" || !snippet) return;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || !focused.closest("input, textarea, [role=checkbox]")) labelInput.current?.focus();
+  }, [phase]);
   // Only the opened snippet: a later revision elsewhere is reported on save, never silently merged.
   useEffect(() => {
     if (!snippet) {
@@ -387,6 +486,7 @@ function SnippetEditor({
       setBaseline(loaded);
       setDraft(loaded);
       setPhase("ready");
+      onReady();
     });
     return () => {
       stale = true;
@@ -400,7 +500,8 @@ function SnippetEditor({
   };
 
   async function save() {
-    if (inFlight.current || phase !== "ready") return;
+    // An Enter or ⌘S that lands in the form while the discard step opens must not save behind it.
+    if (inFlight.current || phase !== "ready" || discarding) return;
     const existing = new Set(state.tags.map((tag) => tag.id));
     const submitted: Draft = { label: draft.label, body: draft.body, tagIds: draft.tagIds.filter((id) => existing.has(id)) };
     const next = { label: labelError(submitted.label), body: bodyError(submitted.body) };
@@ -469,24 +570,13 @@ function SnippetEditor({
 
   const title = target ? baseline.label || "Snippet" : "New snippet";
   return (
-    <section className="catalog-detail snippet-editor" aria-label={title} data-testid="snippet-editor">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <h3 className="type-label min-w-0 break-all">{title}</h3>
-        {target && snippet ? (
-          <Button size="sm" variant="outline" disabled={saving} onClick={() => onDelete(snippet)}>
-            <Trash2Icon data-icon="inline-start" /> Delete
-          </Button>
-        ) : null}
-      </div>
+    <section className="grid min-w-0 gap-4" aria-label={title} data-testid="snippet-editor">
       {notice ? <NoticeAlert notice={notice} /> : null}
       {phase === "loading" ? (
         <Spinner aria-label="Opening snippet" />
-      ) : phase === "failed" ? (
-        <div>
-          <Button size="sm" variant="outline" onClick={onClose}>Close</Button>
-        </div>
-      ) : (
+      ) : phase === "failed" ? null : (
         <form
+          id={formId}
           className="grid gap-4"
           noValidate
           onSubmit={(event) => {
@@ -595,10 +685,6 @@ function SnippetEditor({
             {errors.tag ? <FieldError>{errors.tag}</FieldError> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" size="sm" disabled={saving}>
-              {saving ? <Spinner data-icon="inline-start" /> : <SaveIcon data-icon="inline-start" />}
-              {target ? "Save" : "Save snippet"}
-            </Button>
             <Button
               type="button"
               size="sm"
@@ -612,9 +698,6 @@ function SnippetEditor({
             >
               Revert
             </Button>
-            <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={onClose}>
-              Close
-            </Button>
             <span role="status" className="type-caption text-muted-foreground" data-testid="snippet-status">
               {status || (dirty ? "Unsaved changes" : "")}
             </span>
@@ -622,59 +705,5 @@ function SnippetEditor({
         </form>
       )}
     </section>
-  );
-}
-
-function DeleteSnippetDialog({
-  owner,
-  snippet,
-  onClose,
-  onDeleted,
-  afterDelete,
-}: {
-  owner: Owner;
-  snippet: CatalogSnippet;
-  onClose(): void;
-  onDeleted(): void;
-  /** Where focus goes once the snippet is gone (the row that opened the editor is removed). */
-  afterDelete(): HTMLElement | null;
-}) {
-  const cancel = useRef<HTMLButtonElement>(null);
-  const deleted = useRef(false);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<Notice>();
-  async function confirm() {
-    if (busy) return;
-    setBusy(true);
-    const result = await call((bridge) => bridge.deleteSnippet({ owner, snippetId: snippet.id, expectedRevision: snippet.revision }));
-    setBusy(false);
-    if (result.ok) {
-      deleted.current = true;
-      onDeleted();
-    } else setNotice(requestNotice(result.error.code, "deleted"));
-  }
-  return (
-    <AlertDialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-      <AlertDialogContent
-        initialFocus={cancel}
-        finalFocus={() => (deleted.current ? afterDelete() : null) ?? true}
-        className="flex max-h-[calc(100dvh-2rem)] flex-col [overflow-wrap:anywhere] motion-reduce:animate-none"
-        data-testid="delete-snippet-dialog"
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-all">Delete {snippet.label}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            The snippet and its tag assignments are removed from this Mac. This cannot be undone. Tags themselves are kept.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {notice ? <NoticeAlert notice={notice} /> : null}
-        <AlertDialogFooter>
-          <Button ref={cancel} variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" disabled={busy} onClick={() => void confirm()}>
-            {busy ? <Spinner data-icon="inline-start" /> : null}Delete snippet
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

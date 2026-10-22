@@ -245,14 +245,21 @@ test("recording over SSH bash 5.2 through production main: opt-in, encrypted, ex
     // 9. Delete one log, history, then everything; suggestions are empty afterwards.
     await page.getByRole("button", { name: "Recordings", exact: true }).click();
     await expect(row).toHaveCount(2);
+    // Each confirmation is an alert drawer step: Cancel first, Delete closes it.
+    const confirm = page.getByTestId("delete-recordings-dialog");
     await row.first().getByRole("button", { name: `Delete the log of ${server}` }).click();
-    await page.getByTestId("delete-recordings-dialog").getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(confirm).toHaveAttribute("role", "alertdialog");
+    await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(confirm).toHaveCount(0);
     await expect(row).toHaveCount(1);
     await recordings.getByRole("button", { name: "Delete history" }).click();
-    await page.getByTestId("delete-recordings-dialog").getByRole("button", { name: "Delete", exact: true }).click();
+    await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(confirm).toHaveCount(0);
     await expect.poll(async () => (await recordingNames(root)).filter((name) => name.startsWith("cmd-"))).toEqual([]);
     await recordings.getByRole("button", { name: "Delete all" }).click();
-    await page.getByTestId("delete-recordings-dialog").getByRole("button", { name: "Delete", exact: true }).click();
+    await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(confirm).toHaveCount(0);
     await expect(row).toHaveCount(0);
     expect(await recordingNames(root)).toEqual([]);
     expect((await readdir(root)).sort()).toEqual([".ssterm-recordings", "policy.json"]);

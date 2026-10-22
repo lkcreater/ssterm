@@ -1431,3 +1431,15 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
   - Shared `firstUsable` focus helper.
   - Review APPROVED with no critical, high or medium findings. Lows fixed: stale errors in drawers, showcase preselect, docs, helper reuse. Kept: Skip now takes 3 actions, a same-spot Continue → Replace, and no UI E2E for drawer-closes-when-conflict-leaves (main-level only).
   - Checks: typecheck, unit 768/769, build, full E2E 85/86 (`team.spec:42` failed before SST-040 too), focused rerun after fixes 13/13.
+- **SST-040/06 done (2026-10-22):**
+  - **Drawer migrations:**
+    - Snippets: a list plus a keyed editor drawer, with delete and discard steps and "Open again" after a lock.
+    - Port forwarding: a rule drawer whose title follows the rule type, and an alert drawer for delete.
+    - Recordings: deletions use alert drawers.
+    - Team vault: rewritten so every form and confirmation is a drawer. Role gating, secret handling and the setup/recovery order are unchanged.
+  - **`team.spec.ts:42` (failing since before SST-040) fixed:** a test race. Escape was pressed before the Pane actions menu had opened, so the open menu's backdrop blocked the next click. The review confirmed with a probe that the app is not affected.
+  - **Review:** first BLOCKED. H1 was a regression: a snippet that cannot be decrypted could no longer be deleted. Fixed, with a new E2E. Lows L1–L6 fixed. The re-review APPROVED.
+  - **Checks:**
+    - typecheck, unit 768/769, build pass.
+    - Full E2E 85/86 before the fixes; the one failure (`sync.spec:60`, element detached) passed when run alone.
+    - Focused E2E after the fixes: 14/14, and 6/6 in the re-review.

@@ -110,6 +110,7 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
     const port = await freePort();
     await s.root.getByRole("button", { name: "New rule" }).click();
     await expect(s.editor.getByLabel("Name", { exact: true })).toBeFocused();
+    await expect(s.editor.getByRole("heading", { name: "New local forwarding rule" })).toBeVisible();
     await s.editor.getByLabel("Name", { exact: true }).fill("เว็บ fixture");
     await expect(s.editor.getByText("Resolved and connected by the SSH server, not this Mac.")).toBeVisible();
     // Invalid ports are refused in place.
@@ -173,6 +174,7 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
     await s.root.getByRole("button", { name: "New rule" }).click();
     await s.editor.getByLabel("Name", { exact: true }).fill("SOCKS proxy");
     await choose("Type", "SOCKS: a proxy on this Mac");
+    await expect(s.editor.getByRole("heading", { name: "New SOCKS proxy rule" })).toBeVisible();
     await expect(s.editor.getByTestId("socks-usage")).toBeVisible();
     await expect(s.editor.getByLabel("Destination port")).toBeHidden();
     await s.editor.getByLabel("Local port").fill(String(socksPort));
@@ -192,6 +194,7 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
       await s.root.getByRole("button", { name: "New rule" }).click();
       await s.editor.getByLabel("Name", { exact: true }).fill("กลับมาที่ Mac");
       await choose("Type", "Remote: a port on the server");
+      await expect(s.editor.getByRole("heading", { name: "New remote forwarding rule" })).toBeVisible();
       await expect(s.editor.getByText("Resolved and connected by this Mac.", { exact: false })).toBeVisible();
       await choose("Server address", "0.0.0.0 (every IPv4 address)");
       await expect(s.editor.getByText("Reachable from other machines")).toBeVisible();
@@ -220,7 +223,11 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
       await s.editor.getByLabel("Destination port").fill("");
       await s.editor.getByRole("button", { name: "Save" , exact: true }).click();
       await expect(s.editor.getByText("Enter a destination port from 1 to 65535.")).toBeVisible();
+      // Cancel on an edited rule is a discard step inside the same drawer; nothing is saved.
       await s.editor.getByRole("button", { name: "Cancel" }).click();
+      await expect(s.editor.getByRole("button", { name: "Keep editing" })).toBeFocused();
+      await s.editor.getByRole("button", { name: "Discard" }).click();
+      await expect(s.editor).toHaveCount(0);
       await expect(socksRow).toHaveAttribute("data-type", "dynamic");
     } finally {
       await new Promise<void>((done) => local.close(() => done()));
@@ -258,7 +265,9 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
     await r.row("Duplicate").getByRole("button", { name: "Delete Duplicate" }).click();
     const remove = again.page.getByTestId("delete-tunnel-dialog");
     await expect(remove.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await expect(remove).toHaveAttribute("role", "alertdialog");
     await remove.getByRole("button", { name: "Delete rule" }).click();
+    await expect(remove).toHaveCount(0);
     await expect(r.row("Duplicate")).toHaveCount(0);
     expect(again.errors).toEqual([]);
   } finally {

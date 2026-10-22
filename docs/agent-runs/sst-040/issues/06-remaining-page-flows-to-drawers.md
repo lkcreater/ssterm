@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Drawer primitive with Server and Group editors
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Snippet editor and delete are drawer flows; bodies stay encrypted and decrypt only on explicit action
 - [ ] Each forwarding rule type has its drawer form with existing per-type validation and public-bind warning

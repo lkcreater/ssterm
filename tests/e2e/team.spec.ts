@@ -122,6 +122,46 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
       { password: lab.password, recordId },
     );
     expect(shared?.ok && shared.value.outcome === "ok").toBe(true);
+    // SST-040/06: the managed host editor, shared password and delete confirmation are drawers; Esc and Cancel change nothing.
+    await desktop.page
+      .getByRole("button", { name: "Team vault", exact: true })
+      .click();
+    const ownerHosts = desktop.page.getByTestId("team-workspace");
+    await ownerHosts
+      .getByRole("button", { name: `Edit Team host ${label}`, exact: true })
+      .click();
+    const hostDrawer = desktop.page.getByTestId("team-host-drawer");
+    await expect(
+      hostDrawer.getByLabel("Team host label", { exact: true }),
+    ).toHaveValue(label);
+    await desktop.page.keyboard.press("Escape");
+    await expect(hostDrawer).toHaveCount(0);
+    await ownerHosts
+      .getByRole("button", { name: `Share password for ${label}`, exact: true })
+      .click();
+    const passwordDrawer = desktop.page.getByTestId("team-password-drawer");
+    await expect(passwordDrawer).toContainText(`${lab.username}@${lab.host}:${lab.port}`);
+    await expect(
+      passwordDrawer.getByLabel("Shared SSH password", { exact: true }),
+    ).toHaveValue("");
+    await expect(
+      passwordDrawer.getByRole("button", { name: "Encrypt and share password" }),
+    ).toBeDisabled();
+    await passwordDrawer.getByRole("button", { name: "Cancel" }).click();
+    await expect(passwordDrawer).toHaveCount(0);
+    await ownerHosts
+      .getByRole("button", { name: `Delete Team host ${label}`, exact: true })
+      .click();
+    const confirmDelete = desktop.page.getByTestId("team-confirm-drawer");
+    await expect(confirmDelete).toHaveAttribute("role", "alertdialog");
+    await expect(
+      confirmDelete.getByRole("button", { name: "Cancel" }),
+    ).toBeFocused();
+    await confirmDelete.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirmDelete).toHaveCount(0);
+    expect((await state(desktop.page)).hosts.map((host) => host.label)).toEqual([
+      label,
+    ]);
     const enroll = async (role: "Viewer" | "Connector" | "Editor") => {
       const invite = await command(desktop.page, {
         type: "invite",
@@ -218,6 +258,19 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
     await expect(
       connector.member.page.getByTestId("team-workspace"),
     ).toContainText(label);
+    // Role gating is unchanged: a Connector gets Connect, not the Editor/Owner drawers.
+    await expect(
+      connector.member.page.getByRole("button", {
+        name: `Edit Team host ${label}`,
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      connector.member.page.getByRole("button", {
+        name: `Share password for ${label}`,
+        exact: true,
+      }),
+    ).toHaveCount(0);
     // Production connect must use managed credentials after ordinary explicit SSH host trust.
     await connector.member.page
       .getByRole("button", {
@@ -238,6 +291,13 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
     await pane
       .getByRole("button", { name: "Pane actions", exact: true })
       .click();
+    // The absence check passes before the menu exists: wait until it is open and focused, or Escape can arrive
+    // before the menu takes focus and leave it open (its modal backdrop then blocks every later click).
+    const menu = connector.member.page.getByRole("menu", {
+      name: "Pane actions",
+      exact: true,
+    });
+    await expect(menu).toBeFocused();
     await expect(
       connector.member.page.getByRole("menuitem", {
         name: "Open in SFTP",
@@ -245,6 +305,7 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
       }),
     ).toHaveCount(0);
     await connector.member.page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
     await expect(
       connector.member.page.getByTestId("credential-prompt-dialog"),
     ).toHaveCount(0);
@@ -315,17 +376,24 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
         exact: true,
       })
       .click();
-    await rejoin
+    // The setup drawer opens in Join mode with the captured scope; only the replacement token is typed.
+    const joinDrawer = editor.member.page.getByTestId("team-setup-drawer");
+    await expect(joinDrawer.getByLabel("Team server URL", { exact: true })).toHaveValue(endpoint);
+    await expect(joinDrawer.getByLabel("Principal ID", { exact: true })).toHaveValue(
+      editor.invitation.principalId,
+    );
+    await joinDrawer
       .getByLabel("Principal token", { exact: true })
       .fill(replacement.detail.invitation.token);
-    await rejoin
+    await joinDrawer
       .getByRole("checkbox", {
         name: "I choose this server and understand the Team connection and sharing policy.",
       })
       .check();
-    await rejoin
+    await joinDrawer
       .getByRole("button", { name: "Create Team device request", exact: true })
       .click();
+    await expect(joinDrawer).toHaveCount(0);
     const candidateResult = rejoin.getByLabel("Public enrollment text", {
       exact: true,
     });
@@ -385,9 +453,22 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
     await desktop.page
       .getByRole("button", { name: "Team vault", exact: true })
       .click();
-    await expect(desktop.page.getByTestId("team-workspace")).toContainText(
-      "Owner",
-    );
+    const ownerPage = desktop.page.getByTestId("team-workspace");
+    await expect(ownerPage).toContainText("Owner");
+    // SST-040/06: a member's role, token and revocation are steps in one drawer; Esc steps back, then closes.
+    // This page instance still shows the view from before the later members; fetch it from the page.
+    await ownerPage.getByRole("button", { name: "Fetch Team changes", exact: true }).click();
+    await ownerPage.getByRole("button", { name: /^Manage / }).first().click();
+    const memberDrawer = desktop.page.getByTestId("team-member-drawer");
+    await memberDrawer.getByRole("button", { name: "Revoke member", exact: true }).click();
+    await expect(memberDrawer.getByTestId("team-member-confirm")).toBeVisible();
+    await expect(memberDrawer.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await desktop.page.keyboard.press("Escape");
+    await expect(memberDrawer.getByTestId("team-member-confirm")).toHaveCount(0);
+    await expect(memberDrawer.getByRole("button", { name: "Revoke member", exact: true })).toBeVisible();
+    await desktop.page.keyboard.press("Escape");
+    await expect(memberDrawer).toHaveCount(0);
+    expect((await state(desktop.page)).members.filter((member) => member.status === "active")).toHaveLength(3);
   } finally {
     for (const p of profiles.reverse()) await p.close();
     await desktop.close();
@@ -430,6 +511,10 @@ test("independent Team recovery uses native kit dialogs and a fresh authority de
       .getByRole("button", { name: "Team vault", exact: true })
       .click();
     const panel = desktop.page.getByTestId("team-workspace");
+    await panel
+      .getByRole("button", { name: "Set up Team vault", exact: true })
+      .click();
+    const setup = desktop.page.getByTestId("team-setup-drawer");
     for (const [label, value] of Object.entries({
       "Team server URL": endpoint,
       "Deployment ID": scope.deploymentId,
@@ -440,15 +525,16 @@ test("independent Team recovery uses native kit dialogs and a fresh authority de
       "Principal ID": principalId,
       "Principal token": token,
     }))
-      await panel.getByLabel(label, { exact: true }).fill(value);
-    await panel
+      await setup.getByLabel(label, { exact: true }).fill(value);
+    await setup
       .getByRole("checkbox", {
         name: "I choose this server and understand the Team connection and sharing policy.",
       })
       .check();
-    await panel
+    await setup
       .getByRole("button", { name: "Create encrypted team", exact: true })
       .click();
+    await expect(setup).toHaveCount(0);
     await expect(panel).toContainText("enrolled");
     const kitPath = join(directory, "owned-team-kit.ssterm");
     await desktop.app.evaluate(({ dialog }, path) => {

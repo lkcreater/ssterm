@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Drawer, firstUsable, useDrawerClose } from "@/components/drawer";
 import { PageHeader } from "@/components/page-header";
 import {
   CircleAlertIcon, CircleDotIcon, CopyIcon, DownloadIcon, FileClockIcon, HistoryIcon, Trash2Icon, TriangleAlertIcon,
@@ -8,9 +9,6 @@ import {
   type SupportedShell,
 } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -30,7 +28,7 @@ const exportText: Record<string, string> = {
   failed: "The export could not be written.",
   aborted: "The export stopped because ssterm locked. Nothing was left behind.",
 };
-type Confirm = { target: DeleteRecordingTarget; title: string; description: string };
+type Confirm = { key: number; target: DeleteRecordingTarget; title: string; description: string };
 
 /**
  * SST-034 Recordings: session logs (with Export… and Delete each), command history export/delete, Delete all, and
@@ -40,7 +38,10 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
   const { state, unavailable, remove, exportRecording } = useRecordings(owner);
   const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string }>();
   const [busy, setBusy] = useState<string>();
-  const [confirm, setConfirm] = useState<Confirm>();
+  const [confirm, setConfirmState] = useState<Confirm>();
+  // Each delete opens a fresh drawer instance (keyed), so a closing one is never reused.
+  const serial = useRef(0);
+  const setConfirm = (next: Omit<Confirm, "key">) => setConfirmState({ ...next, key: ++serial.current });
   const [shell, setShell] = useState<SupportedShell>("bash");
   const heading = useRef<HTMLHeadingElement>(null);
   async function save(target: ExportRecordingTarget, key: string) {
@@ -150,7 +151,7 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
         </table>
       </section>
       {confirm ? (
-        <DeleteDialog confirm={confirm} onClose={() => setConfirm(undefined)} onDelete={async () => {
+        <DeleteDrawer key={confirm.key} confirm={confirm} onClose={() => setConfirmState(undefined)} onDelete={async () => {
           const deleted = await remove(confirm.target);
           if (!deleted) return false;
           setNotice({ tone: "info", text: "Deleted from this Mac. Plaintext exports and OS backups are not affected." });
@@ -193,32 +194,39 @@ function LogRow({ log, busy, onExport, onDelete }: { log: RecordingSummary; busy
   );
 }
 
-function DeleteDialog({ confirm, onClose, onDelete, heading }: { confirm: Confirm; onClose(): void; onDelete(): Promise<boolean>; heading(): HTMLElement | null }) {
+/** Delete confirmation as an alert drawer; focus returns to the opener when it is still there, else the heading. */
+function DeleteDrawer({ confirm, onClose, onDelete, heading }: { confirm: Confirm; onClose(): void; onDelete(): Promise<boolean>; heading(): HTMLElement | null }) {
   const cancel = useRef<HTMLButtonElement>(null);
+  const [opener] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const close = useDrawerClose({ busy });
   return (
-    <AlertDialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-      <AlertDialogContent initialFocus={cancel} finalFocus={() => heading() ?? true} data-testid="delete-recordings-dialog">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-words">{confirm.title}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {confirm.description} Copies outside ssterm (plaintext exports, Time Machine backups) are not affected.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {failed ? <Alert variant="destructive"><CircleAlertIcon /><AlertDescription>Nothing could be deleted right now.</AlertDescription></Alert> : null}
-        <AlertDialogFooter>
-          <Button ref={cancel} variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      finalFocus={() => firstUsable(opener, heading())}
+      data-testid="delete-recordings-dialog"
+      title={<span className="break-words">{confirm.title}</span>}
+      description={`${confirm.description} Copies outside ssterm (plaintext exports, Time Machine backups) are not affected.`}
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" disabled={busy} onClick={close.request}>Cancel</Button>
           <Button variant="destructive" disabled={busy} onClick={async () => {
             setBusy(true);
+            setFailed(false);
             const deleted = await onDelete();
             setBusy(false);
-            if (deleted) onClose(); else setFailed(true);
+            if (deleted) close.discard(); else setFailed(true);
           }}>
             {busy ? <Spinner data-icon="inline-start" /> : null}Delete
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </>
+      }
+    >
+      {failed ? <Alert variant="destructive"><CircleAlertIcon /><AlertDescription>Nothing could be deleted right now.</AlertDescription></Alert> : null}
+    </Drawer>
   );
 }
