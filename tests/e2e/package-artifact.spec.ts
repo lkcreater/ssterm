@@ -24,7 +24,10 @@ test("bundle identity, version, usage strings, icon and signature are release-re
     "NSNetworkVolumesUsageDescription", "NSRemovableVolumesUsageDescription"]) expect(plist(key)).toMatch(/^ssterm /u);
   for (const key of ["NSCameraUsageDescription", "NSMicrophoneUsageDescription", "NSAudioCaptureUsageDescription",
     "NSBluetoothAlwaysUsageDescription", "NSBluetoothPeripheralUsageDescription"]) expect(has(key), key).toBe(false);
-  // The derived icon replaces Electron's.
+  // The derived icon replaces Electron's and comes from icon v2 (ADR 0008); qa.json records its source.
+  const qa = JSON.parse(readFileSync("artifacts/icons/qa.json", "utf8"));
+  const v2 = execFileSync("shasum", ["-a", "256", "docs/logo/icon-logo-v2.png"], { encoding: "utf8" }).split(" ")[0];
+  expect(qa.source.sha256).toBe(v2);
   const icon = join(bundle, "Contents/Resources", plist("CFBundleIconFile"));
   const derived = execFileSync("shasum", ["-a", "256", "artifacts/icons/ssterm.icns"], { encoding: "utf8" }).split(" ")[0];
   expect(execFileSync("shasum", ["-a", "256", icon], { encoding: "utf8" }).split(" ")[0]).toBe(derived);

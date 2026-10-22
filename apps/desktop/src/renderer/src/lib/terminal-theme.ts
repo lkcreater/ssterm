@@ -1,21 +1,26 @@
 import type { CSSProperties } from "react";
 import type { ITerminalOptions } from "@xterm/xterm";
 
-/** Terminal color ownership is independent of application semantic tokens. */
-export const signalTerminalTheme = Object.freeze({
-  background: "#0c1220",
-  foreground: "#e5edfa",
-  cursor: "#6a9fff",
-  selection: "#243650",
-  black: "#7087aa",
+/**
+ * Terminal color ownership is independent of application semantic tokens. Charcoal (ADR 0008);
+ * the persisted `terminalPalette` value stays `signal-blue-dark`. Neutral black is 3.92:1 on the
+ * background by decision; every other ANSI color is at least 4.5:1.
+ */
+export const charcoalTerminalTheme = Object.freeze({
+  background: "#131313",
+  foreground: "#f3f3f3",
+  cursor: "#f3f3f3",
+  /** Primary blue #2563eb at 40%; xterm composites it over the cell. */
+  selection: "#2563eb66",
+  black: "#737373",
   red: "#e87979",
-  green: "#62bd8a",
+  green: "#22c55e",
   yellow: "#e5b765",
-  blue: "#6a9fff",
+  blue: "#3b82f6",
   magenta: "#c79af0",
   cyan: "#6bc8d9",
   white: "#d0daeb",
-  brightBlack: "#91a4c1",
+  brightBlack: "#737373",
   brightRed: "#ffa3a3",
   brightGreen: "#92d9ad",
   brightYellow: "#f5d895",
@@ -77,7 +82,7 @@ export function paneScrollback(state: PaneScrollback, sessions: readonly string[
 
 export const terminalFont =
   '"JetBrains Mono Variable", "Noto Sans Thai Variable", ui-monospace, monospace';
-const { selection, ...terminalColors } = signalTerminalTheme;
+const { selection, ...terminalColors } = charcoalTerminalTheme;
 
 /**
  * The declared trust boundary for remote bytes: they reach the screen only through xterm's
@@ -102,23 +107,24 @@ export const xtermOptions = {
 
 /**
  * Search match colors; xterm requires #RRGGBB. Matched text keeps its own ANSI color, so the
- * active match sits on the background lifted slightly (foreground 14.3:1, every ANSI color at
- * least 4.5:1) and is told apart by its amber border rather than a bright fill.
+ * active match sits on the background lifted slightly (foreground 15.7:1, every ANSI color but
+ * neutral black at least 4.5:1) and is told apart by its amber border rather than a bright fill.
  */
 export const terminalSearchDecorations = {
-  matchBackground: signalTerminalTheme.selection,
-  matchBorder: signalTerminalTheme.brightBlack,
-  matchOverviewRuler: signalTerminalTheme.brightBlack,
-  activeMatchBackground: "#141d30",
-  activeMatchBorder: signalTerminalTheme.yellow,
-  activeMatchColorOverviewRuler: signalTerminalTheme.yellow,
+  /** The selection as composited over the background (decorations need opaque #RRGGBB). */
+  matchBackground: "#1a3369",
+  matchBorder: charcoalTerminalTheme.brightBlack,
+  matchOverviewRuler: charcoalTerminalTheme.brightBlack,
+  activeMatchBackground: "#1a1a1a",
+  activeMatchBorder: charcoalTerminalTheme.yellow,
+  activeMatchColorOverviewRuler: charcoalTerminalTheme.yellow,
 };
 
 export const terminalStyle = {
-  "--terminal-background": signalTerminalTheme.background,
-  "--terminal-foreground": signalTerminalTheme.foreground,
-  "--terminal-cursor": signalTerminalTheme.cursor,
-  "--terminal-selection": signalTerminalTheme.selection,
+  "--terminal-background": charcoalTerminalTheme.background,
+  "--terminal-foreground": charcoalTerminalTheme.foreground,
+  "--terminal-cursor": charcoalTerminalTheme.cursor,
+  "--terminal-selection": charcoalTerminalTheme.selection,
   "--terminal-font": terminalFont,
   "--terminal-size": "13px",
   "--terminal-line-height": "1.4",

@@ -10,7 +10,7 @@ import {
   terminalShortcut,
 } from "../../apps/desktop/src/renderer/src/lib/terminal-input.ts";
 import {
-  signalTerminalTheme,
+  charcoalTerminalTheme,
   terminalAnsiKeys,
   terminalSearchDecorations,
 } from "../../apps/desktop/src/renderer/src/lib/terminal-theme.ts";
@@ -173,9 +173,15 @@ function contrast(a: string, b: string) {
 
 test("the active search match keeps the foreground and every ANSI color readable", () => {
   const background = terminalSearchDecorations.activeMatchBackground;
-  assert.ok(contrast(signalTerminalTheme.foreground, background) >= 14, "foreground at least 14:1");
-  for (const name of terminalAnsiKeys)
-    assert.ok(contrast(signalTerminalTheme[name], background) >= 4.5, `${name} at least 4.5:1`);
+  assert.ok(contrast(charcoalTerminalTheme.foreground, background) >= 14, "foreground at least 14:1");
+  // SST-040 decision 5: neutral black/brightBlack #737373 is 3.92:1 on the Charcoal background by choice.
+  const neutral = new Set(["black", "brightBlack"]);
+  for (const name of terminalAnsiKeys.filter((key) => !neutral.has(key)))
+    assert.ok(contrast(charcoalTerminalTheme[name], background) >= 4.5, `${name} at least 4.5:1`);
+  for (const name of neutral) {
+    assert.ok(contrast(charcoalTerminalTheme[name as "black"], charcoalTerminalTheme.background) >= 3.9, `${name} 3.92:1 on the background`);
+    assert.ok(contrast(charcoalTerminalTheme[name as "black"], background) >= 3.6, `${name} 3.67:1 on the active match`);
+  }
   assert.ok(
     contrast(terminalSearchDecorations.activeMatchBorder, background) >= 3,
     "the amber border is what marks the active match",

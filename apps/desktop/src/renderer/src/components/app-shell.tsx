@@ -100,7 +100,7 @@ import {
   groupTree,
   type CatalogScope,
 } from "@/lib/catalog-filter";
-import iconLogo from "@/assets/icon-logo.png";
+import iconLogo from "@/assets/icon-logo-v2.png";
 
 
 const storageProblems: Record<

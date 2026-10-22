@@ -11,7 +11,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { call, copyText, imeEnterGuard } from "@/components/identities/secret-input";
-import iconLogo from "@/assets/icon-logo.png";
+import iconLogo from "@/assets/icon-logo-v2.png";
 
 export const googleFailureText: Record<GoogleFailure, string> = {
   cancelled: "Sign-in was cancelled.",

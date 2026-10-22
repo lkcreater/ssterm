@@ -13,6 +13,7 @@ const SIZES = [[960, 640], [1280, 800]] as const;
  * In-page audit of what is rendered now: visible text contrast (4.5:1, or 3:1 for large text), accessible names for
  * interactive controls, horizontal overflow, and reduced-motion effectiveness. Disabled controls and placeholders are
  * exempt from contrast (WCAG 1.4.3). Backgrounds are composited through ancestors on a canvas, as in other specs.
+ * Primary-blue text is the ADR 0008 accepted exception: its measured ratio is recorded in `excepted`, not asserted.
  */
 async function audit(page: Page) {
   return page.evaluate(() => {
@@ -65,6 +66,8 @@ async function audit(page: Page) {
       return `${element.tagName.toLowerCase()}${id}${test ? ` in ${test}` : ""} "${(element.textContent ?? "").trim().slice(0, 40)}"`;
     };
     const findings: { kind: string; detail: string }[] = [];
+    const excepted: string[] = [];
+    const blue = rgba(getComputedStyle(document.documentElement).getPropertyValue("--primary").trim()).join();
     let checked = 0;
     for (const element of document.querySelectorAll("body *")) {
       if (element.closest(".xterm, svg, [aria-hidden='true'], .sr-only")) continue;
@@ -75,10 +78,12 @@ async function audit(page: Page) {
       const size = parseFloat(style.fontSize);
       const large = size >= 24 || (size >= 18.66 && Number(style.fontWeight) >= 700);
       const back = background(element);
-      const fore = blend(rgba(style.color), back);
+      const color = rgba(style.color);
+      const fore = blend(color, back);
       const value = ratio(fore, back);
       checked += 1;
-      if (value < (large ? 3 : 4.5)) findings.push({ kind: "contrast", detail: `${describe(element)} ${value.toFixed(2)}:1` });
+      if (color.join() === blue) excepted.push(`${describe(element)} ${value.toFixed(2)}:1`);
+      else if (value < (large ? 3 : 4.5)) findings.push({ kind: "contrast", detail: `${describe(element)} ${value.toFixed(2)}:1` });
     }
     const controls = "button, a[href], input, textarea, select, [role='button'], [role='tab'], [role='menuitem'], [role='combobox'], [role='switch'], [role='checkbox'], [role='separator'][tabindex]";
     for (const element of document.querySelectorAll(controls)) {
@@ -104,7 +109,7 @@ async function audit(page: Page) {
         if (style.animationName !== "none" && seconds(style.animationDuration) > 0.01)
           findings.push({ kind: "motion", detail: `${describe(element)} ${style.animationName} ${style.animationDuration}` });
       }
-    return { findings, checked };
+    return { findings, excepted, checked };
   });
 }
 
@@ -178,7 +183,7 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
     { name: "terminals-empty", open: () => page.getByRole("button", { name: /^Terminals/u }).click() },
   ];
   const findings: Finding[] = [];
-  const matrix: Record<string, { checked: number; focusReached?: number }> = {};
+  const matrix: Record<string, { checked: number; excepted: string[]; focusReached?: number }> = {};
   for (const [width, height] of SIZES) {
     await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]!.setContentSize(size[0], size[1]), [width, height] as const);
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
@@ -187,7 +192,7 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await view.open();
       await page.waitForTimeout(150);
       const result = await audit(page);
-      matrix[`${view.name}@${size}`] = { checked: result.checked };
+      matrix[`${view.name}@${size}`] = { checked: result.checked, excepted: result.excepted };
       findings.push(...result.findings.map((finding) => ({ page: view.name, size, ...finding })));
       if (width === 960) {
         const focus = await focusAudit(page);
@@ -206,14 +211,14 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await page.waitForTimeout(250);
       const result = await audit(page);
       expect(result.checked, `${name} dialog text was audited`).toBeGreaterThan(3);
-      matrix[`${dialog}-dialog@${size}`] = { checked: result.checked };
+      matrix[`${dialog}-dialog@${size}`] = { checked: result.checked, excepted: result.excepted };
       findings.push(...result.findings.map((finding) => ({ page: `${dialog}-dialog`, size, ...finding })));
       if (dialog === "settings") {
         // The Recording section sits below the fold of the scrolling dialog.
         await page.getByTestId("recording-settings").scrollIntoViewIfNeeded();
         await expect(page.getByTestId("recording-settings").getByRole("switch", { name: "Record session output" })).not.toBeChecked();
         const recording = await audit(page);
-        matrix[`settings-recording@${size}`] = { checked: recording.checked };
+        matrix[`settings-recording@${size}`] = { checked: recording.checked, excepted: recording.excepted };
         findings.push(...recording.findings.map((finding) => ({ page: "settings-recording", size, ...finding })));
         await page.getByRole("dialog").getByRole("heading", { name: "Settings" }).scrollIntoViewIfNeeded();
       }

@@ -22,12 +22,16 @@ test("showcases semantic colors, state independence, Thai text and both desktop 
     items.map((item) => ({
       name: item.getAttribute("data-color-pair"),
       ratio: Number(item.getAttribute("data-contrast-ratio")),
+      exception: item.hasAttribute("data-contrast-exception"),
     })),
   );
-  for (const pair of contrasts)
-    expect(pair.ratio, pair.name ?? "").toBeGreaterThanOrEqual(
-      pair.name === "Essential boundary" ? 3 : 4.5,
-    );
+  // ADR 0008: focus ring / blue text and control boundary are recorded as evidence, not asserted.
+  expect(contrasts.filter((pair) => pair.exception).map((pair) => pair.name)).toEqual([
+    "Focus ring / blue text",
+    "Control boundary",
+  ]);
+  for (const pair of contrasts.filter((item) => !item.exception))
+    expect(pair.ratio, pair.name ?? "").toBeGreaterThanOrEqual(4.5);
   await testInfo.attach("rendered-contrast-pairs", {
     body: JSON.stringify(contrasts, null, 2),
     contentType: "application/json",
@@ -62,7 +66,7 @@ test("showcases semantic colors, state independence, Thai text and both desktop 
     await selectedConnected
       .locator(".connection-status svg")
       .evaluate((element) => getComputedStyle(element).color),
-  ).toBe("rgb(98, 189, 138)");
+  ).toBe("rgb(34, 197, 94)");
   for (const [width, height] of [
     [1280, 800],
     [960, 640],

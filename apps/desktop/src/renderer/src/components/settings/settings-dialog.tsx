@@ -136,7 +136,7 @@ export function SettingsDialog({
           <FieldSeparator />
           <dl className="settings-facts">
             <dt>Terminal colors</dt>
-            <dd>Signal Blue Dark</dd>
+            <dd>Charcoal</dd>
             <dt>App theme</dt>
             <dd>Dark</dd>
           </dl>

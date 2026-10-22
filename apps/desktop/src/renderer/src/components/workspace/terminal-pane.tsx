@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   terminalAnsiKeys,
   terminalStyle,
-  signalTerminalTheme,
+  charcoalTerminalTheme,
 } from "@/lib/terminal-theme";
 
 export function TerminalPane({
@@ -38,16 +38,16 @@ export function TerminalPane({
         className="terminal-output"
         aria-label="Static terminal output, no live connection"
       >
-        <span style={{ color: signalTerminalTheme.green }}>
+        <span style={{ color: charcoalTerminalTheme.green }}>
           {target.user}@{target.name}
         </span>
         {":~$ pwd\n/home/deploy\n"}
-        <span style={{ color: signalTerminalTheme.cyan }}>
+        <span style={{ color: charcoalTerminalTheme.cyan }}>
           สวัสดี · connected with clarity
         </span>
         {"\n"}
         {terminalAnsiKeys.map((key, index) => (
-          <span key={key} style={{ color: signalTerminalTheme[key] }}>
+          <span key={key} style={{ color: charcoalTerminalTheme[key] }}>
             {index === 8 ? "\n" : ""}
             {"██ "}
           </span>

@@ -22,30 +22,34 @@
 
 :root {
   color-scheme: dark;
-  --background: #0c1220;
-  --foreground: #e5edfa;
-  --card: #172235;
+  /* UI v2 Charcoal (ADR 0008): canvas, surface/drawer, field, line, text, secondary text, primary. */
+  --background: #1e1e1e;
+  --foreground: #f3f3f3;
+  --card: #252525;
   --card-foreground: var(--foreground);
-  --popover: #243650;
+  --popover: #292929;
   --popover-foreground: var(--foreground);
-  --primary: #6a9fff;
-  --primary-foreground: var(--background);
-  --primary-hover: color-mix(in srgb, var(--primary), var(--foreground) 14%);
-  --primary-pressed: color-mix(in srgb, var(--primary), var(--foreground) 28%);
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  /* Darken, not lighten: white text keeps >4.5:1 on hover and press. */
+  --primary-hover: color-mix(in srgb, var(--primary), #000 12%);
+  --primary-pressed: color-mix(in srgb, var(--primary), #000 24%);
   --secondary: var(--popover);
   --secondary-foreground: var(--foreground);
   --muted: var(--card);
-  --muted-foreground: #91a4c1;
-  --accent: var(--popover);
+  --muted-foreground: #a3a3a3;
+  /* Selection fill is a primary tint; the blue edge/outline is the selection cue. */
+  --accent: color-mix(in srgb, var(--card), var(--primary) 16%);
   --accent-foreground: var(--foreground);
-  --destructive: #e87979;
-  /* Validation copy must also pass 4.5:1 on the lighter popover surface. */
-  --destructive-text: #ee8686;
+  /* Re-tuned for charcoal: >4.5:1 as text on every surface, including hover and selection. */
+  --destructive: #ff8080;
+  --destructive-text: var(--destructive);
   --destructive-foreground: var(--background);
-  --border: #2b3d59;
-  /* Existing muted ink gives essential control boundaries >3:1 on every surface. */
-  --interactive-boundary: var(--muted-foreground);
+  --border: #383838;
+  /* ADR 0008 exception (user choice): the line color is also the control boundary (1.31:1 on surface). */
+  --interactive-boundary: var(--border);
   --input: var(--interactive-boundary);
+  /* ADR 0008 exception: primary is also focus ring, selection outline and blue text (2.97:1 on surface). */
   --ring: var(--primary);
   --interactive-hover: color-mix(
     in srgb,
@@ -54,12 +58,12 @@
   );
   --interactive-pressed: var(--card);
   --interactive-disabled: var(--muted);
-  --connection-connected: #62bd8a;
-  --connection-connecting: #e5b765;
+  --connection-connected: #22c55e;
+  --connection-connecting: #f59e0b;
   --connection-error: var(--destructive);
-  --connection-disconnected: #7087aa;
+  --connection-disconnected: var(--muted-foreground);
   --environment-production: var(--connection-connecting);
-  --sidebar: var(--card);
+  --sidebar: #202020;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
@@ -988,7 +992,7 @@
   color: var(--muted-foreground);
   font-weight: 500;
 }
-/* Port forwarding rules: state is an icon plus text, colored per Signal Blue operational states. */
+/* Port forwarding rules: state is an icon plus text, colored per the operational state tokens. */
 .tunnel-list {
   display: flex;
   min-height: 0;

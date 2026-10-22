@@ -114,8 +114,10 @@ test("recording over SSH bash 5.2 through production main: opt-in, encrypted, ex
     await expect(badge).toHaveAttribute("data-recording", "on");
     await expect(badge).toHaveAccessibleName("Recording");
     await expect(pane.locator(".connection-status")).toContainText("Connected");
+    // The "on" badge is primary-blue text: the ADR 0008 accepted exception, so its ratio is attached as evidence below.
     const contrast = await renderedContrast(badge.locator(".recording-badge-text"));
-    expect(contrast.ratio, "Recording badge contrast").toBeGreaterThanOrEqual(4.5);
+    await expect(badge.locator(".recording-badge-text"), "the exception covers primary-blue text only").toHaveCSS("color", "rgb(37, 99, 235)");
+    expect(contrast.ratio, "Recording badge primary-blue ratio (ADR 0008)").toBeGreaterThanOrEqual(2.9);
 
     // 3. Output and a no-echo secret, then Disconnect.
     await typeAt(page, pane, command);

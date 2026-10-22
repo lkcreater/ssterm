@@ -22,7 +22,7 @@ export default function Showcase() {
           <div className="flex items-center gap-3">
             <Badge variant="fixture">Development only</Badge>
             <span className="type-caption text-muted-foreground">
-              Signal Blue · Base UI / nova / Lucide
+              Charcoal v2 · Base UI / nova / Lucide
             </span>
           </div>
           <h1 className="type-title">ssterm component showcase</h1>

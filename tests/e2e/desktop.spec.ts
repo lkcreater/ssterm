@@ -160,7 +160,7 @@ test("renders the local shell offline with bundled fonts and isolated renderer",
       ),
     };
   });
-  expect(typography.background).toBe("rgb(12, 18, 32)");
+  expect(typography.background).toBe("rgb(30, 30, 30)");
   expect(typography.inter && typography.mono && typography.thai).toBe(true);
   expect(
     typography.loadedFaces.every(

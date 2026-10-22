@@ -1,13 +1,14 @@
-// Derives the macOS app icon from the supplied artwork (docs/logo/icon-logo.png) without modifying it.
+// Derives the macOS app icon from the supplied artwork (docs/logo/icon-logo-v2.png, ADR 0008) without modifying it.
 // Output (ignored): artifacts/icons/ssterm.iconset/*.png, artifacts/icons/ssterm.icns, artifacts/icons/qa.json.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const source = join(root, "docs/logo/icon-logo.png");
+const source = join(root, "docs/logo/icon-logo-v2.png");
 const out = join(root, "artifacts/icons");
 const iconset = join(out, "ssterm.iconset");
 
@@ -84,7 +85,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const size of sizes)
     execFileSync("/usr/bin/sips", ["-s", "format", "png", "-z", String(size), String(size), source, "--out", join(out, `ssterm-${size}.png`)], { stdio: "ignore" });
   execFileSync("/usr/bin/iconutil", ["-c", "icns", iconset, "-o", join(out, "ssterm.icns")]);
-  const qa = { source: { ...alphaReport(readRgba(await readFile(source))) }, sizes: {} };
+  const artwork = await readFile(source);
+  const qa = { source: { path: "docs/logo/icon-logo-v2.png", sha256: createHash("sha256").update(artwork).digest("hex"), ...alphaReport(readRgba(artwork)) }, sizes: {} };
   for (const size of sizes) qa.sizes[size] = alphaReport(readRgba(await readFile(join(out, `ssterm-${size}.png`))));
   await writeFile(join(out, "qa.json"), JSON.stringify(qa, null, 2) + "\n");
   console.log(JSON.stringify({ icns: join(out, "ssterm.icns"), source: qa.source, s16: qa.sizes[16], s1024: qa.sizes[1024] }, null, 2));

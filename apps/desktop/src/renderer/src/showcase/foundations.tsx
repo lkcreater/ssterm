@@ -15,24 +15,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { signalTerminalTheme, terminalAnsiKeys } from "@/lib/terminal-theme";
+import { charcoalTerminalTheme, terminalAnsiKeys } from "@/lib/terminal-theme";
 
+// The last two are the ADR 0008 exception: their ratios are evidence, not held to the text bar.
 const pairs = [
   ["Canvas", "background", "foreground"],
-  ["Surface", "card", "card-foreground"],
-  ["Elevated", "popover", "popover-foreground"],
-  ["Primary action", "primary", "primary-foreground"],
-  ["Secondary", "secondary", "secondary-foreground"],
-  ["Muted metadata", "muted", "muted-foreground"],
-  ["Selection", "accent", "accent-foreground"],
-  ["Error", "background", "destructive"],
-  ["Connected", "card", "connection-connected"],
-  ["Attention / PROD", "card", "environment-production"],
-  ["Essential boundary", "card", "interactive-boundary"],
   ["Sidebar", "sidebar", "sidebar-foreground"],
+  ["Surface / drawer", "card", "card-foreground"],
+  ["Field", "popover", "popover-foreground"],
+  ["Primary action", "primary", "primary-foreground"],
+  ["Secondary text", "card", "muted-foreground"],
+  ["Selection", "accent", "accent-foreground"],
+  ["Error text", "card", "destructive-text"],
+  ["Connected", "card", "connection-connected"],
+  ["Connecting / PROD", "card", "environment-production"],
+  ["Focus ring / blue text", "card", "ring", true],
+  ["Control boundary", "card", "interactive-boundary", true],
 ] as const;
 const palette = [
   "background",
+  "sidebar",
   "card",
   "popover",
   "primary",
@@ -45,8 +47,8 @@ const palette = [
   "connection-connecting",
   "connection-error",
   "connection-disconnected",
-  "sidebar",
-  "sidebar-accent",
+  "accent",
+  "destructive",
 ];
 const types = [
   ["type-title", "18 / 25.2 / 600", "Workspace title"],
@@ -61,22 +63,24 @@ export function Foundations() {
     <Section
       id="foundations"
       title="Foundations"
-      description="Signal Blue · dark first · Inter, JetBrains Mono and Noto Sans Thai bundled offline. Live ratios below measure browser-resolved foreground / background pairs."
+      description="Charcoal v2 · dark first · Inter, JetBrains Mono and Noto Sans Thai bundled offline. Live ratios below measure browser-resolved foreground / background pairs."
     >
       <div className="showcase-grid">
-        {pairs.map(([name, background, foreground]) => (
+        {pairs.map(([name, background, foreground, exception]) => (
           <ColorPair
             key={name}
             name={name}
             background={background}
             foreground={foreground}
+            exception={exception}
           />
         ))}
       </div>
       <p className="fixture-caption">
-        Structural border is deliberately subtle; it is not the sole boundary of
-        an interactive field. Essential boundaries use the existing muted ink
-        token. Ratios describe opaque pairs; rendered state combinations need
+        Per ADR 0008 the primary blue is also the focus ring, selection outline
+        and blue text, and the line color is also the control boundary; those
+        two ratios are recorded, not held to 4.5:1. Every other text pair keeps
+        4.5:1. Ratios describe opaque pairs; rendered state combinations need
         their own checks.
       </p>
       <div className="grid grid-cols-5 gap-4">
@@ -171,13 +175,13 @@ export function Foundations() {
       <Example title="Independent terminal ANSI 16">
         <div
           className="grid grid-cols-8 gap-2"
-          style={{ background: signalTerminalTheme.background, padding: 12 }}
+          style={{ background: charcoalTerminalTheme.background, padding: 12 }}
         >
           {terminalAnsiKeys.map((key) => (
             <span
               key={key}
               className="type-code break-all"
-              style={{ color: signalTerminalTheme[key] }}
+              style={{ color: charcoalTerminalTheme[key] }}
             >
               {key}
               <br />

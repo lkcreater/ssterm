@@ -42,11 +42,14 @@ export function ColorPair({
   name,
   background,
   foreground,
+  exception,
   className,
 }: {
   name: string;
   background: string;
   foreground: string;
+  /** ADR 0008 accepted contrast exception: the ratio is shown as evidence. */
+  exception?: boolean;
   className?: string;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
@@ -92,6 +95,7 @@ export function ColorPair({
     <div
       data-color-pair={name}
       data-contrast-ratio={info?.ratio}
+      data-contrast-exception={exception || undefined}
       className={cn(
         "flex flex-col overflow-hidden rounded-xl border",
         className,
