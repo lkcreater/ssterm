@@ -191,9 +191,6 @@ test("Files browses a real OpenSSH server and This Mac: hostile names, links, pe
     await expect(remote.section.locator(".host-target")).toHaveText(w.endpoint);
     await remote.at("/home/fixture");
     await expect(remote.list, "the remote list takes focus once Ready").toBeFocused();
-    const status = page.getByRole("group", { name: "Remote files", exact: true });
-    await expect(status).toContainText(label);
-    await expect(status.getByText("PROD", { exact: true })).toBeVisible();
     expect(await w.sftpProcesses(), "one SFTP connection and subsystem").toBe(2);
 
     // Go to path: a missing path is refused in place; the seeded folder opens.
@@ -529,7 +526,8 @@ test("Open in SFTP from a terminal pane uses that pane's saved host; closing SFT
     await expect(remote.section.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
     await expect(remote.section.locator(".host-target")).toHaveText(w.endpoint);
     await remote.at("/home/fixture");
-    const status = page.getByRole("group", { name: "Remote files", exact: true });
+    // The remote pane header names the server (SST-040/09 removed the global status bar).
+    const status = remote.section.locator(".pane-header");
     await expect(status).toContainText(alpha);
     await expect(status).not.toContainText(bravo);
     expect(await w.sftpProcesses()).toBe(2);

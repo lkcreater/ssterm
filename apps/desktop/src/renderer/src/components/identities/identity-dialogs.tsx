@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DeleteFailure, useDelete } from "@/components/catalog/delete-dialogs";
-import { EnvironmentBadge } from "@/components/catalog/hosts-page";
+import { EnvironmentBadge } from "@/components/connection/host-identity";
 import type { Catalog } from "@/hooks/use-catalog";
 import { draftsEqual, serverFieldErrors, type FieldErrors } from "@/lib/catalog-validation";
 import {

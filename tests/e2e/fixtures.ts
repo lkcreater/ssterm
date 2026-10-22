@@ -171,7 +171,10 @@ export { expect };
 export async function showPane(page: Page, pane: Locator): Promise<void> {
   if (await pane.isVisible()) return;
   const label = (await pane.getAttribute("aria-label"))!.replace(/^Terminal for /u, "");
-  await page.getByRole("tablist", { name: "Terminal tabs" }).getByRole("tab")
+  // The tab strip lives on the Terminals page (SST-040/09).
+  const strip = page.getByRole("tablist", { name: "Terminal tabs" });
+  if (!(await strip.isVisible())) await page.getByRole("button", { name: /^Terminals/u }).click();
+  await strip.getByRole("tab")
     .filter({ has: page.locator(".session-tab-label").getByText(label, { exact: true }) }).click();
   await expect(pane).toBeVisible();
 }

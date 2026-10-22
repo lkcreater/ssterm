@@ -361,7 +361,7 @@ test("sync setup remains keyboard accessible at supported sizes and clears trans
   ]) {
     await page.setViewportSize(size);
     const trigger = page
-      .getByRole("banner")
+      .locator("#app-sidebar")
       .getByRole("button", { name: "Settings", exact: true });
     await trigger.click();
     const dialog = page.getByRole("dialog", { name: "Settings" });
@@ -471,7 +471,7 @@ test("recovery secrets and delayed native saves are fenced by lock without rotat
       join(directory, "shown-kit.ssterm"),
     );
     const trigger = page
-      .getByRole("banner")
+      .locator("#app-sidebar")
       .getByRole("button", { name: "Settings", exact: true });
     const settings = page.getByRole("dialog", { name: "Settings" });
     await trigger.click();

@@ -94,7 +94,7 @@ test("terminal input, Unicode, clipboard, links and search reach only the focuse
   try {
     await operate("connect");
     await ready(paneA);
-    await expect(paneA.getByText("PROD", { exact: true })).toBeVisible();
+    await expect(paneA.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
 
     // 1. Locale and IUTF8. ssterm sends no LANG; the fixture opts in.
     await run("export LANG=C.UTF-8");

@@ -31,6 +31,7 @@ async function ready(pane: Locator) {
   await expect(pane.locator(".xterm-rows")).toContainText("fixture@", { timeout: 20_000 });
 }
 async function openTools(page: Page) {
+  await page.getByRole("button", { name: /^Terminals/u }).click();
   await page.getByRole("button", { name: "Workspace tools", exact: true }).click();
   const tools = page.getByTestId("workspace-tools");
   await expect(tools).toBeVisible();

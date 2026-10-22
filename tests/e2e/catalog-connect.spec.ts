@@ -99,7 +99,7 @@ test("a server created in the UI connects through production main: trust, passwo
     await connect.click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Terminals");
     await expect(pane).toHaveAttribute("data-phase", "connecting");
-    await expect(pane.getByText("PROD", { exact: true })).toBeVisible();
+    await expect(pane.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
     await trust.getByRole("button", { name: "Remember", exact: true }).click();
     await expect(credentials).toBeVisible();
     await expect(credentials).toContainText(server);

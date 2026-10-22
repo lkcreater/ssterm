@@ -2,30 +2,29 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircleIcon,
   CircleIcon,
+  Columns2Icon,
   FileClockIcon,
   FolderOpenIcon,
   KeyboardIcon,
   KeyRoundIcon,
   LayersIcon,
-  LockKeyholeIcon,
   PanelLeftIcon,
   PanelsTopLeftIcon,
+  PlusIcon,
+  Rows2Icon,
   ServerIcon,
   Settings2Icon,
   ShieldCheckIcon,
   SquareTerminalIcon,
   UsersIcon,
   WorkflowIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { usePanelRef } from "react-resizable-panels";
-import type { CatalogHost, ErrorCode, StorageProblem, TerminalPhase } from "@ssterm/contracts";
+import type { CatalogHost, ErrorCode, StorageProblem } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  ConnectionStatus,
-  type ConnectionState,
-} from "@/components/connection/connection-status";
+import { PageHeader } from "@/components/page-header";
 import {
   Empty,
   EmptyContent,
@@ -38,14 +37,12 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -54,7 +51,6 @@ import {
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
-import { terminalIdentity } from "@/lib/terminal-target";
 import { useDesktopState } from "@/hooks/use-desktop-state";
 import { useCredentials } from "@/hooks/use-credentials";
 import { CredentialPrompts } from "@/components/auth/credential-prompts";
@@ -77,6 +73,7 @@ import {
 } from "@/components/trust/known-hosts";
 import { useCatalog } from "@/hooks/use-catalog";
 import {
+  CatalogAddMenu,
   CatalogLibrary,
   CatalogSearch,
 } from "@/components/catalog/catalog-sidebar";
@@ -160,6 +157,19 @@ type CatalogDialog =
   | { kind: "group"; id?: string; parentId?: string | null }
   | { kind: "delete-host"; id: string }
   | { kind: "delete-group"; id: string };
+// Sidebar order, as in the v2 concepts.
+const pages: Page[] = ["hosts", "terminals", "files", "identities", "known-hosts", "snippets", "tunnels", "recordings", "team"];
+const pageIcons: Record<Page, LucideIcon> = {
+  hosts: ServerIcon,
+  terminals: SquareTerminalIcon,
+  files: FolderOpenIcon,
+  identities: KeyRoundIcon,
+  "known-hosts": ShieldCheckIcon,
+  snippets: LayersIcon,
+  tunnels: WorkflowIcon,
+  recordings: FileClockIcon,
+  team: UsersIcon,
+};
 const titles: Record<Page, string> = {
   hosts: "Servers",
   terminals: "Terminals",
@@ -171,12 +181,6 @@ const titles: Record<Page, string> = {
   recordings: "Recordings",
   team: "Team vault",
 };
-const phaseStates = {
-  connecting: "connecting",
-  ready: "connected",
-  closed: "disconnected",
-  failed: "error",
-} as const satisfies Record<TerminalPhase, ConnectionState>;
 const connectMessages: Partial<Record<ErrorCode, string>> = {
   busy: "Too many sessions open; close ended panes.",
   unavailable:
@@ -222,7 +226,6 @@ export function AppShell() {
   const sftp = useSftp(owner);
   const settings = useSettings(owner);
   const tunnelState = useTunnels(owner);
-  const connected = [...sessions, ...sftp.sessions].filter((session) => session.phase === "ready").length;
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
     storage?.status === "blocked" ? storageProblems[storage.code] : undefined;
@@ -335,29 +338,145 @@ export function AppShell() {
     void sftp.open(hostId);
   };
 
-  /** No animation: the panel snaps, so focus can move before it is hidden. */
+  // The toggle lives in the sidebar header, or in a rail while the sidebar is collapsed; when it (or the sidebar)
+  // had focus, focus follows it to its new place.
+  const refocusToggle = useRef(false);
   const toggleSidebar = () => {
     const panel = sidebarPanel.current;
     if (!panel) return;
-    if (panel.isCollapsed()) return panel.expand();
-    if (document.getElementById("app-sidebar")?.contains(document.activeElement))
-      sidebarToggle.current?.focus();
-    panel.collapse();
+    const focus = document.activeElement;
+    refocusToggle.current = !!focus && (focus === sidebarToggle.current || !!document.getElementById("app-sidebar")?.contains(focus));
+    if (panel.isCollapsed()) panel.expand();
+    else panel.collapse();
   };
+  useEffect(() => {
+    if (!refocusToggle.current) return;
+    refocusToggle.current = false;
+    sidebarToggle.current?.focus();
+  }, [sidebarOpen]);
   const onCommand = (command: WorkspaceCommand) => {
     if (command === "toggle-sidebar") toggleSidebar();
     else setOverlay(command);
   };
   const showTerminals = () => setPage("terminals");
-  const active = controller.activeSession;
-  const terminalsShown = page === "terminals" && !!owner && sessions.length > 0;
+  const terminalsShown = page === "terminals" && !!owner;
   const filesShown = page === "files" && !!owner;
   const snippetsShown = page === "snippets" && !!owner && !!state && ready;
-  const remote = sftp.session;
-  const statusSession = terminalsShown ? active : filesShown ? remote : undefined;
-  const statusTarget = statusSession?.target;
-  const statusIdentity = statusSession ? terminalIdentity(statusSession) : undefined;
-  const statusLocal = terminalsShown && !!active?.local;
+  const running = tunnelState?.tunnels.filter((row) => row.phase === "running").length ?? 0;
+  const navDisabled: Record<Page, boolean> = {
+    hosts: false,
+    terminals: false,
+    files: !owner,
+    identities: !ready,
+    "known-hosts": storage?.status !== "ready",
+    snippets: !ready,
+    tunnels: !ready,
+    recordings: !owner,
+    team: !ready,
+  };
+  const navCount: Partial<Record<Page, number>> = { terminals: sessions.length, tunnels: running || undefined };
+
+  const sidebarToggleButton = (
+    <Button
+      ref={sidebarToggle}
+      size="icon-sm"
+      variant="ghost"
+      aria-label="Sidebar"
+      aria-expanded={sidebarOpen}
+      aria-controls="app-sidebar"
+      aria-keyshortcuts="Control+Meta+S"
+      title="Show or hide the sidebar (⌃⌘S)"
+      onClick={toggleSidebar}
+    >
+      <PanelLeftIcon aria-hidden="true" />
+    </Button>
+  );
+  const terminalsHeader = (
+    <PageHeader
+      className="terminals-header"
+      title="Terminals"
+      subtitle="Local shells and SSH sessions."
+      actions={
+        <>
+          <Button
+            size="sm"
+            aria-label="New local terminal"
+            title="New local terminal · This Mac"
+            disabled={!owner || startingLocal}
+            onClick={() => void startLocal()}
+          >
+            {startingLocal ? <Spinner data-icon="inline-start" /> : <PlusIcon data-icon="inline-start" aria-hidden="true" />}
+            New local terminal
+          </Button>
+          <Button size="sm" variant="outline" title="Split right (⌘D)" disabled={!controller.activeSession} onClick={() => void controller.split("row")}>
+            <Columns2Icon data-icon="inline-start" aria-hidden="true" />
+            <span className="page-action-text">Split right</span>
+          </Button>
+          <Button size="sm" variant="outline" title="Split down (⇧⌘D)" disabled={!controller.activeSession} onClick={() => void controller.split("column")}>
+            <Rows2Icon data-icon="inline-start" aria-hidden="true" />
+            <span className="page-action-text">Split down</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            title="Workspace tools: templates and multi-target input"
+            disabled={!owner || !ready}
+            onClick={() => setWorkspaceToolsOpen(true)}
+          >
+            <PanelsTopLeftIcon data-icon="inline-start" aria-hidden="true" />
+            <span className="page-action-text">Workspace tools</span>
+          </Button>
+        </>
+      }
+    >
+      <SessionTabs controller={controller} onSelect={showTerminals} />
+    </PageHeader>
+  );
+  // Why the workspace cannot open; shown on the fallback page and on an empty Terminals page.
+  const workspaceAlerts = (
+    <>
+      {problem ? (
+        <div className="px-5 pb-4">
+          <Alert>
+            <AlertCircleIcon aria-hidden="true" />
+            <AlertTitle>{problem.title}</AlertTitle>
+            <AlertDescription>{problem.description}</AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
+      {desktop.status === "unavailable" ? (
+        <div className="px-5 pb-4">
+          <Alert>
+            <CircleIcon aria-hidden="true" />
+            <AlertTitle>Workspace information is unavailable</AlertTitle>
+            <AlertDescription>
+              Close this window and reopen ssterm to try again.
+            </AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
+    </>
+  );
+  const terminalsEmpty = (
+    <div className="absolute inset-0 flex flex-col overflow-auto">
+      <div className="workspace-empty">
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>No open terminals</EmptyTitle>
+            <EmptyDescription>
+              Open a local shell on this Mac with New local terminal, or connect to a saved SSH server.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button variant="outline" onClick={() => showHosts()}>
+              <ServerIcon data-icon="inline-start" /> Show servers
+            </Button>
+          </EmptyContent>
+        </Empty>
+      </div>
+      {owner ? workspaceAlerts : null}
+    </div>
+  );
 
   const showHosts = (next?: CatalogScope) => {
     setPage("hosts");
@@ -381,58 +500,9 @@ export function AppShell() {
         desktop.status === "ready" ? desktop.data.window.focused : undefined
       }
     >
+      {/* Only the traffic lights and a drag region: page actions live in each page header. */}
       <header className="app-titlebar">
-        {/* The macOS traffic lights sit here; nothing interactive may overlap them. */}
         <div className="titlebar-safe-area" aria-hidden="true" />
-        <Button
-          ref={sidebarToggle}
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Sidebar"
-          aria-expanded={sidebarOpen}
-          aria-controls="app-sidebar"
-          title="Show or hide the sidebar (⌃⌘S)"
-          onClick={toggleSidebar}
-        >
-          <PanelLeftIcon aria-hidden="true" />
-        </Button>
-        <div className="titlebar-tabs">
-          {controller.workspace.tabs.length > 0 ? (
-            <SessionTabs controller={controller} onSelect={showTerminals} />
-          ) : (
-            <span className="titlebar-title">ssterm</span>
-          )}
-        </div>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="New local terminal"
-          title="New local terminal · This Mac"
-          disabled={!owner || startingLocal}
-          onClick={() => void startLocal()}
-        >
-          {startingLocal ? <Spinner /> : <SquareTerminalIcon aria-hidden="true" />}
-        </Button>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Workspace tools"
-          title="Workspace templates and multi-target input"
-          disabled={!owner || !ready}
-          onClick={() => { setPage("terminals"); setWorkspaceToolsOpen(true); }}
-        >
-          <PanelsTopLeftIcon aria-hidden="true" />
-        </Button>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Settings"
-          title="Settings (⌘,)"
-          disabled={!owner}
-          onClick={() => setOverlay("settings")}
-        >
-          <Settings2Icon aria-hidden="true" />
-        </Button>
       </header>
       <SidebarProvider className="app-layout min-h-0">
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
@@ -449,50 +519,51 @@ export function AppShell() {
             onResize={(size) => setSidebarOpen(size.inPixels > 0)}
           >
             <Sidebar id="app-sidebar" collapsible="none" className="app-sidebar w-full">
-              <SidebarHeader className="gap-3 p-4">
-                <CatalogSearch
-                  state={state}
-                  disabled={!ready}
-                  search={search}
-                  tagIds={view.tagIds}
-                  resultCount={view.filtering ? view.hosts.length : undefined}
-                  onSearch={(value) => {
-                    setSearch(value);
-                    setPage("hosts");
-                  }}
-                  onSubmit={() => {
-                    // The deferred view may still lag the typed search.
-                    const first = state
-                      ? filterCatalogHosts(state, { scope: view.scope, search, tagIds: view.tagIds })[0]
-                      : undefined;
-                    setPage("hosts");
-                    if (!first) return;
-                    setSelectedId(first.id);
-                    requestAnimationFrame(() =>
-                      document
-                        .querySelector<HTMLElement>(`[data-host-id="${first.id}"]`)
-                        ?.focus(),
-                    );
-                  }}
-                  onTags={(ids) => {
-                    setTagIds(ids);
-                    setPage("hosts");
-                  }}
-                  onAdd={(kind) =>
-                    setDialog(
-                      kind === "host"
-                        ? { kind: "host", groupId: groupScope }
-                        : { kind: "group", parentId: groupScope },
-                    )
-                  }
-                />
+              <SidebarHeader className="flex-row items-center justify-between px-4 pt-3 pb-1">
+                <img src={iconLogo} alt="ssterm" className="sidebar-mark" />
+                {sidebarOpen ? sidebarToggleButton : null}
               </SidebarHeader>
               <SidebarContent>
+                <SidebarGroup>
+                  <SidebarGroupContent>
+                    <SidebarMenu aria-label="Pages">
+                      {pages.map((id) => {
+                        const Icon = pageIcons[id];
+                        return (
+                          <SidebarMenuItem key={id}>
+                            <SidebarMenuButton
+                              isActive={page === id}
+                              aria-current={page === id ? "page" : undefined}
+                              disabled={navDisabled[id]}
+                              onClick={() => (id === "hosts" ? showHosts() : setPage(id))}
+                            >
+                              <Icon />
+                              <span>{titles[id]}</span>
+                              {navCount[id] !== undefined ? <span className="ml-auto type-caption">{navCount[id]}</span> : null}
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        );
+                      })}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
                 <CatalogLibrary
                   state={state}
                   tree={tree}
                   current={page === "hosts" ? view.scope : undefined}
                   expanded={expanded}
+                  action={
+                    <CatalogAddMenu
+                      disabled={!ready}
+                      onAdd={(kind) =>
+                        setDialog(
+                          kind === "host"
+                            ? { kind: "host", groupId: groupScope }
+                            : { kind: "group", parentId: groupScope },
+                        )
+                      }
+                    />
+                  }
                   onScope={showHosts}
                   onToggle={(id, open) =>
                     setExpanded((current) => {
@@ -503,135 +574,45 @@ export function AppShell() {
                     })
                   }
                 />
-                <SidebarGroup>
-                  <SidebarGroupLabel>Workspace tools</SidebarGroupLabel>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={page === "team"}
-                          aria-current={page === "team" ? "page" : undefined}
-                          onClick={() => setPage("team")}
-                          disabled={!ready}
-                        >
-                          <UsersIcon />
-                          <span>Team vault</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={page === "terminals"}
-                          aria-current={page === "terminals" ? "page" : undefined}
-                          onClick={() => setPage("terminals")}
-                        >
-                          <SquareTerminalIcon />
-                          <span>Terminals</span>
-                          <span className="ml-auto type-caption">{sessions.length}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={page === "files"}
-                          aria-current={page === "files" ? "page" : undefined}
-                          onClick={() => setPage("files")}
-                          disabled={!owner}
-                        >
-                          <FolderOpenIcon />
-                          <span>Files</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={page === "known-hosts"}
-                          aria-current={page === "known-hosts" ? "page" : undefined}
-                          onClick={() => setPage("known-hosts")}
-                          disabled={storage?.status !== "ready"}
-                        >
-                          <ShieldCheckIcon />
-                          <span>Known hosts</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={page === "identities"}
-                          aria-current={page === "identities" ? "page" : undefined}
-                          onClick={() => setPage("identities")}
-                          disabled={!ready}
-                        >
-                          <KeyRoundIcon />
-                          <span>Identities</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={page === "snippets"}
-                          aria-current={page === "snippets" ? "page" : undefined}
-                          onClick={() => setPage("snippets")}
-                          disabled={!ready}
-                        >
-                          <LayersIcon />
-                          <span>Snippets</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={page === "tunnels"}
-                          aria-current={page === "tunnels" ? "page" : undefined}
-                          onClick={() => setPage("tunnels")}
-                          disabled={!ready}
-                        >
-                          <WorkflowIcon />
-                          <span>Port forwarding</span>
-                          {tunnelState?.tunnels.some((row) => row.phase === "running") ? (
-                            <span className="ml-auto type-caption">
-                              {tunnelState.tunnels.filter((row) => row.phase === "running").length}
-                            </span>
-                          ) : null}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton
-                          isActive={page === "recordings"}
-                          aria-current={page === "recordings" ? "page" : undefined}
-                          onClick={() => setPage("recordings")}
-                          disabled={!owner}
-                        >
-                          <FileClockIcon />
-                          <span>Recordings</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
               </SidebarContent>
-              <SidebarFooter className="gap-2 p-2">
+              <SidebarFooter className="gap-2 border-t border-sidebar-border p-2">
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton disabled={!owner} onClick={() => setOverlay("settings")}>
+                    <SidebarMenuButton disabled={!owner} aria-keyshortcuts="Meta+Comma" onClick={() => setOverlay("settings")}>
                       <Settings2Icon />
                       <span>Settings</span>
-                      <span className="ml-auto type-caption text-muted-foreground">⌘,</span>
+                      <span className="ml-auto type-caption text-muted-foreground" aria-hidden="true">⌘,</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton disabled={!owner} onClick={() => setOverlay("shortcuts")}>
+                    <SidebarMenuButton disabled={!owner} aria-keyshortcuts="Meta+Slash" onClick={() => setOverlay("shortcuts")}>
                       <KeyboardIcon />
                       <span>Keyboard shortcuts</span>
-                      <span className="ml-auto type-caption text-muted-foreground">⌘/</span>
+                      <span className="ml-auto type-caption text-muted-foreground" aria-hidden="true">⌘/</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  {/* Lock workspace (SST-040/12) joins here. */}
                 </SidebarMenu>
-                <Separator />
-                <div className="flex items-center gap-2 px-2 type-caption text-muted-foreground">
-                  <LockKeyholeIcon className="size-4" aria-hidden="true" />
-                  <span>On this Mac</span>
-                </div>
+                {/* What the removed global status bar said about the app and its storage. */}
+                <p className="px-2 type-caption text-muted-foreground">
+                  {desktop.status === "loading" ? (
+                    <span className="flex items-center gap-2">
+                      <Spinner aria-label="Loading workspace information" /> Opening workspace
+                    </span>
+                  ) : desktop.status === "ready" ? (
+                    `ssterm ${desktop.data.app.version} · ${problem ? "Storage unavailable" : "Local workspace"}`
+                  ) : (
+                    "Local workspace"
+                  )}
+                </p>
               </SidebarFooter>
             </Sidebar>
           </ResizablePanel>
           <ResizableHandle aria-label="Resize sidebar" />
           <ResizablePanel style={{ overflow: "hidden" }}>
-            <main className="app-workspace">
+            <div className="flex h-full min-w-0">
+            {sidebarOpen ? null : <div className="sidebar-rail">{sidebarToggleButton}</div>}
+            <main className="app-workspace min-w-0 flex-1">
               <h1 className="sr-only">{titles[page]}</h1>
               {owner ? (
                 <TerminalWorkspace
@@ -645,6 +626,8 @@ export function AppShell() {
                   catalog={ready ? state : undefined}
                   toolsOpen={workspaceToolsOpen}
                   onCloseTools={() => setWorkspaceToolsOpen(false)}
+                  header={terminalsHeader}
+                  empty={terminalsEmpty}
                 />
               ) : null}
               {owner ? (
@@ -672,24 +655,11 @@ export function AppShell() {
                       error={trust.error}
                     />
                   ) : page === "terminals" ? (
-                    <div className="workspace-empty">
-                      <Empty>
-                        <EmptyHeader>
-                          <EmptyTitle>No open terminals</EmptyTitle>
-                          <EmptyDescription>
-                            Open a local shell on this Mac, or connect to a saved SSH server.
-                          </EmptyDescription>
-                        </EmptyHeader>
-                        <EmptyContent>
-                          <Button disabled={!owner || startingLocal} onClick={() => void startLocal()}>
-                            <SquareTerminalIcon data-icon="inline-start" /> New local terminal
-                          </Button>
-                          <Button variant="outline" onClick={() => showHosts()}>
-                            <ServerIcon data-icon="inline-start" /> Show servers
-                          </Button>
-                        </EmptyContent>
-                      </Empty>
-                    </div>
+                    // Only before the window has an owner; afterwards the terminal layer shows this header itself.
+                    <>
+                      {terminalsHeader}
+                      <div className="relative flex-1">{terminalsEmpty}</div>
+                    </>
                   ) : page === "team" && owner && ready ? (
                     <TeamWorkspace key={`${owner.windowId}:${owner.generation}:${state?.lockEpoch}`} owner={owner} onConnect={connectTeam} />
                   ) : page === "identities" && owner && state && ready ? (
@@ -722,6 +692,26 @@ export function AppShell() {
                         setSearch("");
                         setTagIds([]);
                       }}
+                      toolbar={
+                        <CatalogSearch
+                          state={state}
+                          disabled={!ready}
+                          search={search}
+                          tagIds={view.tagIds}
+                          resultCount={view.filtering ? view.hosts.length : undefined}
+                          onSearch={setSearch}
+                          onSubmit={() => {
+                            // The deferred view may still lag the typed search.
+                            const first = filterCatalogHosts(state, { scope: view.scope, search, tagIds: view.tagIds })[0];
+                            if (!first) return;
+                            setSelectedId(first.id);
+                            requestAnimationFrame(() =>
+                              document.querySelector<HTMLElement>(`[data-host-id="${first.id}"]`)?.focus(),
+                            );
+                          }}
+                          onTags={setTagIds}
+                        />
+                      }
                     />
                   ) : (
                     <div className="workspace-empty">
@@ -751,29 +741,11 @@ export function AppShell() {
                       </Empty>
                     </div>
                   )}
-                  {problem ? (
-                    <div className="px-5 pb-4">
-                      <Alert>
-                        <AlertCircleIcon aria-hidden="true" />
-                        <AlertTitle>{problem.title}</AlertTitle>
-                        <AlertDescription>{problem.description}</AlertDescription>
-                      </Alert>
-                    </div>
-                  ) : null}
-                  {desktop.status === "unavailable" ? (
-                    <div className="px-5 pb-4">
-                      <Alert>
-                        <CircleIcon aria-hidden="true" />
-                        <AlertTitle>Workspace information is unavailable</AlertTitle>
-                        <AlertDescription>
-                          Close this window and reopen ssterm to try again.
-                        </AlertDescription>
-                      </Alert>
-                    </div>
-                  ) : null}
+                  {workspaceAlerts}
                 </div>
               )}
             </main>
+            </div>
           </ResizablePanel>
         </ResizablePanelGroup>
       </SidebarProvider>
@@ -858,46 +830,6 @@ export function AppShell() {
       />
       <HostTrustDialogs state={trust.state} />
       <CredentialPrompts state={trust.state?.prompts.length ? undefined : credentials.state} />
-      <footer className="app-statusbar">
-        {statusSession ? (
-          <div
-            role="group"
-            aria-label={terminalsShown ? "Active pane" : "Remote files"}
-            className="statusbar-target"
-          >
-            <ConnectionStatus state={phaseStates[statusSession.phase]} />
-            <span className="statusbar-label truncate" title={statusIdentity?.label}>
-              {statusIdentity?.label ?? "Unknown target"}
-            </span>
-            {statusLocal ? <Badge variant="secondary">LOCAL</Badge> : null}
-            {terminalsShown && active?.target?.source === "team" ? <Badge variant="secondary">Team</Badge> : null}
-            {statusTarget?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
-            {statusIdentity?.endpoint ? (
-              <span className="host-target truncate">
-                {statusIdentity.endpoint}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-        <span className="ml-auto flex shrink-0 items-center gap-2">
-          <CircleIcon className="size-3" aria-hidden="true" />
-          {connected === 0
-            ? "No connections"
-            : `${connected} ${connected === 1 ? "connection" : "connections"}`}
-        </span>
-        <span className="shrink-0">
-          {desktop.status === "loading" ? (
-            <span className="flex items-center gap-2">
-              <Spinner aria-label="Loading workspace information" /> Opening
-              workspace
-            </span>
-          ) : desktop.status === "ready" ? (
-            `ssterm ${desktop.data.app.version} · ${problem ? "Storage unavailable" : "Local workspace"}`
-          ) : (
-            "Local workspace"
-          )}
-        </span>
-      </footer>
     </div>
   );
 }

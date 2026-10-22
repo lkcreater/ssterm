@@ -31,7 +31,7 @@ function summary(tab: Tab, sessions: readonly TerminalSession[]) {
 }
 
 /**
- * The terminal tab strip: a roving tablist (arrows/Home/End select, Delete closes) with each tab's
+ * The terminal tab strip on the Terminals page: a roving tablist (arrows/Home/End select, Delete closes) with each tab's
  * close button beside it. The blue active edge is separate from the connection state it shows.
  */
 export function SessionTabs({
@@ -106,6 +106,7 @@ export function SessionTabs({
               onClick={() => select(tab, false)}
               onKeyDown={(event) => onKeyDown(event, index)}
             >
+              <ConnectionStatus state={state} />
               <span className="session-tab-label truncate">{label}</span>
               {local ? <span className="host-target truncate">{shell}</span> : null}
               {local ? <Badge variant="secondary">LOCAL</Badge> : null}
@@ -115,7 +116,6 @@ export function SessionTabs({
                 </span>
               ) : null}
               {production ? <Badge variant="production">PROD</Badge> : null}
-              <ConnectionStatus state={state} />
             </button>
             {/* Out of the tab order: Delete on the tab or Cmd+W closes from the keyboard. It stays inside the
                 tablist (a tab cannot own a button); moving it out would split each tab from its close control. */}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/components/page-header";
 import {
   CheckIcon,
   LayersIcon,
@@ -145,16 +146,11 @@ export function SnippetsPage({ owner, catalog, state }: { owner: Owner; catalog:
 
   return (
     <div className="catalog-page" data-testid="snippets-page">
-      <div className="catalog-heading">
-        <div className="flex min-w-0 items-center gap-2">
-          <LayersIcon className="size-5 shrink-0" aria-hidden="true" />
-          <h2 tabIndex={-1} className="type-title">Snippets</h2>
-          <span className="type-caption text-muted-foreground">
-            {state.snippets.length} {state.snippets.length === 1 ? "snippet" : "snippets"}
-          </span>
-        </div>
-        {empty && !selection ? null : newButton}
-      </div>
+      <PageHeader
+        title="Snippets"
+        subtitle={`Reusable commands, encrypted on this Mac · ${state.snippets.length} ${state.snippets.length === 1 ? "snippet" : "snippets"}`}
+        actions={empty && !selection ? null : newButton}
+      />
       <p className="flex items-center gap-2 type-caption text-muted-foreground">
         <ShieldCheckIcon className="size-4 shrink-0" aria-hidden="true" />
         Snippet bodies are encrypted on this Mac. Saving never runs a command.

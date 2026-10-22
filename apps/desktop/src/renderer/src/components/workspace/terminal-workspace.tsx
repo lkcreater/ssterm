@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type Dispatch,
+  type ReactNode,
   type RefObject,
 } from "react";
 import {
@@ -94,8 +95,8 @@ const focusActivePane = () => {
 };
 
 /**
- * Tab and split state for one window. The shell owns it so the tab strip (titlebar) and the
- * terminal layer (main panel) share it: `useWorkspace(owner, sessions)` once in the shell, then
+ * Tab and split state for one window. The shell owns it so the tab strip (Terminals header) and the
+ * terminal layer share it: `useWorkspace(owner, sessions)` once in the shell, then
  * pass the result to `<SessionTabs>` and `<TerminalWorkspace>`.
  */
 export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession[]) {
@@ -284,6 +285,8 @@ export function TerminalWorkspace({
   catalog,
   toolsOpen = false,
   onCloseTools,
+  header,
+  empty,
 }: {
   owner: Owner;
   controller: WorkspaceController;
@@ -292,6 +295,10 @@ export function TerminalWorkspace({
   catalog?: CatalogState;
   toolsOpen?: boolean;
   onCloseTools?(): void;
+  /** The Terminals page header (title, actions and the tab strip); it hides with the panes, so their size never changes. */
+  header?: ReactNode;
+  /** Shown in place of the panes while no session is open. */
+  empty?: ReactNode;
   /** Another page is shown; terminals keep streaming underneath. */
   hidden: boolean;
   onCommand?(command: WorkspaceCommand): void;
@@ -427,7 +434,9 @@ export function TerminalWorkspace({
           if (id) dispatch({ type: "focus-pane", sessionId: id });
         }}
       >
+        {header}
         <div ref={layer} className="terminal-layer relative min-h-0 flex-1">
+          {sessions.length === 0 ? empty : null}
           {focusMode && tab ? (
             <div
               role="group"

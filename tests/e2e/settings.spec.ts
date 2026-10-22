@@ -4,7 +4,7 @@ import { test, expect, launchDesktop, type Desktop } from "./fixtures";
 const DEFAULTS = { terminalFontSize: 13, terminalScrollback: 10_000, terminalCursor: "block", terminalCursorBlink: false };
 
 async function openSettings(page: Page) {
-  await page.getByRole("banner").getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#app-sidebar").getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
   await expect(dialog).toBeVisible();
   return {
@@ -85,7 +85,7 @@ test("Cmd+W with no sessions closes the window without asking", async ({ desktop
     }) as typeof dialog.showMessageBox;
   });
   // Enabled once the window has an owner, so the workspace (and its Cmd+W) is mounted.
-  await expect(page.getByRole("banner").getByRole("button", { name: "Settings", exact: true })).toBeEnabled();
+  await expect(page.locator("#app-sidebar").getByRole("button", { name: "Settings", exact: true })).toBeEnabled();
   const closed = page.waitForEvent("close");
   // The page can close before the key-up is delivered.
   await page.keyboard.press("Meta+w").catch(() => undefined);

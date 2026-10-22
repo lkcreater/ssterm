@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Charcoal tokens, terminal palette and icon v2
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Titlebar contains no tabs or buttons besides traffic lights and drag region
 - [ ] Sidebar shows icon v2 without wordmark, the nine pages, the existing nested group tree with counts, and Settings/Keyboard shortcuts in its footer

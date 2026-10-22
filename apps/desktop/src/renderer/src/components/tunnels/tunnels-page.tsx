@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/components/page-header";
 import {
   ArrowRightIcon,
   CircleAlertIcon,
@@ -157,18 +158,15 @@ export function TunnelsPage({
 
   return (
     <div className="catalog-page" data-testid="tunnels-page">
-      <div className="catalog-heading">
-        <div className="flex min-w-0 items-center gap-2">
-          <WorkflowIcon className="size-5 shrink-0" aria-hidden="true" />
-          <h2 tabIndex={-1} className="type-title">Port forwarding</h2>
-          <span className="type-caption text-muted-foreground">{rules.length} {rules.length === 1 ? "rule" : "rules"}</span>
-        </div>
-        {rules.length ? (
+      <PageHeader
+        title="Port forwarding"
+        subtitle={`Local, remote and SOCKS rules through saved servers · ${rules.length} ${rules.length === 1 ? "rule" : "rules"}`}
+        actions={rules.length ? (
           <Button size="sm" disabled={!state.hosts.length} onClick={() => setDialog({ kind: "edit" })}>
             <PlusIcon data-icon="inline-start" /> New rule
           </Button>
         ) : null}
-      </div>
+      />
       <p className="type-caption text-muted-foreground">
         Local rules forward a port on this Mac to a destination the server opens; remote rules forward a port on the server to a destination this Mac opens; SOCKS rules give apps on this Mac a SOCKS5 proxy whose connections the server opens. Rules never start by themselves.
       </p>

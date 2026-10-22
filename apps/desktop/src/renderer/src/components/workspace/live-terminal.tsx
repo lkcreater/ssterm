@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EnvironmentBadge } from "@/components/connection/host-identity";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   PasteConfirmDialog,
@@ -689,6 +690,7 @@ export function LiveTerminal({
         outcome={outcome}
         busy={busy}
         actions={actions}
+        state={false}
         onAction={act}
         onNotify={notify}
       />
@@ -756,6 +758,7 @@ export function LiveTerminal({
           {notice ? <span className="type-caption">{notice.text}</span> : null}
         </div>
       </div>
+      <PaneStatusBar session={session} />
       <PasteConfirmDialog
         pending={pending}
         canPaste={ready && !inputPaused}
@@ -768,8 +771,9 @@ export function LiveTerminal({
 }
 
 /**
- * The pane header shared by terminal and SFTP panes: `[name · endpoint] [PROD] [state] [outcome] [Copy
- * target] [extra actions] [Cancel | Disconnect | Close pane]`, compacted by the pane's container queries.
+ * The pane header shared by terminal and SFTP panes: `[name · endpoint] [LOCAL | Team] [environment] [state]
+ * [outcome] [Copy target] [extra actions] [Cancel | Disconnect | Close pane]`, compacted by the pane's container
+ * queries. Terminal panes show their state in the pane status bar instead (`state={false}`).
  */
 export function SessionHeader({
   target,
@@ -779,6 +783,7 @@ export function SessionHeader({
   outcome,
   busy,
   actions,
+  state = true,
   onAction,
   onNotify,
 }: {
@@ -790,6 +795,8 @@ export function SessionHeader({
   outcome: string | null;
   busy: boolean;
   actions?: ReactNode;
+  /** Show the connection state here (SFTP); terminal panes show it in their status bar. */
+  state?: boolean;
   /** `detail` is the click count, 0 from the keyboard. */
   onAction(action: LifecycleAction, detail: number): void;
   onNotify(text: string): void;
@@ -811,9 +818,9 @@ export function SessionHeader({
       </Tooltip>
       {local ? <Badge variant="secondary" className="pane-badge">LOCAL</Badge> : null}
       {target?.source === "team" ? <Badge variant="secondary" className="pane-badge" aria-label="Team vault host">Team</Badge> : null}
-      {target?.environment === "PROD" ? <Badge variant="production" className="pane-badge">PROD</Badge> : null}
+      <EnvironmentBadge environment={target?.environment} className="pane-badge" />
       {recording ? <RecordingBadge recording={recording} /> : null}
-      <ConnectionStatus state={statuses[phase]} />
+      {state ? <ConnectionStatus state={statuses[phase]} /> : null}
       <span role="status" className="pane-outcome type-caption min-w-0 shrink truncate text-muted-foreground" title={outcome ?? undefined}>
         {outcome}
       </span>
@@ -831,6 +838,19 @@ export function SessionHeader({
           <PaneAction key="dismiss" label="Close pane" icon={XIcon} variant="ghost" disabled={busy} onClick={(detail) => onAction("dismiss", detail)} />
         )}
       </div>
+    </div>
+  );
+}
+
+/** State · target · environment for one pane, so split panes are never ambiguous about where input goes. */
+function PaneStatusBar({ session }: { session: TerminalSession }) {
+  const { label, endpoint } = terminalIdentity(session);
+  const target = session.local ? `Local · ${label}` : (endpoint ?? label);
+  return (
+    <div className="pane-statusbar" role="group" aria-label="Pane status">
+      <ConnectionStatus state={statuses[session.phase]} />
+      <span className="pane-status-target truncate" title={target}>{target}</span>
+      <EnvironmentBadge environment={session.target?.environment} />
     </div>
   );
 }

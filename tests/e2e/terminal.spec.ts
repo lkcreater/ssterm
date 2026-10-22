@@ -69,7 +69,12 @@ test("shipped terminal streams a real remote shell with resize, exits and no inp
   try {
     await operate("connect");
     await ready(1);
-    await expect(pane.getByText("PROD", { exact: true })).toBeVisible();
+    await expect(pane.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
+    // SST-040/09: the pane status bar repeats state · target · environment for this pane.
+    const status = pane.getByRole("group", { name: "Pane status", exact: true });
+    await expect(status).toContainText("Connected");
+    await expect(status.getByText("PROD", { exact: true })).toBeVisible();
+    await expect(status.locator(".pane-status-target")).toHaveText((await pane.locator(".pane-header .host-target").textContent())!);
 
     await run("echo $((6*7))-ANSWER");
     await expect(screen, "typed input reaches the shell and its output returns").toContainText("42-ANSWER");

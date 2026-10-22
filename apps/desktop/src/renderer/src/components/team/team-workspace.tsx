@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { PageHeader } from "@/components/page-header";
 import type { Owner, TeamAction, TeamReply, TeamView } from "@ssterm/contracts";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -363,16 +364,10 @@ export function TeamWorkspace({
       className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-5"
       data-testid="team-workspace"
     >
-      <div className="flex flex-col gap-2">
-        <h2 className="text-xl font-semibold" tabIndex={-1}>
-          Team vault
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Use your own server for encrypted shared hosts and Owner-shared SSH
-          passwords. Team membership is separate from personal sync and Google
-          sign-in.
-        </p>
-      </div>
+      <PageHeader
+        title="Team vault"
+        subtitle="Use your own server for encrypted shared hosts and Owner-shared SSH passwords. Team membership is separate from personal sync and Google sign-in."
+      />
       <Alert>
         <AlertDescription>
           New connections and edits require an online permission check. While

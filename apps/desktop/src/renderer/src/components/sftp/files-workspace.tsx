@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import { PageHeader } from "@/components/page-header";
 import { ArrowDownToLineIcon, ArrowUpFromLineIcon, CircleIcon, FilePenLineIcon, LaptopIcon, RotateCcwIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
 import type { CatalogState, Owner, SftpSessionView } from "@ssterm/contracts";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -136,7 +137,12 @@ export function FilesWorkspace({
       inert={hidden}
       style={{ visibility: hidden ? "hidden" : undefined }}
     >
-      <div className="transfer-actions">
+      <PageHeader
+        className="files-header"
+        title="Files"
+        subtitle="Browse this Mac and one server over SFTP; transfers keep the folders they were started with."
+        actions={
+          <>
         <Button size="sm" variant="outline" disabled={session?.phase !== "ready" || transfers.pending.has("enqueue")} onClick={() => transfer("upload")}>
           <ArrowUpFromLineIcon data-icon="inline-start" aria-hidden="true" />Upload selected files
         </Button>
@@ -146,7 +152,9 @@ export function FilesWorkspace({
         <Button ref={editButton} size="sm" variant="outline" disabled={session?.phase !== "ready" || edits.pending.has("start")} onClick={startEdit}>
           <FilePenLineIcon data-icon="inline-start" aria-hidden="true" />Edit remote file
         </Button>
-      </div>
+          </>
+        }
+      />
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="50" minSize={220} style={{ overflow: "hidden" }}>
           <section className="files-pane" aria-label="Local files on This Mac" data-pane="local">

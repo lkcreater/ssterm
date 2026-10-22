@@ -9,6 +9,19 @@ import {
 import { toast } from "@/components/ui/toast";
 import { copyText } from "@/lib/clipboard";
 
+/** DEV, STAGING or PROD wherever a target is shown; PROD keeps its production styling. */
+export function EnvironmentBadge({
+  environment,
+  className,
+}: {
+  environment: "DEV" | "STAGING" | "PROD" | null | undefined;
+  className?: string;
+}) {
+  return environment ? (
+    <Badge variant={environment === "PROD" ? "production" : "outline"} className={className}>{environment}</Badge>
+  ) : null;
+}
+
 export interface HostTarget {
   name: string;
   user: string;

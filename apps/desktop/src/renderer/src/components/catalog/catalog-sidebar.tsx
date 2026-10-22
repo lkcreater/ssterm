@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import {
   ChevronRightIcon,
   FolderIcon,
@@ -9,7 +9,6 @@ import {
   ServerIcon,
 } from "lucide-react";
 import type { CatalogState } from "@ssterm/contracts";
-import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
@@ -41,6 +40,7 @@ import {
 } from "@/components/ui/input-group";
 import {
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
@@ -53,6 +53,28 @@ import {
 } from "@/components/ui/sidebar";
 import type { CatalogScope, GroupNode } from "@/lib/catalog-filter";
 
+/** The sidebar's Groups "+": the existing New server / New group menu. */
+export function CatalogAddMenu({ disabled, onAdd }: { disabled: boolean; onAdd(kind: "host" | "group"): void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<SidebarGroupAction disabled={disabled} />} aria-label="Add server or group">
+        <PlusIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={() => onAdd("host")}>
+            <ServerIcon /> New server
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onAdd("group")}>
+            <FolderPlusIcon /> New group
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Search and tag filter for the Servers page header. */
 export function CatalogSearch({
   state,
   disabled,
@@ -62,7 +84,6 @@ export function CatalogSearch({
   onSearch,
   onSubmit,
   onTags,
-  onAdd,
 }: {
   state?: CatalogState;
   disabled: boolean;
@@ -73,7 +94,6 @@ export function CatalogSearch({
   onSearch(value: string): void;
   onSubmit(): void;
   onTags(ids: string[]): void;
-  onAdd(kind: "host" | "group"): void;
 }) {
   const anchor = useComboboxAnchor();
   const tags = state?.tags ?? [];
@@ -81,28 +101,7 @@ export function CatalogSearch({
   const tagIdList = useMemo(() => tags.map((tag) => tag.id), [tags]);
   return (
     <>
-      <div className="flex items-center justify-between">
-        <span className="type-label">Servers</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon" disabled={disabled} />}
-            aria-label="Add server or group"
-          >
-            <PlusIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => onAdd("host")}>
-                <ServerIcon /> New server
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onAdd("group")}>
-                <FolderPlusIcon /> New group
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <div className="flex flex-col gap-1">
+      <div className="catalog-search flex flex-col gap-1">
       <InputGroup>
         <InputGroupAddon>
           <SearchIcon aria-hidden="true" />
@@ -143,7 +142,7 @@ export function CatalogSearch({
           itemToStringLabel={(id: string) => labels.get(id) ?? ""}
           disabled={disabled}
         >
-          <ComboboxChips ref={anchor}>
+          <ComboboxChips ref={anchor} className="catalog-tags">
             <ComboboxValue>
               {(values: string[]) => (
                 <>
@@ -179,10 +178,13 @@ export function CatalogLibrary({
   tree,
   current,
   expanded,
+  action,
   onScope,
   onToggle,
 }: {
   state?: CatalogState;
+  /** Rendered beside the "Groups" label. */
+  action?: ReactNode;
   tree: GroupNode[];
   /** The selected scope while the servers page is shown. */
   current?: CatalogScope;
@@ -206,7 +208,8 @@ export function CatalogLibrary({
       (current.kind === "group" && current.groupId === scope.groupId));
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Library</SidebarGroupLabel>
+      <SidebarGroupLabel>Groups</SidebarGroupLabel>
+      {action}
       <SidebarGroupContent>
         <SidebarMenu>
           <SidebarMenuItem>

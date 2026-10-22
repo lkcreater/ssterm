@@ -16,7 +16,7 @@ const ui = (page: Page) => {
     server: page.getByTestId("server-editor"),
     group: page.getByTestId("group-editor"),
     search: page.getByRole("searchbox", { name: "Search servers" }),
-    status: page.locator("p[role=status]").first(),
+    status: hosts.locator("p[role=status]").first(),
     row: (label: string) => hosts.locator("button[data-host-id]", { hasText: label }),
     rows: hosts.locator("button[data-host-id]"),
     /** Sidebar library entries start with their label; the disclosure trigger starts with "Subgroups of". */

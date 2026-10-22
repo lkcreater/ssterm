@@ -11,3 +11,4 @@
 - [ ] Activating a row opens the host drawer that replaces the former detail panel
 - [ ] Footer summary shows workspace, server count and connected count
 - [ ] Group/tag/search scoping unchanged; catalog-ui and catalog-connect E2E pass
+- Note (SST-040/09 review): the removed global status bar's connected count included ready SFTP sessions as well as terminals; decide whether the Servers summary keeps that.

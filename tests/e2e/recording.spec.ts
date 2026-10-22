@@ -351,6 +351,8 @@ test("a capped local log stays incomplete and exportable while history keeps rec
   if (!boot.ok) throw new Error("bootstrap");
   const local = await localZsh(app, boot.value.owner, 16);
   try {
+    // SST-040/09: New local terminal lives in the Terminals page header.
+    await page.getByRole("button", { name: /^Terminals/u }).click();
     await page.getByRole("button", { name: "New local terminal", exact: true }).first().click();
     const pane = page.locator("section[data-terminal-kind=local]");
     await expect(pane).toHaveAttribute("data-phase", "ready");
@@ -403,6 +405,8 @@ test("recording on local zsh: the LOCAL pane records, suggests the command it ju
   try {
     const id = randomUUID().slice(0, 8);
     const command = `echo LOCAL_${id}-$((2+3))`;
+    // SST-040/09: New local terminal lives in the Terminals page header.
+    await page.getByRole("button", { name: /^Terminals/u }).click();
     await page.getByRole("button", { name: "New local terminal", exact: true }).first().click();
     const pane = page.locator("section[data-terminal-kind=local]");
     const rows = pane.locator(".xterm-rows");

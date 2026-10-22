@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/components/page-header";
 import {
   CircleAlertIcon,
   CopyIcon,
@@ -132,14 +133,10 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
   );
   return (
     <div className="catalog-page" data-testid="identities-page">
-      <div className="catalog-heading">
-        <div className="flex min-w-0 items-center gap-2">
-          <UserRoundIcon className="size-5 shrink-0" aria-hidden="true" />
-          <h2 tabIndex={-1} className="type-title">
-            Identities and keys
-          </h2>
-        </div>
-        {empty ? null : tab === "identities" ? (
+      <PageHeader
+        title="Identities"
+        subtitle="Users, passwords and SSH keys for your servers, kept in the macOS Keychain."
+        actions={empty ? null : tab === "identities" ? (
           <Button size="sm" onClick={() => setDialog({ kind: "identity" })}>
             <PlusIcon data-icon="inline-start" /> New identity
           </Button>
@@ -148,7 +145,7 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
             <FileKeyIcon data-icon="inline-start" /> Import key…
           </Button>
         )}
-      </div>
+      />
       {secretsReady ? null : (
         <Alert>
           <TriangleAlertIcon />

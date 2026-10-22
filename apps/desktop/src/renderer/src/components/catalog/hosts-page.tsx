@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { PageHeader } from "@/components/page-header";
 import {
   AlertTriangleIcon,
   CheckIcon,
-  FolderIcon,
   FolderOpenIcon,
   FolderPlusIcon,
   PencilIcon,
@@ -43,6 +43,7 @@ import {
   type ConnectionState,
 } from "@/components/connection/connection-status";
 import { identityText } from "@/components/catalog/editors";
+import { EnvironmentBadge } from "@/components/connection/host-identity";
 import type { Catalog } from "@/hooks/use-catalog";
 import {
   compareLabel,
@@ -54,12 +55,6 @@ import {
 import { labelError, serverFieldErrors } from "@/lib/catalog-validation";
 
 export type ConnectFailure = { hostId: string; message: string };
-
-export function EnvironmentBadge({ environment }: { environment: CatalogHost["environment"] }) {
-  return environment ? (
-    <Badge variant={environment === "PROD" ? "production" : "outline"}>{environment}</Badge>
-  ) : null;
-}
 
 type Identities = ReadonlyMap<string, CatalogState["identities"][number]>;
 function target(host: CatalogHost, identities: Identities): string {
@@ -94,8 +89,11 @@ export function HostsPage({
   onConnect,
   onOpenSftp,
   onClearFilters,
+  toolbar,
 }: {
   catalog: Catalog;
+  /** Search and tag filter, shown first among the header actions. */
+  toolbar?: ReactNode;
   state: CatalogState;
   /** Already filtered and ordered. */
   hosts: CatalogHost[];
@@ -129,34 +127,32 @@ export function HostsPage({
   const empty = state.hosts.length === 0 && state.groups.length === 0 && !filtering;
   return (
     <div className="catalog-page" data-testid="hosts-page">
-      <div className="catalog-heading">
-        <div className="flex min-w-0 items-center gap-2">
-          {group ? <FolderIcon className="size-5 shrink-0" aria-hidden="true" /> : <ServerIcon className="size-5 shrink-0" aria-hidden="true" />}
-          {/* Focus target after a deletion removes the focused control. */}
-          <h2 tabIndex={-1} className="type-title min-w-0 break-all">{title}</h2>
-          <span className="type-caption text-muted-foreground">
-            {hosts.length} {hosts.length === 1 ? "server" : "servers"}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {group ? (
-            <>
-              <Button variant="outline" size="sm" onClick={() => onEditGroup(group.id)}>
-                <PencilIcon data-icon="inline-start" /> Edit group
+      {/* Focus target after a deletion removes the focused control. */}
+      <PageHeader
+        title={title}
+        subtitle={`Your SSH workspace · ${hosts.length} ${hosts.length === 1 ? "server" : "servers"}`}
+        actions={
+          <>
+            {toolbar}
+            {group ? (
+              <>
+                <Button variant="outline" size="sm" onClick={() => onEditGroup(group.id)}>
+                  <PencilIcon data-icon="inline-start" /> Edit group
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => onDeleteGroup(group.id)}>
+                  <Trash2Icon data-icon="inline-start" /> Delete group
+                </Button>
+              </>
+            ) : null}
+            {/* Empty states carry their own Add action. */}
+            {hosts.length > 0 || filtering ? (
+              <Button size="sm" onClick={onAddHost}>
+                <PlusIcon data-icon="inline-start" /> Add server
               </Button>
-              <Button variant="outline" size="sm" onClick={() => onDeleteGroup(group.id)}>
-                <Trash2Icon data-icon="inline-start" /> Delete group
-              </Button>
-            </>
-          ) : null}
-          {/* Empty states carry their own Add action. */}
-          {hosts.length > 0 || filtering ? (
-            <Button size="sm" onClick={onAddHost}>
-              <PlusIcon data-icon="inline-start" /> Add server
-            </Button>
-          ) : null}
-        </div>
-      </div>
+            ) : null}
+          </>
+        }
+      />
       {state.truncated ? (
         <p className="type-caption text-muted-foreground">
           Showing the first {MAX_CATALOG_ITEMS.toLocaleString()} items of each kind.

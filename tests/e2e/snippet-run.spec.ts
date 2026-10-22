@@ -97,7 +97,7 @@ test("snippet Paste sends nothing until Run or Insert; Run goes to the target ca
     await fixture("connect");
     await ready(paneA);
     await idle(paneA);
-    await expect(paneA.getByText("PROD", { exact: true })).toBeVisible();
+    await expect(paneA.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
 
     // Open from the keyboard while the PROD pane is focused; the panel names the active target.
     await textarea(paneA).focus();

@@ -226,7 +226,7 @@ test("tabs and splits: split opens a session, merge/focus/move never reconnect, 
     const a2 = await w.opened(before);
     await w.ready(a2);
     await expect(a2).toHaveAttribute("aria-label", `Terminal for ${alpha}`);
-    await expect(a2.getByText("PROD", { exact: true })).toBeVisible();
+    await expect(a2.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
     await expect(w.tabs).toHaveCount(3);
     await expect(w.tabs.nth(0)).toContainText("+1 pane");
     await expect(a2.locator(".xterm-helper-textarea"), "the new pane is focused once Ready").toBeFocused();
@@ -644,6 +644,13 @@ test("visual: sidebar, 2- and 4-pane splits with PROD and a failed pane, ten lon
     expect(name, `${label} ${id}: the server name is readable`).toBeGreaterThanOrEqual(48);
     if (await pane.locator(".pane-header [role=status]").textContent())
       expect((await pane.locator(".pane-header [role=status]").boundingBox())?.width ?? 0, `${label} ${id}: the outcome is readable`).toBeGreaterThanOrEqual(40);
+    // The header may hide the endpoint in a narrow pane; the status bar then still shows all of it, unclipped.
+    const target = pane.getByRole("group", { name: "Pane status", exact: true }).locator(".pane-status-target");
+    await expect(target, `${label} ${id}: the status bar names the pane's target`).toHaveText((await pane.locator(".pane-header .host-target").textContent())!);
+    const clip = await target.evaluate((node) => ({ scroll: node.scrollWidth, client: node.clientWidth }));
+    expect(clip.scroll, `${label} ${id}: the status bar target is not clipped`).toBeLessThanOrEqual(clip.client + 1);
+    const [paneBox, targetBox] = [(await pane.boundingBox())!, (await target.boundingBox())!];
+    expect(targetBox.y + targetBox.height, `${label} ${id}: the status bar target stays inside the pane`).toBeLessThanOrEqual(paneBox.y + paneBox.height + 0.5);
     for (const control of await pane.locator(".pane-header button, .pane-header .pane-badge, .pane-header .connection-status").all()) {
       const box = (await control.boundingBox())!;
       expect(box.x, `${label} ${id}: header controls stay inside the pane`).toBeGreaterThanOrEqual(header.x - 0.5);
@@ -657,43 +664,26 @@ test("visual: sidebar, 2- and 4-pane splits with PROD and a failed pane, ten lon
     expect(title.height, `${label}: the notice title wraps to at most three lines`).toBeLessThanOrEqual(3 * 21);
     expect(action.y >= title.y + title.height - 0.5 || action.x >= title.x + title.width - 0.5, `${label}: Reconnect does not cover the text`).toBe(true);
   };
-  /** The bar drags the window; its controls do not, and none sits under the traffic lights. */
+  /** SST-040/09: the bar is only a drag region beside the traffic lights; tabs and actions live in the page. */
   const titlebar = async (label: string) => {
     const lights = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getWindowButtonPosition?.() ?? null);
     const regions = await page.evaluate(() => {
       const header = document.querySelector<HTMLElement>("header.app-titlebar")!;
-      const region = (element: Element) => {
-        const style = getComputedStyle(element);
-        return style.getPropertyValue("-webkit-app-region") || (style as unknown as { webkitAppRegion?: string }).webkitAppRegion || "";
+      const style = getComputedStyle(header);
+      return {
+        bar: style.getPropertyValue("-webkit-app-region") || (style as unknown as { webkitAppRegion?: string }).webkitAppRegion || "",
+        height: header.getBoundingClientRect().height,
+        controls: [...header.querySelectorAll('button, input, [role="tab"], [role="tablist"], [tabindex]')].map((element) => element.outerHTML.slice(0, 80)),
       };
-      const strip = header.querySelector('[role="tablist"]')?.getBoundingClientRect();
-      const controls = [...header.querySelectorAll('button, [role="tab"], [tabindex]')].flatMap((element) => {
-        let { left, top, right, bottom } = element.getBoundingClientRect();
-        // Tabs scrolled out of the strip are clipped by it.
-        if (strip && element.closest('[role="tablist"]')) {
-          left = Math.max(left, strip.left);
-          right = Math.min(right, strip.right);
-        }
-        if (right - left < 1 || bottom - top < 1) return [];
-        return [{ name: element.getAttribute("aria-label") ?? element.textContent?.slice(0, 24) ?? "", region: region(element), left, top, right, bottom }];
-      });
-      const tablist = header.querySelector('[role="tablist"]');
-      return { bar: region(header), strip: tablist && region(tablist), empty: region(header.querySelector(".titlebar-tabs")!),
-        height: header.getBoundingClientRect().height, controls };
     });
     expect(regions.bar, "the titlebar drags the window").toBe("drag");
-    expect(regions.strip, "the tab strip, gaps included, is not a drag region").toBe("no-drag");
-    expect(regions.empty, "the empty bar beside the tabs still drags").not.toBe("no-drag");
     expect(regions.height).toBe(40);
-    expect(regions.controls.length).toBeGreaterThan(2);
-    for (const control of regions.controls) expect(control.region, `${control.name} is not a drag region`).toBe("no-drag");
+    expect(regions.controls, "the titlebar holds no controls").toEqual([]);
     expect(lights, "macOS reports the traffic-light position").not.toBeNull();
-    // Three 12 px lights 20 px apart from the reported origin, with margin: 60 × 16.
-    const safe = { left: lights!.x, top: lights!.y, right: lights!.x + 60, bottom: lights!.y + 16 };
-    for (const control of regions.controls)
-      expect(control.right <= safe.left || control.left >= safe.right || control.bottom <= safe.top || control.top >= safe.bottom,
-        `${control.name} clears the traffic lights`).toBe(true);
-    evidence[`titlebar-${label}`] = { lights, controls: regions.controls.length, firstControlLeft: Math.min(...regions.controls.map((c) => c.left)) };
+    // The strip sits below the bar, so no tab can reach the traffic lights.
+    const strip = await page.getByRole("tablist", { name: "Terminal tabs" }).boundingBox();
+    expect(strip!.y, "the tab strip is below the titlebar").toBeGreaterThanOrEqual(regions.height);
+    evidence[`titlebar-${label}`] = { lights, height: regions.height, stripTop: strip!.y };
   };
   try {
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -705,11 +695,21 @@ test("visual: sidebar, 2- and 4-pane splits with PROD and a failed pane, ten lon
     await page.keyboard.press("Meta+d");
     const p2 = await w.opened(before);
     await w.ready(p2);
+    // The pane that receives typing is outlined; the other keeps a plain border.
+    const outline = (pane: Locator) => pane.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { border: style.borderTopColor, shadow: style.boxShadow };
+    });
+    // The new pane takes focus once Ready; wait until the previous one has let go of it.
+    await expect.poll(async () => (await outline(p1)).shadow, { message: "the inactive pane has no outline" }).toBe("none");
+    const [active, other] = [await outline(p2), await outline(p1)];
+    expect(active.border, "the active pane is outlined").not.toBe(other.border);
+    expect(active.shadow).not.toBe("none");
     for (const [width, height] of sizes) {
       await resize(width, height);
       await tiled([p1, p2], `two-${width}x${height}`);
       for (const pane of [p1, p2]) await readable(pane, `two-${width}x${height}`);
-      for (const pane of [p1, p2]) await expect(pane.getByText("PROD", { exact: true })).toBeVisible();
+      for (const pane of [p1, p2]) await expect(pane.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
       await noPageScroll();
       await titlebar(`two-${width}x${height}`);
       await shot(`two-panes-${width}x${height}`);
@@ -737,7 +737,7 @@ test("visual: sidebar, 2- and 4-pane splits with PROD and a failed pane, ten lon
       await expect(failed.getByText("Couldn't connect: the server could not be reached", { exact: true }),
         `four-${width}x${height}: the failed pane says why`).toBeVisible();
       await expect(failed.getByRole("button", { name: "Reconnect", exact: true })).toBeVisible();
-      for (const pane of [p1, p2, p3]) await expect(pane.getByText("PROD", { exact: true })).toBeVisible();
+      for (const pane of [p1, p2, p3]) await expect(pane.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
       await expect(failed.getByText("PROD", { exact: true })).toHaveCount(0);
       await noPageScroll();
 
@@ -785,7 +785,7 @@ test("visual: sidebar, 2- and 4-pane splits with PROD and a failed pane, ten lon
           return at.x >= box.x - 0.5 && at.x + at.width <= box.x + box.width + 0.5;
         }, { message: `${width}x${height}: the selected tab and its close button stay in the strip` }).toBe(true);
       }
-      const settings = page.getByRole("banner").getByRole("button", { name: "Settings", exact: true });
+      const settings = page.locator("#app-sidebar").getByRole("button", { name: "Settings", exact: true });
       await expect(settings).toBeInViewport({ ratio: 1 });
       await noPageScroll();
       await titlebar(`tabs-${width}x${height}`);

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { AlertTriangleIcon, ShieldCheckIcon } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
+import { AlertTriangleIcon } from "lucide-react";
 import {
   MAX_KNOWN_HOSTS,
   type HostTrustDecision,
@@ -136,15 +137,10 @@ export function KnownHostsWorkspace({
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-auto p-5"
       data-testid="known-hosts-workspace"
     >
-      <div className="flex items-center gap-2">
-        <ShieldCheckIcon className="size-5" />
-        <h2 className="type-heading">Known hosts</h2>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Saved SSH server identities are shared across terminals, file transfers
-        and port forwarding. Verify fingerprints with your administrator before
-        trusting a key.
-      </p>
+      <PageHeader
+        title="Known hosts"
+        subtitle="Saved SSH server identities are shared across terminals, file transfers and port forwarding. Verify fingerprints with your administrator before trusting a key."
+      />
       {error || failed || state?.availability === "unavailable" ? (
         <TrustError conflict={failed === "conflict"} />
       ) : null}

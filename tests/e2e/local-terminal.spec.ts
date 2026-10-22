@@ -71,6 +71,8 @@ async function localTerminal(desktop: Desktop) {
   };
   const start = async () => {
     const before = await ids();
+    // SST-040/09: New local terminal lives in the Terminals page header.
+    await page.getByRole("button", { name: /^Terminals/u }).click();
     await page.getByRole("button", { name: "New local terminal", exact: true }).first().click();
     const pane = await opened(before);
     await ready(pane);
@@ -121,6 +123,8 @@ test("local terminal uses a native isolated PTY, labels This Mac, resizes and re
     await expect(pane.getByText("LOCAL", { exact: true })).toBeVisible();
     await expect(pane.getByText("This Mac", { exact: true })).toBeVisible();
     await expect(pane.getByText("PROD", { exact: true })).toHaveCount(0);
+    // SST-040/09: the status bar names the local target, never an SSH endpoint.
+    await expect(pane.getByRole("group", { name: "Pane status", exact: true }).locator(".pane-status-target")).toHaveText("Local · This Mac");
     const tabs = page.getByRole("tablist", { name: "Terminal tabs" });
     await expect(tabs).toContainText("LOCAL");
     await expect(tabs).toContainText("This Mac");

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { PageHeader } from "@/components/page-header";
 import {
   CircleAlertIcon, CircleDotIcon, CopyIcon, DownloadIcon, FileClockIcon, HistoryIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
@@ -58,17 +59,12 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
   const history = state ? state.historyFiles > 0 : false;
   return (
     <div className="catalog-page" data-testid="recordings-page">
-      <div className="catalog-heading">
-        <div className="flex min-w-0 items-center gap-2">
-          <FileClockIcon className="size-5 shrink-0" aria-hidden="true" />
-          <h2 ref={heading} tabIndex={-1} className="type-title">Recordings</h2>
-          {state ? (
-            <span className="type-caption text-muted-foreground">
-              {state.logCount} {state.logCount === 1 ? "log" : "logs"} · {bytes(state.logBytes + state.historyBytes)}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-1">
+      <PageHeader
+        title="Recordings"
+        headingRef={heading}
+        subtitle={state ? `Encrypted session logs and command history · ${state.logCount} ${state.logCount === 1 ? "log" : "logs"} · ${bytes(state.logBytes + state.historyBytes)}` : "Encrypted session logs and command history"}
+        actions={
+          <>
           <Button size="sm" variant="outline" disabled={!history || !!busy} onClick={() => void save({ kind: "history" }, "history")}>
             {busy === "history" ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}Export history…
           </Button>
@@ -80,8 +76,9 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
             title: "Delete all recordings?", description: "Every session log and all command history are deleted from this Mac, including recordings in progress." })}>
             <Trash2Icon data-icon="inline-start" />Delete all
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
       <p className="type-caption text-muted-foreground">
         Session logs hold what each terminal displayed; command history holds the command lines a shell reported. Both are
         encrypted on this Mac, kept within the limits in{" "}
