@@ -15,7 +15,14 @@ import { cn } from "@/lib/utils";
  * Close policy shared by every drawer: Esc, the scrim, × and Cancel all call `request`. Busy ignores it; dirty
  * shows the discard step inside the same drawer (Esc there keeps editing); clean closes with the exit motion.
  */
-export function useDrawerClose({ dirty = false, busy = false }: { dirty?: boolean; busy?: boolean } = {}) {
+export function useDrawerClose({
+  dirty = false,
+  busy = false,
+}: {
+  /** A function is read when closing is requested, for drafts kept outside React state (uncontrolled secret fields). */
+  dirty?: boolean | (() => boolean);
+  busy?: boolean;
+} = {}) {
   // Mounted closed and opened on the next commit: Base UI animates only an open transition, not an initial open.
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(true), []);
@@ -29,7 +36,7 @@ export function useDrawerClose({ dirty = false, busy = false }: { dirty?: boolea
     request() {
       if (busy) return;
       if (discarding) return setDiscarding(false);
-      if (!dirty) return setOpen(false);
+      if (!(typeof dirty === "function" ? dirty() : dirty)) return setOpen(false);
       resume.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setDiscarding(true);
     },
@@ -47,7 +54,8 @@ const tabbable =
  * and footer, scrolling body, scrim, focus trapped and returned to the opener. Keys typed here stay here (focus never
  * leaves), so nothing reaches a terminal. `onClose` runs once the exit motion has finished; a caller that can reopen
  * the same kind should key each open so a closing instance is never reused. `alert` is for confirmation-only
- * drawers: role alertdialog and no dismissal by the scrim.
+ * drawers: role alertdialog and no dismissal by the scrim. `dismissOnScrim={false}` keeps the dialog role but ignores
+ * scrim clicks (prompts whose dismissal would cancel something).
  */
 export function Drawer({
   close,
@@ -58,6 +66,7 @@ export function Drawer({
   footer,
   discardText = "Your changes will be lost.",
   alert = false,
+  dismissOnScrim = !alert,
   className,
   children,
   ...props
@@ -72,6 +81,7 @@ export function Drawer({
   footer: ReactNode;
   discardText?: string;
   alert?: boolean;
+  dismissOnScrim?: boolean;
   children: ReactNode;
 }) {
   const keep = useRef<HTMLButtonElement>(null);
@@ -82,8 +92,12 @@ export function Drawer({
     if (close.discarding) keep.current?.focus();
     else if (wasDiscarding.current) {
       const saved = close.resume.current;
-      // The saved field can be gone (a step changed meanwhile): fall back to the first control in the body.
-      const target = saved?.isConnected && body.current?.contains(saved) ? saved : body.current?.querySelector<HTMLElement>(tabbable);
+      // The saved field can be gone or hidden (a step changed meanwhile): fall back to the first visible control in the body.
+      const usable = (element: HTMLElement | null | undefined): element is HTMLElement =>
+        !!element?.isConnected && !!body.current?.contains(element) && element.checkVisibility();
+      const target = usable(saved)
+        ? saved
+        : [...(body.current?.querySelectorAll<HTMLElement>(tabbable) ?? [])].find(usable);
       target?.focus();
     }
     wasDiscarding.current = close.discarding;
@@ -91,7 +105,7 @@ export function Drawer({
   return (
     <Sheet
       open={close.open}
-      disablePointerDismissal={alert}
+      disablePointerDismissal={!dismissOnScrim}
       onOpenChange={(open) => {
         if (!open) close.request();
       }}
@@ -100,7 +114,11 @@ export function Drawer({
       }}
     >
       <SheetPortal>
-        <SheetOverlay className="bg-black/40 duration-200 supports-backdrop-filter:backdrop-blur-none" />
+        <SheetOverlay
+          className="bg-black/40 duration-200 supports-backdrop-filter:backdrop-blur-none"
+          // A scrim that does not dismiss also keeps focus where it was (a field mid-entry stays focused).
+          onMouseDown={dismissOnScrim ? undefined : (event) => event.preventDefault()}
+        />
         <DialogPrimitive.Popup
           data-slot="drawer"
           {...(alert ? { role: "alertdialog" } : {})}

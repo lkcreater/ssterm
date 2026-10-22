@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AlertTriangleIcon } from "lucide-react";
 import type { CredentialFieldId, CredentialPrompt, CredentialState, Owner } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import { Spinner } from "@/components/ui/spinner";
 
 /** The session's terminal input, only while the terminals view is showing. */
@@ -91,34 +91,30 @@ function CredentialPromptDialog({ owner, prompt, available }: { owner: Owner; pr
       if (live.current) { setFailed("request"); busyRef.current = false; setBusy(false); }
     } finally { for (const field of values) field.value.fill(0); }
   }
-  return <Dialog open onOpenChange={(open) => { if (!open) { clear(); void act(true); } }}>
-    <DialogContent initialFocus={first} finalFocus={promptFinalFocus(returnFocus.current, prompt.sessionId)} showCloseButton={false}
-      className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-lg motion-reduce:animate-none" data-testid="credential-prompt-dialog">
-      <DialogHeader>
-        <DialogTitle>SSH authentication</DialogTitle>
-        <DialogDescription>{prompt.purpose === "passphrase" ? "Unlock your imported private key for this connection." : prompt.purpose === "password" ? "Enter the password for this connection." : "Respond to the server's authentication challenge."} Attempt {prompt.attempt} of 3.</DialogDescription>
-      </DialogHeader>
-      <form className="flex min-h-0 flex-col gap-4" autoComplete="off"
-        onSubmit={(event) => { event.preventDefault(); if (!composing.current) void act(false); }}
-        onKeyDown={(event) => { if (event.key === "Enter" && (composing.current || event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault(); }}>
-        <div className="-mx-4 flex min-h-0 flex-col gap-4 overflow-y-auto px-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="min-w-0 break-all font-medium">{prompt.targetLabel}</span>
-            {prompt.environment ? <Badge variant={prompt.environment === "PROD" ? "production" : "outline"}>{prompt.environment}</Badge> : null}</div>
-          <p className="min-w-0 break-all font-mono text-sm">{prompt.username ? `${prompt.username}@` : ""}{prompt.endpointHost}:{prompt.endpointPort}</p>
-          {prompt.jumpFor ? <p className="type-caption min-w-0 break-all text-muted-foreground" data-testid="credential-jump-for">Jump host on the way to {prompt.jumpFor}. These credentials are used for the jump host only.</p> : null}
-          <FieldGroup>{prompt.fields.map((field, index) => <Field key={field.id} data-disabled={busy || undefined}>
-            <FieldLabel htmlFor={`credential-${field.id}`}>{label(field.id)}</FieldLabel>
-            <Input id={`credential-${field.id}`} name={field.id} type={field.echo ? "text" : "password"} autoComplete="off" spellCheck={false} autoCapitalize="none"
-              ref={inputRef(field.id, index)}
-              disabled={busy || !available} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} />
-          </Field>)}</FieldGroup>
-          {failed || !available ? <Alert variant="destructive"><AlertTriangleIcon /><AlertTitle>{failed === "limit" ? "Authentication responses are too long" : "Authentication could not continue"}</AlertTitle><AlertDescription>{failed === "limit" ? "Each response must be 16 KiB or less, and all responses together must be 64 KiB or less. Fields were cleared. Enter shorter responses." : "The prompt or connection may have changed. Review the current state and try again."}</AlertDescription></Alert> : null}
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" disabled={busy} onClick={() => void act(true)}>Cancel</Button>
-          <Button type="submit" disabled={busy || !available}>{busy ? <Spinner data-icon="inline-start" /> : null}Continue</Button>
-        </DialogFooter>
-      </form>
-    </DialogContent>
-  </Dialog>;
+  // Esc and × cancel the prompt (a scrim click does nothing) (as Cancel does); main then removes it, which unmounts this drawer.
+  const close = { ...useDrawerClose(), request() { clear(); void act(true); } };
+  const formId = useId();
+  return <Drawer close={close} onClose={() => undefined} dismissOnScrim={false} initialFocus={first} finalFocus={promptFinalFocus(returnFocus.current, prompt.sessionId)}
+    data-testid="credential-prompt-dialog" title="SSH authentication"
+    target={<><span className="min-w-0 break-all font-medium text-foreground">{prompt.targetLabel}</span>
+      {prompt.environment ? <Badge variant={prompt.environment === "PROD" ? "production" : "outline"}>{prompt.environment}</Badge> : null}
+      <span className="min-w-0 break-all font-mono">{prompt.username ? `${prompt.username}@` : ""}{prompt.endpointHost}:{prompt.endpointPort}</span></>}
+    description={`${prompt.purpose === "passphrase" ? "Unlock your imported private key for this connection." : prompt.purpose === "password" ? "Enter the password for this connection." : "Respond to the server's authentication challenge."} Attempt ${prompt.attempt} of 3.`}
+    footer={<>
+      <Button type="button" variant="outline" disabled={busy} onClick={() => void act(true)}>Cancel</Button>
+      <Button type="submit" form={formId} disabled={busy || !available}>{busy ? <Spinner data-icon="inline-start" /> : null}Continue</Button>
+    </>}>
+    <form id={formId} className="grid min-w-0 gap-4" autoComplete="off"
+      onSubmit={(event) => { event.preventDefault(); if (!composing.current) void act(false); }}
+      onKeyDown={(event) => { if (event.key === "Enter" && (composing.current || event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault(); }}>
+      {prompt.jumpFor ? <p className="type-caption min-w-0 break-all text-muted-foreground" data-testid="credential-jump-for">Jump host on the way to {prompt.jumpFor}. These credentials are used for the jump host only.</p> : null}
+      <FieldGroup>{prompt.fields.map((field, index) => <Field key={field.id} data-disabled={busy || undefined}>
+        <FieldLabel htmlFor={`credential-${field.id}`}>{label(field.id)}</FieldLabel>
+        <Input id={`credential-${field.id}`} name={field.id} type={field.echo ? "text" : "password"} autoComplete="off" spellCheck={false} autoCapitalize="none"
+          ref={inputRef(field.id, index)}
+          disabled={busy || !available} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} />
+      </Field>)}</FieldGroup>
+      {failed || !available ? <Alert variant="destructive"><AlertTriangleIcon /><AlertTitle>{failed === "limit" ? "Authentication responses are too long" : "Authentication could not continue"}</AlertTitle><AlertDescription>{failed === "limit" ? "Each response must be 16 KiB or less, and all responses together must be 64 KiB or less. Fields were cleared. Enter shorter responses." : "The prompt or connection may have changed. Review the current state and try again."}</AlertDescription></Alert> : null}
+    </form>
+  </Drawer>;
 }

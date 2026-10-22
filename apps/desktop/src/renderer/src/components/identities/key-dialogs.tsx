@@ -3,25 +3,10 @@ import { flushSync } from "react-dom";
 import { AlertTriangleIcon, FileKeyIcon } from "lucide-react";
 import type { CatalogKey, ErrorCode, KeyAlgorithm, Owner, SecretStoreReason } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -29,7 +14,6 @@ import { labelError } from "@/lib/catalog-validation";
 import { algorithmLabel, importProblemText, secretStoreText } from "@/lib/identity-usage";
 import { call, imeEnterGuard, secretFieldProps, useSecretInput } from "./secret-input";
 
-export const dialogLayout = "flex max-h-[calc(100dvh-2rem)] flex-col [overflow-wrap:anywhere] sm:max-w-lg motion-reduce:animate-none";
 type Problem = { title: string; text: string };
 
 export function requestProblem(code: ErrorCode, title = "Nothing was changed"): Problem {
@@ -209,126 +193,120 @@ export function ImportKeyDialog({
     }
   }
 
+  const close = useDrawerClose({ busy });
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
+    <Drawer
+      close={close}
+      onClose={onClose}
+      data-testid="import-key-dialog"
+      title="Import SSH key"
+      description="ssterm keeps the private key in the macOS Keychain and never shows it again. OpenSSH Ed25519 and PEM RSA keys are supported."
+      footer={
+        partial ? (
+          <Button ref={done} onClick={() => onImported(partial.keyId)}>
+            Done
+          </Button>
+        ) : (
+          <>
+            <Button variant="outline" disabled={busy} onClick={close.request}>
+              Cancel
+            </Button>
+            <Button type="submit" form={`${id}-form`} disabled={busy || !chosen}>
+              {busy && chosen ? <Spinner data-icon="inline-start" /> : null}Import
+            </Button>
+          </>
+        )
+      }
     >
-      <DialogContent className={dialogLayout} data-testid="import-key-dialog">
-        <DialogHeader>
-          <DialogTitle>Import SSH key</DialogTitle>
-          <DialogDescription>
-            ssterm keeps the private key in the macOS Keychain and never shows it again. OpenSSH Ed25519 and PEM RSA keys are supported.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id={`${id}-form`}
-          noValidate
-          autoComplete="off"
-          className="-mx-4 grid min-h-0 gap-4 overflow-y-auto px-4 py-1"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-          onKeyDown={imeEnterGuard}
-        >
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Button ref={chooseButton} type="button" variant="outline" disabled={busy || !!partial} onClick={() => void choose()}>
-              <FileKeyIcon data-icon="inline-start" /> {chosen ? "Choose another file…" : "Choose file…"}
-            </Button>
-            {chosen ? (
-              <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-                {chosen.algorithm ? <Badge variant="secondary">{algorithmLabel(chosen.algorithm)}</Badge> : null}
-                <Badge variant="outline">{chosen.encrypted ? "Passphrase protected" : "No passphrase"}</Badge>
-              </span>
-            ) : null}
-          </div>
-          {chosen?.fingerprint ? (
-            <p className="min-w-0 font-mono text-xs break-all text-muted-foreground">{chosen.fingerprint}</p>
-          ) : null}
+      <form
+        id={`${id}-form`}
+        noValidate
+        autoComplete="off"
+        className="grid min-w-0 gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+        onKeyDown={imeEnterGuard}
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Button ref={chooseButton} type="button" variant="outline" disabled={busy || !!partial} onClick={() => void choose()}>
+            <FileKeyIcon data-icon="inline-start" /> {chosen ? "Choose another file…" : "Choose file…"}
+          </Button>
           {chosen ? (
-            <FieldGroup>
-              <Field data-invalid={labelProblem ? true : undefined}>
-                <FieldLabel htmlFor={`${id}-label`}>Name</FieldLabel>
-                <Input
-                  ref={labelInput}
-                  id={`${id}-label`}
-                  value={label}
-                  autoComplete="off"
-                  spellCheck={false}
-                  disabled={busy || !!partial}
-                  aria-invalid={labelProblem ? true : undefined}
-                  onChange={(event) => {
-                    setLabel(event.target.value);
-                    setLabelProblem(undefined);
-                  }}
-                />
-                {labelProblem ? <FieldError>{labelProblem}</FieldError> : null}
-              </Field>
-              {chosen.encrypted ? (
-                <>
-                  <Field data-invalid={passphraseProblem ? true : undefined} data-disabled={busy || undefined}>
-                    <FieldLabel htmlFor={`${id}-passphrase`}>Passphrase</FieldLabel>
-                    <Input
-                      ref={passphrase.ref}
-                      id={`${id}-passphrase`}
-                      {...secretFieldProps}
-                      disabled={busy || !!partial}
-                      aria-invalid={passphraseProblem ? true : undefined}
-                    />
-                    {passphraseProblem ? <FieldError>{passphraseProblem}</FieldError> : (
-                      <FieldDescription>Checked now to confirm the key unlocks.</FieldDescription>
-                    )}
-                  </Field>
-                  <Field orientation="horizontal" data-disabled={!secretsReady || busy || undefined}>
-                    <Checkbox
-                      id={`${id}-save`}
-                      checked={save}
-                      disabled={!secretsReady || busy || !!partial}
-                      onCheckedChange={(checked) => setSave(checked === true)}
-                    />
-                    <FieldLabel htmlFor={`${id}-save`} className="font-normal">
-                      Save passphrase in Keychain
-                    </FieldLabel>
-                  </Field>
-                  <FieldDescription>
-                    {secretsReady
-                      ? "Off: ssterm asks for the passphrase each time you connect."
-                      : "The Keychain is unavailable, so ssterm will ask for the passphrase each time you connect."}
-                  </FieldDescription>
-                </>
-              ) : null}
-            </FieldGroup>
+            <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+              {chosen.algorithm ? <Badge variant="secondary">{algorithmLabel(chosen.algorithm)}</Badge> : null}
+              <Badge variant="outline">{chosen.encrypted ? "Passphrase protected" : "No passphrase"}</Badge>
+            </span>
           ) : null}
-          <ProblemAlert problem={problem} />
-          {partial ? (
-            <Alert role="status">
-              <AlertTriangleIcon />
-              <AlertTitle>Imported without a saved passphrase</AlertTitle>
-              <AlertDescription>{partial.text}</AlertDescription>
-            </Alert>
-          ) : null}
-        </form>
-        <DialogFooter>
-          {partial ? (
-            <Button ref={done} onClick={() => onImported(partial.keyId)}>
-              Done
-            </Button>
-          ) : (
-            <>
-              <Button variant="outline" disabled={busy} onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" form={`${id}-form`} disabled={busy || !chosen}>
-                {busy && chosen ? <Spinner data-icon="inline-start" /> : null}Import
-              </Button>
-            </>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+        {chosen?.fingerprint ? (
+          <p className="min-w-0 font-mono text-xs break-all text-muted-foreground">{chosen.fingerprint}</p>
+        ) : null}
+        {chosen ? (
+          <FieldGroup>
+            <Field data-invalid={labelProblem ? true : undefined}>
+              <FieldLabel htmlFor={`${id}-label`}>Name</FieldLabel>
+              <Input
+                ref={labelInput}
+                id={`${id}-label`}
+                value={label}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={busy || !!partial}
+                aria-invalid={labelProblem ? true : undefined}
+                onChange={(event) => {
+                  setLabel(event.target.value);
+                  setLabelProblem(undefined);
+                }}
+              />
+              {labelProblem ? <FieldError>{labelProblem}</FieldError> : null}
+            </Field>
+            {chosen.encrypted ? (
+              <>
+                <Field data-invalid={passphraseProblem ? true : undefined} data-disabled={busy || undefined}>
+                  <FieldLabel htmlFor={`${id}-passphrase`}>Passphrase</FieldLabel>
+                  <Input
+                    ref={passphrase.ref}
+                    id={`${id}-passphrase`}
+                    {...secretFieldProps}
+                    disabled={busy || !!partial}
+                    aria-invalid={passphraseProblem ? true : undefined}
+                  />
+                  {passphraseProblem ? <FieldError>{passphraseProblem}</FieldError> : (
+                    <FieldDescription>Checked now to confirm the key unlocks.</FieldDescription>
+                  )}
+                </Field>
+                <Field orientation="horizontal" data-disabled={!secretsReady || busy || undefined}>
+                  <Checkbox
+                    id={`${id}-save`}
+                    checked={save}
+                    disabled={!secretsReady || busy || !!partial}
+                    onCheckedChange={(checked) => setSave(checked === true)}
+                  />
+                  <FieldLabel htmlFor={`${id}-save`} className="font-normal">
+                    Save passphrase in Keychain
+                  </FieldLabel>
+                </Field>
+                <FieldDescription>
+                  {secretsReady
+                    ? "Off: ssterm asks for the passphrase each time you connect."
+                    : "The Keychain is unavailable, so ssterm will ask for the passphrase each time you connect."}
+                </FieldDescription>
+              </>
+            ) : null}
+          </FieldGroup>
+        ) : null}
+        <ProblemAlert problem={problem} />
+        {partial ? (
+          <Alert role="status">
+            <AlertTriangleIcon />
+            <AlertTitle>Imported without a saved passphrase</AlertTitle>
+            <AlertDescription>{partial.text}</AlertDescription>
+          </Alert>
+        ) : null}
+      </form>
+    </Drawer>
   );
 }
 
@@ -338,70 +316,70 @@ export function RenameKeyDialog({ owner, keyItem, onClose }: { owner: Owner; key
   const [busy, setBusy] = useState(false);
   const [labelProblem, setLabelProblem] = useState<string>();
   const [problem, setProblem] = useState<Problem>();
+  const close = useDrawerClose({ dirty: label !== keyItem.label, busy });
   async function submit() {
-    if (busy) return;
+    if (busy || close.discarding) return;
     const invalid = labelError(label);
     setLabelProblem(invalid);
     setProblem(undefined);
     if (invalid) return document.getElementById(`${id}-label`)?.focus();
-    if (label.trim() === keyItem.label) return onClose();
+    if (label.trim() === keyItem.label) return close.discard();
     setBusy(true);
     const result = await call((bridge) =>
       bridge.renameKey({ owner, keyId: keyItem.id, expectedRevision: keyItem.revision, label: label.trim() }),
     );
     setBusy(false);
     if (!result.ok) return setProblem(requestProblem(result.error.code, "The key was not renamed"));
-    onClose();
+    close.discard();
   }
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <DialogContent className={dialogLayout} data-testid="rename-key-dialog">
-        <DialogHeader>
-          <DialogTitle>Rename key</DialogTitle>
-          <DialogDescription>Only the name changes. The key and its fingerprint stay the same.</DialogDescription>
-        </DialogHeader>
-        <form
-          id={`${id}-form`}
-          noValidate
-          className="grid gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-          onKeyDown={imeEnterGuard}
-        >
-          <Field data-invalid={labelProblem ? true : undefined}>
-            <FieldLabel htmlFor={`${id}-label`}>Name</FieldLabel>
-            <Input
-              id={`${id}-label`}
-              value={label}
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={labelProblem ? true : undefined}
-              onChange={(event) => {
-                setLabel(event.target.value);
-                setLabelProblem(undefined);
-              }}
-            />
-            {labelProblem ? <FieldError>{labelProblem}</FieldError> : null}
-          </Field>
-          <ProblemAlert problem={problem} />
-        </form>
-        <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={onClose}>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      data-testid="rename-key-dialog"
+      title="Rename key"
+      target={<span className="min-w-0 break-all">{keyItem.label}</span>}
+      description="Only the name changes. The key and its fingerprint stay the same."
+      discardText="Your new name for this key will be lost."
+      footer={
+        <>
+          <Button variant="outline" disabled={busy} onClick={close.request}>
             Cancel
           </Button>
           <Button type="submit" form={`${id}-form`} disabled={busy}>
             {busy ? <Spinner data-icon="inline-start" /> : null}Rename
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <form
+        id={`${id}-form`}
+        noValidate
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+        onKeyDown={imeEnterGuard}
+      >
+        <Field data-invalid={labelProblem ? true : undefined}>
+          <FieldLabel htmlFor={`${id}-label`}>Name</FieldLabel>
+          <Input
+            id={`${id}-label`}
+            value={label}
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={labelProblem ? true : undefined}
+            onChange={(event) => {
+              setLabel(event.target.value);
+              setLabelProblem(undefined);
+            }}
+          />
+          {labelProblem ? <FieldError>{labelProblem}</FieldError> : null}
+        </Field>
+        <ProblemAlert problem={problem} />
+      </form>
+    </Drawer>
   );
 }
 
@@ -437,37 +415,36 @@ export function KeyActionDialog({
       return setProblem({ title: failed, text: "An identity uses this key. Choose another key for it first." });
     if (value.status === "secret-store") return setProblem(storeProblem(value.reason, failed));
     // A pending cleanup shows on the page with Retry.
-    onClose();
+    close.discard();
   }
+  const close = useDrawerClose({ busy });
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <AlertDialogContent initialFocus={cancel} className={dialogLayout} data-testid={`${action}-key-dialog`}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {deleting ? `Delete key ${keyItem.label}?` : `Forget the saved passphrase for ${keyItem.label}?`}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {deleting
-              ? "The private key and any saved passphrase are removed from the Keychain. To use it again, import the file again. Open sessions keep their login."
-              : "ssterm will ask for the passphrase each time this key is used. Open sessions keep their login."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <ProblemAlert problem={problem} />
-        <AlertDialogFooter>
-          <Button ref={cancel} variant="outline" disabled={busy} onClick={onClose}>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      data-testid={`${action}-key-dialog`}
+      title={<span className="break-all">{deleting ? `Delete key ${keyItem.label}?` : `Forget the saved passphrase for ${keyItem.label}?`}</span>}
+      target={<span className="min-w-0 break-all font-mono text-xs">{keyItem.fingerprint}</span>}
+      description={
+        deleting
+          ? "The private key and any saved passphrase are removed from the Keychain. To use it again, import the file again. Open sessions keep their login."
+          : "ssterm will ask for the passphrase each time this key is used. Open sessions keep their login."
+      }
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" disabled={busy} onClick={close.request}>
             Cancel
           </Button>
           <Button variant="destructive" disabled={busy} onClick={() => void confirm()}>
             {busy ? <Spinner data-icon="inline-start" /> : null}
             {deleting ? "Delete key" : "Forget passphrase"}
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </>
+      }
+    >
+      <ProblemAlert problem={problem} />
+    </Drawer>
   );
 }

@@ -306,11 +306,20 @@ test("F03: a shared password identity saved in the Keychain connects grouped ser
     await u.identityRow(identity).getByRole("button", { name: `Edit ${identity}` }).click();
     await u.editor.getByRole("button", { name: "Forget saved password", exact: true }).click();
     await u.editor.getByRole("button", { name: "Save", exact: true }).click();
-    const forget = page.getByRole("alertdialog", { name: "Forget the saved password?" });
+    // The impact review is a step inside the same editor drawer, not a stacked dialog.
+    const forget = u.editor.getByRole("region", { name: "Forget the saved password?" });
+    await expect(page.getByRole("dialog")).toHaveCount(1);
     await expect(forget.getByRole("list", { name: "Groups set to this identity" })).toContainText(group);
     const inheriting = forget.getByRole("list", { name: "Servers inheriting it through groups" });
     for (const label of [hostA, hostB]) await expect(inheriting.getByRole("listitem").filter({ hasText: label })).toContainText("PROD");
-    await forget.getByRole("button", { name: "Back to editing", exact: true }).click();
+    // Esc on the impact step goes back to editing (no discard step); Save reaches it again, then Back to editing.
+    await page.keyboard.press("Escape");
+    await expect(forget).toHaveCount(0);
+    await expect(u.editor.getByRole("alert", { name: "Discard unsaved changes?" })).toHaveCount(0);
+    await expect(u.editor.getByRole("button", { name: "Save", exact: true })).toBeFocused();
+    await u.editor.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(forget).toBeVisible();
+    await u.editor.getByRole("button", { name: "Back to editing", exact: true }).click();
     await expect(forget).toHaveCount(0);
     await u.editor.getByRole("button", { name: "Keep saved password", exact: true }).click();
     await u.editor.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -603,9 +612,11 @@ test("Identities page keyboard and focus at 960×640 with reduced motion", async
   await page.keyboard.press("Enter");
   await u.editor.getByLabel("Name", { exact: true }).fill("Alpha renamed");
   await page.keyboard.press("Escape");
-  const discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" });
-  await expect(discard.getByRole("button", { name: "Keep editing" })).toBeFocused();
-  await discard.getByRole("button", { name: "Discard", exact: true }).click();
+  // The discard step replaces the form inside the same drawer.
+  const discard = u.editor.getByRole("alert", { name: "Discard unsaved changes?" });
+  await expect(discard).toBeVisible();
+  await expect(u.editor.getByRole("button", { name: "Keep editing" })).toBeFocused();
+  await u.editor.getByRole("button", { name: "Discard", exact: true }).click();
   await expect(u.editor).toHaveCount(0);
   await expect(edit).toBeFocused();
 

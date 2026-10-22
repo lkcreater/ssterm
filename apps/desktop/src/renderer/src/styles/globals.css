@@ -588,7 +588,8 @@
 .connection-status[data-state="connected"] {
   --status-color: var(--connection-connected);
 }
-.connection-status[data-state="connecting"] {
+.connection-status[data-state="connecting"],
+.connection-status[data-state="awaiting-trust"] {
   --status-color: var(--connection-connecting);
 }
 /* Spinner + "Connecting"; the global reduced-motion rule stops it. */

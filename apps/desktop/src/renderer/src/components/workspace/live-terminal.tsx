@@ -39,6 +39,7 @@ import { trackPrompt } from "@/lib/prompt-tracker";
 import { planDispatch } from "@/lib/snippet-dispatch";
 import {
   ConnectionStatus,
+  useAwaitingTrust,
   type ConnectionState,
 } from "@/components/connection/connection-status";
 import {
@@ -846,9 +847,10 @@ export function SessionHeader({
 function PaneStatusBar({ session }: { session: TerminalSession }) {
   const { label, endpoint } = terminalIdentity(session);
   const target = session.local ? `Local · ${label}` : (endpoint ?? label);
+  const awaiting = useAwaitingTrust();
   return (
     <div className="pane-statusbar" role="group" aria-label="Pane status">
-      <ConnectionStatus state={statuses[session.phase]} />
+      <ConnectionStatus state={awaiting(session) ? "awaiting-trust" : statuses[session.phase]} />
       <span className="pane-status-target truncate" title={target}>{target}</span>
       <EnvironmentBadge environment={session.target?.environment} />
     </div>

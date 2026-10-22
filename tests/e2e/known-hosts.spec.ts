@@ -266,6 +266,10 @@ test("verifies real SSH trust through dialogs, persistence, replacement and revo
     await expect(
       dialog.getByRole("button", { name: "Replace key", exact: true }),
     ).toBeDisabled();
+    // Both fingerprints are shown and the verification box starts unchecked.
+    await expect(dialog.getByRole("checkbox")).not.toBeChecked();
+    await expect(dialog.getByTestId("trust-fingerprint")).toHaveCount(2);
+    await expect(dialog.getByText(original.fingerprint, { exact: true })).toBeVisible();
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].setSize(960, 640),
     );

@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Drawer primitive with Server and Group editors
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Identity and SSH key forms and deletions use the drawer, with impact confirmation as a drawer step
 - [ ] Unknown host key shows the trust drawer while the tab shows amber Awaiting trust and never a connected indicator

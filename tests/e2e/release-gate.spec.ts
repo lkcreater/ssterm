@@ -246,6 +246,7 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
   const detail = page.getByTestId("host-detail");
   const editor = page.getByTestId("server-editor");
   const name = editor.getByLabel("Name", { exact: true });
+  const discardStep = editor.getByRole("alert", { name: "Discard unsaved changes?" });
   const edit = detail.getByRole("button", { name: "Edit", exact: true });
   const inside = (testId: string) => page.evaluate((id) =>
     !!document.querySelector(`[data-testid="${id}"]`)?.contains(document.activeElement), testId);
@@ -327,12 +328,16 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
   await expect(name).toBeFocused();
   // Reopening during the exit motion gets a fresh drawer that the closing one never closes.
   // The scrim blocks the page during the exit, so the reopen is dispatched straight to Edit inside the 200 ms exit.
+  await expect(name, "a stray keystroke made the draft dirty; the clean Esc below would open the discard step").toHaveValue(label);
   await page.keyboard.press("Escape");
+  await expect(discardStep, "a clean Esc closes without the discard step").toHaveCount(0);
   await edit.dispatchEvent("click");
   await page.waitForTimeout(500);
   await expect(editor).toHaveCount(1);
   await expect(name).toBeFocused();
+  await expect(name, "a stray keystroke made the draft dirty; the clean Esc below would open the discard step").toHaveValue(label);
   await page.keyboard.press("Escape");
+  await expect(discardStep, "a clean Esc closes without the discard step").toHaveCount(0);
   await expect(editor).toHaveCount(0);
   await page.emulateMedia({ reducedMotion: "reduce" });
 
@@ -364,7 +369,9 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
       await expect.poll(() => inside("server-editor"), `${size}: Tab ${i + 1} stays in the drawer`).toBe(true);
     }
     // Clean: Esc closes and focus returns to the opener.
+    await expect(name, "a stray keystroke made the draft dirty; the clean Esc below would open the discard step").toHaveValue(label);
     await page.keyboard.press("Escape");
+    await expect(discardStep, "a clean Esc closes without the discard step").toHaveCount(0);
     await expect(editor).toHaveCount(0);
     await expect(edit).toBeFocused();
 

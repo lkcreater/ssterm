@@ -100,7 +100,16 @@ test("a server created in the UI connects through production main: trust, passwo
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Terminals");
     await expect(pane).toHaveAttribute("data-phase", "connecting");
     await expect(pane.locator(".pane-header").getByText("PROD", { exact: true })).toBeVisible();
+    // Awaiting trust: the drawer is open and the tab and pane status bar show amber "Awaiting trust", never Connected.
+    await expect(trust).toBeVisible();
+    for (const status of [page.locator(".session-tab .connection-status"), pane.locator(".pane-statusbar .connection-status")]) {
+      await expect(status).toHaveAttribute("data-state", "awaiting-trust");
+      await expect(status).toHaveText("Awaiting trust");
+    }
+    await expect(page.locator('.connection-status[data-state="connected"]')).toHaveCount(0);
     await trust.getByRole("button", { name: "Remember", exact: true }).click();
+    // Trusted: authentication continues, so the state goes back to Connecting while the password is asked.
+    await expect(pane.locator(".pane-statusbar .connection-status")).toHaveAttribute("data-state", "connecting");
     await expect(credentials).toBeVisible();
     await expect(credentials).toContainText(server);
     // Closing the trust dialog must not pull focus out of the password prompt that replaces it.

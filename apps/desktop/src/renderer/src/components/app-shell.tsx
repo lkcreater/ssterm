@@ -54,6 +54,7 @@ import { toast } from "@/components/ui/toast";
 import { useDesktopState } from "@/hooks/use-desktop-state";
 import { useCredentials } from "@/hooks/use-credentials";
 import { CredentialPrompts } from "@/components/auth/credential-prompts";
+import { AwaitingTrust } from "@/components/connection/connection-status";
 import { useKnownHosts } from "@/hooks/use-known-hosts";
 import { useTerminals } from "@/hooks/use-terminals";
 import { useSftp } from "@/hooks/use-sftp";
@@ -223,6 +224,7 @@ export function AppShell() {
   const catalog = useCatalog(owner);
   const sessions = useTerminals(owner).state?.sessions ?? [];
   const controller = useWorkspace(owner, sessions);
+  const awaitingTrust = useMemo(() => new Set(trust.state?.prompts.map((prompt) => prompt.sessionId)), [trust.state]);
   const sftp = useSftp(owner);
   const settings = useSettings(owner);
   const tunnelState = useTunnels(owner);
@@ -494,6 +496,7 @@ export function AppShell() {
       : undefined;
 
   return (
+    <AwaitingTrust.Provider value={awaitingTrust}>
     <div
       className="app-shell"
       data-window-focused={
@@ -831,5 +834,6 @@ export function AppShell() {
       <HostTrustDialogs state={trust.state} />
       <CredentialPrompts state={trust.state?.prompts.length ? undefined : credentials.state} />
     </div>
+    </AwaitingTrust.Provider>
   );
 }

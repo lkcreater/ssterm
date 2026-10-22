@@ -1,7 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { XIcon } from "lucide-react";
 import type { TerminalPhase, TerminalSession } from "@ssterm/contracts";
-import { ConnectionStatus, type ConnectionState } from "@/components/connection/connection-status";
+import { ConnectionStatus, useAwaitingTrust, type ConnectionState } from "@/components/connection/connection-status";
 import { Badge } from "@/components/ui/badge";
 import type { WorkspaceController } from "@/components/workspace/terminal-workspace";
 import { panes, type Tab } from "@/lib/workspace-layout";
@@ -16,7 +16,7 @@ const states = {
   failed: "error",
 } as const satisfies Record<TerminalPhase, ConnectionState>;
 
-function summary(tab: Tab, sessions: readonly TerminalSession[]) {
+function summary(tab: Tab, sessions: readonly TerminalSession[], awaiting: (session: TerminalSession) => boolean) {
   const members = panes(tab.root).flatMap((id) => sessions.filter((session) => session.sessionId === id));
   const active = members.find((session) => session.sessionId === tab.active) ?? members[0];
   const worst = severity.find((phase) => members.some((session) => session.phase === phase)) ?? "closed";
@@ -26,7 +26,7 @@ function summary(tab: Tab, sessions: readonly TerminalSession[]) {
     shell: active?.local?.shell,
     others: members.length - 1,
     production: members.some((session) => session.target?.environment === "PROD"),
-    state: states[worst],
+    state: worst === "connecting" && members.some(awaiting) ? ("awaiting-trust" as const) : states[worst],
   };
 }
 
@@ -45,6 +45,7 @@ export function SessionTabs({
   const { workspace, dispatch, sessions } = controller;
   const list = useRef<HTMLDivElement>(null);
   const tabs = workspace.tabs;
+  const awaiting = useAwaitingTrust();
 
   // The whole tab with its close button stays in view, also when the window (and so the strip) resizes.
   useEffect(() => {
@@ -91,7 +92,7 @@ export function SessionTabs({
       className="session-tabs flex min-w-0 items-center gap-1 overflow-x-auto"
     >
       {tabs.map((tab, index) => {
-        const { label, local, shell, others, production, state } = summary(tab, sessions);
+        const { label, local, shell, others, production, state } = summary(tab, sessions, awaiting);
         const selected = tab.id === workspace.activeTab;
         return (
           <div key={tab.id} className="session-tab max-w-64 shrink-0" data-active={selected}>

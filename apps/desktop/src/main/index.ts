@@ -297,6 +297,9 @@ function pendingRemoteEdits(windows: BrowserWindow[]): number {
 const closeSheets = new Set<BrowserWindow>();
 /** A sheet on a minimized or background window (Dock Quit, a close from another app) would go unseen. */
 function bringToFront(window: BrowserWindow): void {
+  // Test profiles never activate the app: a stolen OS focus during long E2E runs routes stray keystrokes into it.
+  // Their sheets are stubbed, and no spec minimizes or hides a window.
+  if (testUserData) return;
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();

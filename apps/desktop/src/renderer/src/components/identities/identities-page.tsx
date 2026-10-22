@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import {
   CircleAlertIcon,
@@ -91,7 +91,10 @@ const heading = () => document.querySelector<HTMLElement>('[data-testid="identit
 
 export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalog: Catalog; state: CatalogState }) {
   const [tab, setTab] = useState<Tab>("identities");
-  const [dialog, setDialog] = useState<Dialog>();
+  // Each open gets its own drawer instance, so reopening during the previous one's exit motion is never closed by it.
+  const [dialog, setDialogState] = useState<Dialog & { key: number }>();
+  const dialogKey = useRef(0);
+  const setDialog = (next: Dialog) => setDialogState({ ...next, key: ++dialogKey.current });
   const [notice, setNotice] = useState<{ title: string; text: string; tone?: "status" }>();
   const [retrying, setRetrying] = useState(false);
   const [copied, setCopied] = useState<string>();
@@ -99,10 +102,15 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
   const usages = useMemo(() => identityUsages(state.hosts, state.groups), [state.hosts, state.groups]);
   const keys = useMemo(() => new Map(state.keys.map((key) => [key.id, key])), [state.keys]);
   const secretsReady = state.secrets.availability === "ready";
-  const close = () => setDialog(undefined);
+  const close = () => setDialogState(undefined);
   const find = <T extends { id: string }>(rows: readonly T[], id?: string) => rows.find((row) => row.id === id);
   const deletingIdentity = dialog?.kind === "delete-identity" ? find(state.identities, dialog.id) : undefined;
   const keyDialog = dialog && "id" in dialog && dialog.kind !== "identity" && dialog.kind !== "delete-identity" ? find(state.keys, dialog.id) : undefined;
+  // A deletion can remove its row (unmounting the drawer) before the drawer reports closing: drop the stale dialog.
+  const stale = !!dialog && ((dialog.kind === "delete-identity" && !deletingIdentity) || (dialog.kind !== "identity" && dialog.kind !== "delete-identity" && dialog.kind !== "import" && !keyDialog));
+  useEffect(() => {
+    if (stale) setDialogState(undefined);
+  }, [stale]);
 
   async function retrySecrets() {
     if (retrying) return;
@@ -250,6 +258,7 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
       </Tabs>
       {dialog?.kind === "identity" ? (
         <IdentityEditor
+          key={dialog.key}
           owner={owner}
           catalog={catalog}
           state={state}
@@ -265,6 +274,7 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
       ) : null}
       {deletingIdentity ? (
         <DeleteIdentityDialog
+          key={dialog?.key}
           catalog={catalog}
           state={state}
           identity={deletingIdentity}
@@ -280,6 +290,7 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
       ) : null}
       {dialog?.kind === "import" ? (
         <ImportKeyDialog
+          key={dialog.key}
           owner={owner}
           secretsReady={secretsReady}
           onClose={close}
@@ -289,9 +300,10 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
           }}
         />
       ) : null}
-      {keyDialog && dialog?.kind === "rename-key" ? <RenameKeyDialog owner={owner} keyItem={keyDialog} onClose={close} /> : null}
+      {keyDialog && dialog?.kind === "rename-key" ? <RenameKeyDialog key={dialog.key} owner={owner} keyItem={keyDialog} onClose={close} /> : null}
       {keyDialog && (dialog?.kind === "forget-passphrase" || dialog?.kind === "delete-key") ? (
         <KeyActionDialog
+          key={dialog.key}
           owner={owner}
           keyItem={keyDialog}
           action={dialog.kind === "delete-key" ? "delete" : "forget-passphrase"}

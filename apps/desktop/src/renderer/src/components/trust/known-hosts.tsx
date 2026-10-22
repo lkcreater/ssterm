@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
-import { AlertTriangleIcon } from "lucide-react";
+import { AlertTriangleIcon, ShieldAlertIcon } from "lucide-react";
 import {
   MAX_KNOWN_HOSTS,
   type HostTrustDecision,
@@ -21,14 +21,7 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import { Spinner } from "@/components/ui/spinner";
 import { promptFinalFocus } from "@/components/auth/credential-prompts";
 
@@ -68,9 +61,19 @@ function TrustError({ conflict = false }: { conflict?: boolean }) {
     </Alert>
   );
 }
-// Header and actions stay in view; only the details scroll at small window sizes.
-const dialogLayout =
-  "flex max-h-[calc(100dvh-2rem)] flex-col data-[size=default]:sm:max-w-lg motion-reduce:animate-none";
+function Target({ prompt }: { prompt: Pick<HostTrustPrompt, "targetLabel" | "environment" | "endpointHost" | "endpointPort"> }) {
+  return (
+    <>
+      <span className="min-w-0 break-all font-medium text-foreground">{prompt.targetLabel}</span>
+      {prompt.environment ? (
+        <Badge variant={prompt.environment === "PROD" ? "production" : "outline"}>{prompt.environment}</Badge>
+      ) : null}
+      <span className="min-w-0 break-all font-mono">
+        {prompt.endpointHost}:{prompt.endpointPort}
+      </span>
+    </>
+  );
+}
 
 export function KnownHostsWorkspace({
   owner,
@@ -84,7 +87,6 @@ export function KnownHostsWorkspace({
   const [preview, setPreview] = useState<KnownHostRevokePreview>();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<Failure>(false);
-  const cancel = useRef<HTMLButtonElement>(null);
   // The trigger is disabled while preparing, so the dialog cannot infer it from document focus.
   const trigger = useRef<HTMLButtonElement | null>(null);
   const activePreview =
@@ -187,62 +189,69 @@ export function KnownHostsWorkspace({
           </p>
         </article>
       ))}
-      <AlertDialog
-        open={!!activePreview}
-        onOpenChange={(open) => {
-          if (!open && !busy) {
+      {activePreview ? (
+        <RevokeDrawer
+          key={activePreview.token}
+          preview={activePreview}
+          busy={busy}
+          failed={failed}
+          trigger={trigger}
+          onRevoke={() => void revoke()}
+          onClose={() => {
             setPreview(undefined);
             setFailed(false);
-          }
-        }}
-      >
-        <AlertDialogContent
-          initialFocus={cancel}
-          finalFocus={trigger}
-          className={dialogLayout}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke this host's trust?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The next connection will require a new trust decision. Active
-              sessions keep their current connection.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="-mx-4 grid min-h-0 gap-4 overflow-y-auto px-4">
-            {activePreview ? (
-              <>
-                <p className="min-w-0 break-all font-mono text-sm">
-                  {activePreview.entry.endpointHost}:
-                  {activePreview.entry.endpointPort}
-                </p>
-                <KeyDetails
-                  entry={activePreview.entry}
-                  label="Key being revoked"
-                />
-              </>
-            ) : null}
-            {failed ? <TrustError conflict={failed === "conflict"} /> : null}
-          </div>
-          <AlertDialogFooter>
-            <Button
-              ref={cancel}
-              variant="outline"
-              disabled={busy}
-              onClick={() => setPreview(undefined)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={busy}
-              onClick={() => void revoke()}
-            >
-              {busy ? <Spinner data-icon="inline-start" /> : null}Revoke trust
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function RevokeDrawer({
+  preview,
+  busy,
+  failed,
+  trigger,
+  onRevoke,
+  onClose,
+}: {
+  preview: KnownHostRevokePreview;
+  busy: boolean;
+  failed: Failure;
+  trigger: React.RefObject<HTMLButtonElement | null>;
+  onRevoke(): void;
+  onClose(): void;
+}) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  const close = useDrawerClose({ busy });
+  return (
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      finalFocus={trigger}
+      title="Revoke this host's trust?"
+      target={
+        <span className="min-w-0 break-all font-mono">
+          {preview.entry.endpointHost}:{preview.entry.endpointPort}
+        </span>
+      }
+      description="The next connection will require a new trust decision. Active sessions keep their current connection."
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" disabled={busy} onClick={close.request}>
+            Cancel
+          </Button>
+          <Button variant="destructive" disabled={busy} onClick={onRevoke}>
+            {busy ? <Spinner data-icon="inline-start" /> : null}Revoke trust
+          </Button>
+        </>
+      }
+    >
+      <KeyDetails entry={preview.entry} label="Key being revoked" />
+      {failed ? <TrustError conflict={failed === "conflict"} /> : null}
+    </Drawer>
   );
 }
 
@@ -296,123 +305,42 @@ function HostTrustDialog({
       setBusy(false);
     }
   }
-  // Alert semantics: an outside click never decides; Escape is an explicit reject.
+  // Alert semantics: an outside click never decides; Escape and × are an explicit reject. A successful answer removes
+  // the prompt through the ordered state stream, which unmounts this drawer.
+  const close = { ...useDrawerClose(), request: () => void answer("reject") };
+  const changed = prompt.status === "changed";
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open) void answer("reject");
-      }}
-    >
-      <AlertDialogContent
-        initialFocus={reject}
-        finalFocus={promptFinalFocus(returnFocus.current, prompt.sessionId)}
-        className={dialogLayout}
-        data-testid="host-trust-dialog"
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {prompt.status === "changed"
-              ? "Server identity changed"
-              : "Trust this server?"}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {prompt.status === "changed"
-              ? "Connection is blocked. A changed key can indicate an attack or a server rebuild. Verify the new fingerprint through a trusted channel before replacing it."
-              : "This server's identity is unknown. Verify the fingerprint through a trusted channel before connecting."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="-mx-4 grid min-h-0 gap-4 overflow-y-auto px-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="min-w-0 break-all font-medium">
-              {prompt.targetLabel}
-            </span>
-            {prompt.environment ? (
-              <Badge
-                variant={
-                  prompt.environment === "PROD" ? "production" : "outline"
-                }
-              >
-                {prompt.environment}
-              </Badge>
-            ) : null}
-          </div>
-          {prompt.jumpFor ? (
-            <p className="type-caption min-w-0 break-all text-muted-foreground" data-testid="trust-jump-for">
-              Jump host on the way to {prompt.jumpFor}. This key belongs to the jump host.
-            </p>
-          ) : null}
-          <p className="min-w-0 break-all font-mono text-sm">
-            {prompt.endpointHost}:{prompt.endpointPort}
-          </p>
-          {prompt.status === "changed" ? (
-            <>
-              <Alert variant="destructive">
-                <AlertTriangleIcon />
-                <AlertTitle>Host key mismatch</AlertTitle>
-                <AlertDescription>
-                  Authentication will stay blocked until you deliberately
-                  replace the remembered key.
-                </AlertDescription>
-              </Alert>
-              <KeyDetails
-                entry={{
-                  algorithm: prompt.previousAlgorithm,
-                  fingerprint: prompt.previousFingerprint,
-                }}
-                label="Previous key"
-              />
-            </>
-          ) : null}
-          <KeyDetails
-            entry={prompt}
-            label={prompt.status === "changed" ? "New key" : "Server key"}
-          />
-          {prompt.status === "changed" ? (
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id="confirm-host-replacement"
-                checked={confirmed}
-                onCheckedChange={(checked) => setConfirmed(checked === true)}
-                disabled={busy}
-              />
-              <Label
-                htmlFor="confirm-host-replacement"
-                className="leading-snug"
-              >
-                I verified the new fingerprint and want to replace this host's
-                remembered key.
-              </Label>
-            </div>
-          ) : null}
-          {failed || !available ? <TrustError /> : null}
-        </div>
-        <AlertDialogFooter>
-          <Button
-            ref={reject}
-            variant="outline"
-            disabled={busy}
-            onClick={() => void answer("reject")}
-          >
+    <Drawer
+      close={close}
+      onClose={() => undefined}
+      alert
+      initialFocus={reject}
+      finalFocus={promptFinalFocus(returnFocus.current, prompt.sessionId)}
+      className={changed ? "border-l-destructive" : undefined}
+      data-testid="host-trust-dialog"
+      data-status={prompt.status}
+      title={
+        changed ? (
+          <span className="flex items-center gap-2">
+            <ShieldAlertIcon aria-hidden="true" className="size-5 shrink-0 text-destructive" />
+            Server identity changed
+          </span>
+        ) : (
+          "Trust this server?"
+        )
+      }
+      target={<Target prompt={prompt} />}
+      description={
+        changed
+          ? "Connection is blocked. A changed key can indicate an attack or a server rebuild. Verify the new fingerprint through a trusted channel before replacing it."
+          : "This server's identity is unknown. Verify the fingerprint through a trusted channel before connecting."
+      }
+      footer={
+        <>
+          <Button ref={reject} variant="outline" disabled={busy} onClick={() => void answer("reject")}>
             Reject
           </Button>
-          {prompt.status === "unknown" ? (
-            <>
-              <Button
-                variant="outline"
-                disabled={busy || !available}
-                onClick={() => void answer("accept-once")}
-              >
-                Accept once
-              </Button>
-              <Button
-                disabled={busy || !available}
-                onClick={() => void answer("remember")}
-              >
-                {busy ? <Spinner data-icon="inline-start" /> : null}Remember
-              </Button>
-            </>
-          ) : (
+          {changed ? (
             <Button
               variant="destructive"
               disabled={busy || !confirmed || !available}
@@ -420,9 +348,54 @@ function HostTrustDialog({
             >
               {busy ? <Spinner data-icon="inline-start" /> : null}Replace key
             </Button>
+          ) : (
+            <>
+              <Button variant="outline" disabled={busy || !available} onClick={() => void answer("accept-once")}>
+                Accept once
+              </Button>
+              <Button disabled={busy || !available} onClick={() => void answer("remember")}>
+                {busy ? <Spinner data-icon="inline-start" /> : null}Remember
+              </Button>
+            </>
           )}
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </>
+      }
+    >
+      {prompt.jumpFor ? (
+        <p className="type-caption min-w-0 break-all text-muted-foreground" data-testid="trust-jump-for">
+          Jump host on the way to {prompt.jumpFor}. This key belongs to the jump host.
+        </p>
+      ) : null}
+      {prompt.status === "changed" ? (
+        <>
+          <Alert variant="destructive">
+            <AlertTriangleIcon />
+            <AlertTitle>Host key mismatch</AlertTitle>
+            <AlertDescription>
+              Authentication will stay blocked until you deliberately replace the remembered key.
+            </AlertDescription>
+          </Alert>
+          <KeyDetails
+            entry={{ algorithm: prompt.previousAlgorithm, fingerprint: prompt.previousFingerprint }}
+            label="Previous key"
+          />
+        </>
+      ) : null}
+      <KeyDetails entry={prompt} label={changed ? "New key" : "Server key"} />
+      {changed ? (
+        <div className="flex items-start gap-2">
+          <Checkbox
+            id="confirm-host-replacement"
+            checked={confirmed}
+            onCheckedChange={(checked) => setConfirmed(checked === true)}
+            disabled={busy}
+          />
+          <Label htmlFor="confirm-host-replacement" className="leading-snug">
+            I verified the new fingerprint and want to replace this host's remembered key.
+          </Label>
+        </div>
+      ) : null}
+      {failed || !available ? <TrustError /> : null}
+    </Drawer>
   );
 }

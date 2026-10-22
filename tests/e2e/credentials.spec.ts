@@ -106,6 +106,12 @@ test("shipped SSH prompts unlock real keys and isolate bounded keyboard-interact
     await expect(dialog.getByText("Attempt 1 of 3", { exact: false })).toBeVisible();
     await expect(dialog.getByText("ระบบทดสอบ กรุงเทพ", { exact: true })).toBeVisible();
     await expect(dialog.getByText("PROD", { exact: true })).toBeVisible();
+    // A click on the scrim neither dismisses nor cancels the prompt.
+    const opened = identity(await prompt());
+    await page.mouse.click(40, 320);
+    await expect(dialog).toBeVisible();
+    expect(identity(await prompt())).toEqual(opened);
+    await expect(dialog.getByLabel("Passphrase", { exact: true })).toBeFocused();
     await shot("credentials-passphrase-1280");
     await measure(dialog.getByRole("heading", { name: "SSH authentication", exact: true }), "heading");
     await measure(dialog.getByText("ระบบทดสอบ กรุงเทพ", { exact: true }), "Thai target");
@@ -117,6 +123,9 @@ test("shipped SSH prompts unlock real keys and isolate bounded keyboard-interact
     await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(proceed).toBeFocused();
+    // The drawer's header Close (an explicit cancel, like Esc) is last in tab order.
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(dialog.getByLabel("Passphrase", { exact: true })).toBeFocused();
     // A composing Enter is consumed without dispatching credentials or advancing the attempt.

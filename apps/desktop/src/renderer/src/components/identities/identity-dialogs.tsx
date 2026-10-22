@@ -2,23 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangleIcon, FileKeyIcon, RotateCwIcon } from "lucide-react";
 import type { CatalogIdentity, CatalogIdentityImpact, CatalogState, IdentityMethod, Owner } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -40,7 +25,7 @@ import {
   type IdentityDraft,
   type IdentityUsage,
 } from "@/lib/identity-usage";
-import { ImportKeyDialog, ProblemAlert, dialogLayout, requestProblem } from "./key-dialogs";
+import { ImportKeyDialog, ProblemAlert, requestProblem } from "./key-dialogs";
 import { call, imeEnterGuard, secretFieldProps, useSecretInput } from "./secret-input";
 
 type Problem = { title: string; text: string };
@@ -84,12 +69,13 @@ export function IdentityEditor({
   const [checked, setChecked] = useState(false);
   const [reported, setReported] = useState<FieldErrors & { password?: string }>({});
   const [phase, setPhase] = useState<Phase>({ kind: "edit" });
-  const [discarding, setDiscarding] = useState(false);
-  const [importing, setImporting] = useState(false);
+  // Keyed per open, so reopening during the import drawer's exit motion gets a fresh one.
+  const [importing, setImporting] = useState<number>();
   // After an apply, rebase on the saved identity once this window's state includes that catalog revision.
   const [awaiting, setAwaiting] = useState<number>();
-  const keep = useRef<HTMLButtonElement>(null);
   const back = useRef<HTMLButtonElement>(null);
+  const save = useRef<HTMLButtonElement>(null);
+  const confirmed = useRef(false);
 
   useEffect(() => {
     if (awaiting === undefined || state.revision < awaiting) return;
@@ -100,7 +86,10 @@ export function IdentityEditor({
     setPasswordMode(latest.passwordSaved ? "keep" : "replace");
   }, [awaiting, state.revision, latest]);
   useEffect(() => {
+    // Into the impact step: Back takes focus; out of it (Back to editing): Save does, since Back is gone.
     if (phase.kind === "confirm") back.current?.focus();
+    else if (confirmed.current && phase.kind === "edit") save.current?.focus();
+    confirmed.current = phase.kind === "confirm";
   }, [phase.kind]);
 
   const gone = !!identityId && !latest;
@@ -120,15 +109,19 @@ export function IdentityEditor({
     const first = fieldOrder.find((name) => found[name]);
     if (first) document.getElementById(field(first))?.focus();
   };
-  const requestClose = () => {
-    if (busy) return;
-    const dirty = !draftsEqual(draft, identityDraft(base)) || passwordMode !== initialMode || password.filled();
-    if (dirty && !gone && phase.kind !== "partial") setDiscarding(true);
-    else onClose();
-  };
+  // Read when closing: typing into the uncontrolled password field does not re-render.
+  const drawer = useDrawerClose({
+    dirty: () =>
+      !gone &&
+      phase.kind !== "partial" &&
+      (!draftsEqual(draft, identityDraft(base)) || passwordMode !== initialMode || password.filled()),
+    busy,
+  });
+  // On the impact step, Esc and × mean Back to editing.
+  const close = phase.kind === "confirm" ? { ...drawer, request: () => setPhase({ kind: "edit" }) } : drawer;
 
   async function submit() {
-    if (busy || gone || discarding || importing) return;
+    if (busy || gone || close.discarding || importing !== undefined) return;
     const found = identityErrors(draft);
     setChecked(true);
     setReported({});
@@ -140,7 +133,7 @@ export function IdentityEditor({
       return password.focus();
     }
     const intent = identityIntent(draft, base, passwordMode === "forget");
-    if (!intent) return showPassword && password.filled() ? commit() : onClose();
+    if (!intent) return showPassword && password.filled() ? commit() : close.discard();
     setPhase({ kind: "busy" });
     const result = await catalog.prepare(intent);
     if (!result.ok) return setPhase({ kind: "problem", problem: requestProblem(result.error.code, "Changes were not saved") });
@@ -203,242 +196,213 @@ export function IdentityEditor({
     [state.keys],
   );
   const editing = !!base;
+  const changesMethod = !!base && draft.method !== base.method;
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) requestClose();
-      }}
+    <Drawer
+      close={close}
+      onClose={onClose}
+      data-testid="identity-editor"
+      title={editing ? "Edit identity" : "New identity"}
+      target={base ? <span className="min-w-0 break-all">{base.label}</span> : undefined}
+      description="A user name and how to sign in. Servers and groups choose an identity; secrets stay in the macOS Keychain."
+      discardText="Your edits to this identity will be lost."
+      footer={
+        phase.kind === "confirm" ? (
+          <>
+            <Button ref={back} variant="outline" onClick={() => setPhase({ kind: "edit" })}>
+              Back to editing
+            </Button>
+            <Button variant="destructive" onClick={() => void commit(phase.token)}>
+              Save changes
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="outline" disabled={busy} onClick={close.request}>
+              {phase.kind === "partial" ? "Close" : "Cancel"}
+            </Button>
+            <Button ref={save} type="submit" form={field("form")} disabled={busy || gone || pending}>
+              {busy ? <Spinner data-icon="inline-start" /> : null}Save
+            </Button>
+          </>
+        )
+      }
     >
-      <DialogContent className={dialogLayout} data-testid="identity-editor">
-        <DialogHeader>
-          <DialogTitle>{editing ? "Edit identity" : "New identity"}</DialogTitle>
-          <DialogDescription>
-            A user name and how to sign in. Servers and groups choose an identity; secrets stay in the macOS Keychain.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="-mx-4 grid min-h-0 gap-4 overflow-y-auto px-4 py-1">
-          {pending ? (
-            <Alert>
-              <AlertTriangleIcon />
-              <AlertTitle>Keychain change unresolved</AlertTitle>
-              <AlertDescription className="grid gap-2">
-                <span>Retry it before changing this identity.</span>
-                <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => void onRetrySecrets()}>
-                  <RotateCwIcon data-icon="inline-start" /> Retry
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <form
-            id={field("form")}
-            noValidate
-            autoComplete="off"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submit();
-            }}
-            onKeyDown={imeEnterGuard}
-          >
-            <FieldGroup>
-              <Field data-invalid={errors.label ? true : undefined}>
-                <FieldLabel htmlFor={field("label")}>Name</FieldLabel>
-                <Input
-                  id={field("label")}
-                  value={draft.label}
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-invalid={errors.label ? true : undefined}
-                  onChange={(event) => set({ label: event.target.value })}
-                />
-                {errors.label ? <FieldError>{errors.label}</FieldError> : null}
-              </Field>
-              <Field data-invalid={errors.username ? true : undefined}>
-                <FieldLabel htmlFor={field("username")}>User name</FieldLabel>
-                <Input
-                  id={field("username")}
-                  value={draft.username}
-                  className="font-mono"
-                  autoComplete="off"
-                  spellCheck={false}
-                  autoCapitalize="none"
-                  aria-invalid={errors.username ? true : undefined}
-                  onChange={(event) => set({ username: event.target.value })}
-                />
-                {errors.username ? <FieldError>{errors.username}</FieldError> : null}
-              </Field>
-              <Field>
-                <FieldLabel id={field("method-label")}>Sign in with</FieldLabel>
-                <ToggleGroup
-                  aria-labelledby={field("method-label")}
-                  variant="outline"
-                  spacing={0}
-                  className="flex-wrap"
-                  value={[draft.method]}
-                  onValueChange={(value) => {
-                    const method = value[0] as IdentityMethod | undefined;
-                    if (method) set({ method });
-                  }}
-                >
-                  {(Object.keys(methodLabels) as IdentityMethod[]).map((method) => (
-                    <ToggleGroupItem key={method} value={method}>
-                      {methodLabels[method]}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-                {base?.method === "password" && base.passwordSaved && draft.method !== "password" ? (
-                  <FieldDescription>Saving removes the saved password from the Keychain.</FieldDescription>
-                ) : null}
-              </Field>
-              {draft.method === "password" ? (
-                <PasswordField
-                  id={field("password")}
-                  mode={passwordMode}
-                  saved={!!base?.passwordSaved}
-                  secretsReady={secretsReady}
-                  error={reported.password}
-                  input={password}
-                  disabled={busy}
-                  onMode={(mode) => {
-                    password.clear();
-                    setPasswordMode(mode);
-                    setReported({});
-                  }}
-                />
-              ) : draft.method === "key" ? (
-                <Field data-invalid={errors.keyId ? true : undefined}>
-                  <FieldLabel htmlFor={field("keyId")}>SSH key</FieldLabel>
-                  <div className="flex min-w-0 flex-wrap gap-2">
-                    <Select
-                      items={keyItems}
-                      value={draft.keyId}
-                      onValueChange={(next) => {
-                        if (typeof next === "string") set({ keyId: next });
-                      }}
-                    >
-                      <SelectTrigger id={field("keyId")} className="min-w-0 flex-1" aria-invalid={errors.keyId ? true : undefined}>
-                        <SelectValue placeholder={keyItems.length ? "Choose a key" : "No keys yet"} />
-                      </SelectTrigger>
-                      <SelectContent alignItemWithTrigger={false}>
-                        <SelectGroup>
-                          {keyItems.map((item) => (
-                            <SelectItem key={item.value} value={item.value}>
-                              {item.label}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <Button type="button" variant="outline" disabled={!secretsReady} onClick={() => setImporting(true)}>
-                      <FileKeyIcon data-icon="inline-start" /> Import key…
-                    </Button>
-                  </div>
-                  {secretsReady ? null : (
-                    <FieldDescription>Importing needs the macOS Keychain, which is unavailable.</FieldDescription>
-                  )}
-                  {errors.keyId ? <FieldError>{errors.keyId}</FieldError> : null}
-                </Field>
-              ) : (
-                <FieldDescription>
-                  The server's questions are asked each time you connect. Nothing is saved.
-                </FieldDescription>
-              )}
-            </FieldGroup>
-          </form>
-          <p className="type-caption text-muted-foreground">{nextConnections}</p>
-          {gone ? (
-            <ProblemAlert problem={{ title: "This identity was deleted", text: "It no longer exists, so these changes cannot be saved." }} />
-          ) : phase.kind === "problem" ? (
-            <ProblemAlert problem={phase.problem} />
-          ) : phase.kind === "partial" ? (
-            <Alert role="status">
-              <AlertTriangleIcon />
-              <AlertTitle>Identity saved</AlertTitle>
-              <AlertDescription>{phase.text}</AlertDescription>
-            </Alert>
-          ) : null}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={requestClose}>
-            {phase.kind === "partial" ? "Close" : "Cancel"}
-          </Button>
-          <Button type="submit" form={field("form")} disabled={busy || gone || pending}>
-            {busy ? <Spinner data-icon="inline-start" /> : null}Save
-          </Button>
-        </DialogFooter>
-        <AlertDialog
-          open={phase.kind === "confirm"}
-          onOpenChange={(open) => {
-            if (!open) setPhase({ kind: "edit" });
-          }}
-        >
-          <AlertDialogContent initialFocus={back} className={dialogLayout}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {base && draft.method !== base.method ? "Change how this identity signs in?" : "Forget the saved password?"}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {usage ? `${usageText(usage)}. ` : ""}
-                {nextConnections}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="-mx-4 grid min-h-0 gap-3 overflow-y-auto px-4">
-              <ul className="grid list-disc gap-1 pl-5 text-sm">
-                {base && draft.method !== base.method ? (
-                  <li>
-                    Sign in with {methodLabels[draft.method]} instead of {methodLabels[base.method]}.
-                  </li>
-                ) : null}
-                {phase.kind === "confirm" && phase.impact?.removesSavedPassword ? (
-                  <li>The saved password is removed from the Keychain.</li>
-                ) : null}
-              </ul>
-              {phase.kind === "confirm" ? <IdentityImpactLists state={state} impact={phase.impact} /> : null}
-            </div>
-            <AlertDialogFooter>
-              <Button ref={back} variant="outline" onClick={() => setPhase({ kind: "edit" })}>
-                Back to editing
+      {phase.kind === "confirm" ? (
+        // The impact review is a step of this drawer; the form stays mounted (hidden) so a typed password survives Back.
+        <section aria-labelledby={field("confirm")} className="grid min-w-0 gap-3">
+          <h3 id={field("confirm")} className="font-medium text-foreground">
+            {changesMethod ? "Change how this identity signs in?" : "Forget the saved password?"}
+          </h3>
+          <p className="text-muted-foreground">
+            {usage ? `${usageText(usage)}. ` : ""}
+            {nextConnections}
+          </p>
+          <ul className="grid list-disc gap-1 pl-5 text-sm">
+            {base && changesMethod ? (
+              <li>
+                Sign in with {methodLabels[draft.method]} instead of {methodLabels[base.method]}.
+              </li>
+            ) : null}
+            {phase.impact?.removesSavedPassword ? <li>The saved password is removed from the Keychain.</li> : null}
+          </ul>
+          <IdentityImpactLists state={state} impact={phase.impact} />
+        </section>
+      ) : null}
+      <div className={phase.kind === "confirm" ? "hidden" : "grid min-w-0 gap-4"}>
+        {pending ? (
+          <Alert>
+            <AlertTriangleIcon />
+            <AlertTitle>Keychain change unresolved</AlertTitle>
+            <AlertDescription className="grid gap-2">
+              <span>Retry it before changing this identity.</span>
+              <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => void onRetrySecrets()}>
+                <RotateCwIcon data-icon="inline-start" /> Retry
               </Button>
-              <Button variant="destructive" onClick={() => phase.kind === "confirm" && void commit(phase.token)}>
-                Save changes
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        <AlertDialog
-          open={discarding}
-          onOpenChange={(open) => {
-            if (!open) setDiscarding(false);
-          }}
-        >
-          <AlertDialogContent initialFocus={keep}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-              <AlertDialogDescription>Your edits to this identity will be lost.</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <Button ref={keep} variant="outline" onClick={() => setDiscarding(false)}>
-                Keep editing
-              </Button>
-              <Button variant="destructive" onClick={onClose}>
-                Discard
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        {importing ? (
-          <ImportKeyDialog
-            owner={owner}
-            secretsReady={secretsReady}
-            onClose={() => setImporting(false)}
-            onImported={(keyId) => {
-              setImporting(false);
-              set({ keyId });
-            }}
-          />
+            </AlertDescription>
+          </Alert>
         ) : null}
-      </DialogContent>
-    </Dialog>
+        <form
+          id={field("form")}
+          noValidate
+          autoComplete="off"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+          onKeyDown={imeEnterGuard}
+        >
+          <FieldGroup>
+            <Field data-invalid={errors.label ? true : undefined}>
+              <FieldLabel htmlFor={field("label")}>Name</FieldLabel>
+              <Input
+                id={field("label")}
+                value={draft.label}
+                autoComplete="off"
+                spellCheck={false}
+                aria-invalid={errors.label ? true : undefined}
+                onChange={(event) => set({ label: event.target.value })}
+              />
+              {errors.label ? <FieldError>{errors.label}</FieldError> : null}
+            </Field>
+            <Field data-invalid={errors.username ? true : undefined}>
+              <FieldLabel htmlFor={field("username")}>User name</FieldLabel>
+              <Input
+                id={field("username")}
+                value={draft.username}
+                className="font-mono"
+                autoComplete="off"
+                spellCheck={false}
+                autoCapitalize="none"
+                aria-invalid={errors.username ? true : undefined}
+                onChange={(event) => set({ username: event.target.value })}
+              />
+              {errors.username ? <FieldError>{errors.username}</FieldError> : null}
+            </Field>
+            <Field>
+              <FieldLabel id={field("method-label")}>Sign in with</FieldLabel>
+              <ToggleGroup
+                aria-labelledby={field("method-label")}
+                variant="outline"
+                spacing={0}
+                className="flex-wrap"
+                value={[draft.method]}
+                onValueChange={(value) => {
+                  const method = value[0] as IdentityMethod | undefined;
+                  if (method) set({ method });
+                }}
+              >
+                {(Object.keys(methodLabels) as IdentityMethod[]).map((method) => (
+                  <ToggleGroupItem key={method} value={method}>
+                    {methodLabels[method]}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              {base?.method === "password" && base.passwordSaved && draft.method !== "password" ? (
+                <FieldDescription>Saving removes the saved password from the Keychain.</FieldDescription>
+              ) : null}
+            </Field>
+            {draft.method === "password" ? (
+              <PasswordField
+                id={field("password")}
+                mode={passwordMode}
+                saved={!!base?.passwordSaved}
+                secretsReady={secretsReady}
+                error={reported.password}
+                input={password}
+                disabled={busy}
+                onMode={(mode) => {
+                  password.clear();
+                  setPasswordMode(mode);
+                  setReported({});
+                }}
+              />
+            ) : draft.method === "key" ? (
+              <Field data-invalid={errors.keyId ? true : undefined}>
+                <FieldLabel htmlFor={field("keyId")}>SSH key</FieldLabel>
+                <div className="flex min-w-0 flex-wrap gap-2">
+                  <Select
+                    items={keyItems}
+                    value={draft.keyId}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") set({ keyId: next });
+                    }}
+                  >
+                    <SelectTrigger id={field("keyId")} className="min-w-0 flex-1" aria-invalid={errors.keyId ? true : undefined}>
+                      <SelectValue placeholder={keyItems.length ? "Choose a key" : "No keys yet"} />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {keyItems.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" disabled={!secretsReady} onClick={() => setImporting((n) => (n ?? 0) + 1)}>
+                    <FileKeyIcon data-icon="inline-start" /> Import key…
+                  </Button>
+                </div>
+                {secretsReady ? null : (
+                  <FieldDescription>Importing needs the macOS Keychain, which is unavailable.</FieldDescription>
+                )}
+                {errors.keyId ? <FieldError>{errors.keyId}</FieldError> : null}
+              </Field>
+            ) : (
+              <FieldDescription>
+                The server's questions are asked each time you connect. Nothing is saved.
+              </FieldDescription>
+            )}
+          </FieldGroup>
+        </form>
+        <p className="type-caption text-muted-foreground">{nextConnections}</p>
+        {gone ? (
+          <ProblemAlert problem={{ title: "This identity was deleted", text: "It no longer exists, so these changes cannot be saved." }} />
+        ) : phase.kind === "problem" ? (
+          <ProblemAlert problem={phase.problem} />
+        ) : phase.kind === "partial" ? (
+          <Alert role="status">
+            <AlertTriangleIcon />
+            <AlertTitle>Identity saved</AlertTitle>
+            <AlertDescription>{phase.text}</AlertDescription>
+          </Alert>
+        ) : null}
+      </div>
+      {importing !== undefined ? (
+        <ImportKeyDialog
+          key={importing}
+          owner={owner}
+          secretsReady={secretsReady}
+          onClose={() => setImporting(undefined)}
+          onImported={(keyId) => {
+            setImporting(undefined);
+            set({ keyId });
+          }}
+        />
+      ) : null}
+    </Drawer>
   );
 }
 
@@ -546,104 +510,97 @@ export function DeleteIdentityDialog({
   );
   const impact = preview?.impacts.identity;
   const targetLabel = others.find((row) => row.id === target)?.label;
+  const close = useDrawerClose({ busy });
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <AlertDialogContent
-        initialFocus={cancel}
-        finalFocus={finalFocus(afterDelete)}
-        className={dialogLayout}
-        data-testid="delete-identity-dialog"
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete identity {identity.label}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {usageText(usage)}. {nextConnections}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="-mx-4 grid min-h-0 gap-4 overflow-y-auto px-4">
-          {bound ? (
-            <RadioGroup
-              aria-label="Servers and groups using this identity"
-              value={mode ?? null}
-              disabled={busy}
-              onValueChange={(value) => {
-                if (value === "detach" || value === "reassign") setMode(value);
-              }}
-            >
-              <Field orientation="horizontal">
-                <RadioGroupItem value="detach" id={`${id}-detach`} />
-                <FieldLabel htmlFor={`${id}-detach`} className="font-normal">
-                  Detach: they get No identity and cannot connect until one is chosen
-                </FieldLabel>
-              </Field>
-              <Field orientation="horizontal" data-disabled={others.length ? undefined : true}>
-                <RadioGroupItem value="reassign" id={`${id}-reassign`} disabled={!others.length} />
-                <FieldLabel htmlFor={`${id}-reassign`} className="font-normal">
-                  Reassign them to another identity
-                </FieldLabel>
-              </Field>
-            </RadioGroup>
-          ) : null}
-          {mode === "reassign" ? (
-            <Field>
-              <FieldLabel htmlFor={`${id}-target`}>Use instead</FieldLabel>
-              <Select
-                items={others.map((row) => ({ value: row.id, label: `${row.label} (${row.username})` }))}
-                value={target ?? null}
-                onValueChange={(next) => {
-                  if (typeof next === "string") setTarget(next);
-                }}
-              >
-                <SelectTrigger id={`${id}-target`} className="w-full">
-                  <SelectValue placeholder="Choose an identity" />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {others.map((row) => (
-                      <SelectItem key={row.id} value={row.id}>
-                        {row.label} ({row.username})
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-          ) : null}
-          {failure ? (
-            <DeleteFailure code={failure} retry={retry} />
-          ) : mode === "detach" || (mode === "reassign" && target) ? (
-            !preview ? (
-              <Spinner aria-label="Checking what will change" />
-            ) : (
-              <div className="grid gap-3" data-testid="delete-impacts">
-                <IdentityImpactLists state={state} impact={impact} />
-                <p className="text-sm">
-                  {!bound
-                    ? "No server or group uses this identity."
-                    : mode === "reassign"
-                      ? `They will use ${targetLabel ?? "the chosen identity"}.`
-                      : "They will have No identity."}
-                  {impact?.removesSavedPassword ? " The saved password is removed from the Keychain." : ""}
-                </p>
-              </div>
-            )
-          ) : null}
-        </div>
-        <AlertDialogFooter>
-          <Button ref={cancel} variant="outline" disabled={busy} onClick={onClose}>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      finalFocus={finalFocus(afterDelete)}
+      data-testid="delete-identity-dialog"
+      title={<span className="break-all">Delete identity {identity.label}?</span>}
+      target={<span className="min-w-0 break-all font-mono">{identity.username}</span>}
+      description={`${usageText(usage)}. ${nextConnections}`}
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" disabled={busy} onClick={close.request}>
             Cancel
           </Button>
           <Button variant="destructive" disabled={!preview || busy} onClick={() => void confirm()}>
             {busy ? <Spinner data-icon="inline-start" /> : null}Delete identity
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </>
+      }
+    >
+      {bound ? (
+        <RadioGroup
+          aria-label="Servers and groups using this identity"
+          value={mode ?? null}
+          disabled={busy}
+          onValueChange={(value) => {
+            if (value === "detach" || value === "reassign") setMode(value);
+          }}
+        >
+          <Field orientation="horizontal">
+            <RadioGroupItem value="detach" id={`${id}-detach`} />
+            <FieldLabel htmlFor={`${id}-detach`} className="font-normal">
+              Detach: they get No identity and cannot connect until one is chosen
+            </FieldLabel>
+          </Field>
+          <Field orientation="horizontal" data-disabled={others.length ? undefined : true}>
+            <RadioGroupItem value="reassign" id={`${id}-reassign`} disabled={!others.length} />
+            <FieldLabel htmlFor={`${id}-reassign`} className="font-normal">
+              Reassign them to another identity
+            </FieldLabel>
+          </Field>
+        </RadioGroup>
+      ) : null}
+      {mode === "reassign" ? (
+        <Field>
+          <FieldLabel htmlFor={`${id}-target`}>Use instead</FieldLabel>
+          <Select
+            items={others.map((row) => ({ value: row.id, label: `${row.label} (${row.username})` }))}
+            value={target ?? null}
+            onValueChange={(next) => {
+              if (typeof next === "string") setTarget(next);
+            }}
+          >
+            <SelectTrigger id={`${id}-target`} className="w-full">
+              <SelectValue placeholder="Choose an identity" />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                {others.map((row) => (
+                  <SelectItem key={row.id} value={row.id}>
+                    {row.label} ({row.username})
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+      ) : null}
+      {failure ? (
+        <DeleteFailure code={failure} retry={retry} />
+      ) : mode === "detach" || (mode === "reassign" && target) ? (
+        !preview ? (
+          <Spinner aria-label="Checking what will change" />
+        ) : (
+          <div className="grid gap-3" data-testid="delete-impacts">
+            <IdentityImpactLists state={state} impact={impact} />
+            <p className="text-sm">
+              {!bound
+                ? "No server or group uses this identity."
+                : mode === "reassign"
+                  ? `They will use ${targetLabel ?? "the chosen identity"}.`
+                  : "They will have No identity."}
+              {impact?.removesSavedPassword ? " The saved password is removed from the Keychain." : ""}
+            </p>
+          </div>
+        )
+      ) : null}
+    </Drawer>
   );
 }
 

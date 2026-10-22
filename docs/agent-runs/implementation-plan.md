@@ -1396,3 +1396,19 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
   - Review APPROVED with one medium fix: the target was clipped in narrow panes, so the status line now wraps and is E2E-checked. Two lows fixed: storage alerts on an empty Terminals page, and a note in ticket 10 that the old connected count included SFTP sessions.
   - Checks: typecheck, unit and build pass. Full E2E was 83/86: `team.spec:42` was already failing, `local-terminal:260` timed out under load and passed alone, and `workspace:581` was a real 960×640 regression, now fixed. Focused reruns: one `terminal.spec:11` alt-screen failure, then 2/2 passes alone.
   - Stale docs (workspace, catalog-ui, sftp-browser, workspace-tools) are deferred to ticket 15.
+- **SST-040/03 done (2026-10-22):**
+  - **Drawers:** identity/key forms and deletions, unknown/changed-key trust, revoke and credential prompts now use the drawer.
+  - **New behavior:** an amber "Awaiting trust" state appears while a session's trust prompt is pending.
+  - **Shared drawer changes:**
+    - `dirty` can be a function, for uncontrolled secret fields.
+    - New `dismissOnScrim` option: credential prompts ignore scrim clicks.
+    - The discard-step focus fallback skips hidden controls.
+  - **Accepted exception:** Import key opened from the identity editor stacks a drawer, because it is a sub-form, not a confirmation.
+  - **Review:** APPROVED. The medium finding (Awaiting trust) and the lows L1, L3 and L4 are fixed.
+  - **`release-gate:237` flake:**
+    - Root cause: stray OS keystrokes during full runs. The suite activated the app through `bringToFront` (`app.focus({steal:true})`).
+    - Fix: `bringToFront` is skipped for test profiles, whose close sheets are stubbed, and the test now fails with an explicit stray-keystroke message.
+  - **Checks:**
+    - typecheck, unit 768/769 and build pass.
+    - Full E2E 85/86; the one failure is `team.spec:42`, which was already failing before SST-040.
+    - `release-gate` --repeat-each 3: 12/12.
