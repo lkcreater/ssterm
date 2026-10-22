@@ -151,8 +151,8 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
     await page.getByRole("button", { name: /^All servers/u }).click();
     await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: server }).click();
     await page.getByTestId("host-detail").getByRole("button", { name: "Delete", exact: false }).first().click();
-    await expect(page.getByTestId("delete-host-dialog")).toContainText("A tunnel on this server is running.");
-    await page.getByTestId("delete-host-dialog").getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByTestId("delete-host-drawer")).toContainText("A tunnel on this server is running.");
+    await page.getByTestId("delete-host-drawer").getByRole("button", { name: "Cancel" }).click();
 
     // Editing a running rule states the restart and restarts explicitly.
     await s.nav.click();

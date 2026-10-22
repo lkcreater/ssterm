@@ -7,26 +7,7 @@ import {
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,8 +51,62 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
 import { Section, Example } from "./section";
 
+/** Right-edge drawer specimen: the shipping primitive, fixture-only; focus returns to the opener. */
+function HostDrawerFixture({ onClose }: { onClose(): void }) {
+  const close = useDrawerClose();
+  return (
+    <Drawer
+      close={close}
+      onClose={onClose}
+      title="Host details · fixture"
+      target={
+        <span className="min-w-0 break-all type-code">
+          deploy@production-api-with-a-very-long-hostname.lab.ssterm.invalid:22
+        </span>
+      }
+      description="Review local form behavior. No host is saved and no connection is opened."
+      footer={
+        <>
+          <Button variant="outline" onClick={close.request}>
+            Cancel fixture
+          </Button>
+          <Button
+            onClick={() => {
+              close.discard();
+              toast.add({
+                title: "Fixture reviewed",
+                description: "No host was saved.",
+                type: "info",
+              });
+            }}
+          >
+            Review fixture
+          </Button>
+        </>
+      }
+    >
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="drawer-host-name">Fixture host name</FieldLabel>
+          <Input id="drawer-host-name" defaultValue="Bangkok lab" />
+          <FieldDescription>
+            Try Tab, Shift+Tab and Escape. Focus returns to the opening button.
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="drawer-host-address">
+            Fixture host address
+          </FieldLabel>
+          <Input id="drawer-host-address" defaultValue="lab.ssterm.invalid" />
+        </Field>
+      </FieldGroup>
+    </Drawer>
+  );
+}
+
 export function Feedback() {
-  const [open, setOpen] = useState(false);
+  // The open drawer's key (0 = closed): each open is a fresh instance, even during the exit motion.
+  const [open, setOpen] = useState(0);
   return (
     <Section
       id="feedback"
@@ -123,84 +158,18 @@ export function Feedback() {
           </Alert>
         </Example>
       </div>
-      <Example title="Dialog · focus trap and return">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger render={<Button variant="outline" />}>
-            Open host dialog fixture
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Host details · fixture</DialogTitle>
-              <DialogDescription>
-                Review local form behavior. No host is saved and no connection
-                is opened.
-              </DialogDescription>
-            </DialogHeader>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="dialog-host-name">
-                  Fixture host name
-                </FieldLabel>
-                <Input id="dialog-host-name" defaultValue="Bangkok lab" />
-                <FieldDescription>
-                  Try Tab, Shift+Tab and Escape. Focus returns to the opening
-                  button.
-                </FieldDescription>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="dialog-host-address">
-                  Fixture host address
-                </FieldLabel>
-                <Input
-                  id="dialog-host-address"
-                  defaultValue="lab.ssterm.invalid"
-                />
-              </Field>
-            </FieldGroup>
-            <DialogFooter>
-              <DialogClose render={<Button variant="outline" />}>
-                Cancel fixture
-              </DialogClose>
-              <Button
-                onClick={() => {
-                  setOpen(false);
-                  toast.add({
-                    title: "Fixture reviewed",
-                    description: "No host was saved.",
-                    type: "info",
-                  });
-                }}
-              >
-                Review fixture
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      <Example title="Drawer · focus trap and return">
+        <Button
+          variant="outline"
+          onClick={() => setOpen((serial) => serial + 1)}
+        >
+          Open host drawer fixture
+        </Button>
+        {open ? (
+          <HostDrawerFixture key={open} onClose={() => setOpen(0)} />
+        ) : null}
       </Example>
       <div className="showcase-grid">
-        <Example title="Sheet">
-          <Sheet>
-            <SheetTrigger render={<Button variant="outline" />}>
-              Open target sheet fixture
-            </SheetTrigger>
-            <SheetContent>
-              <SheetHeader>
-                <SheetTitle>Target details · fixture</SheetTitle>
-                <SheetDescription>
-                  Full, selectable execution target.
-                </SheetDescription>
-              </SheetHeader>
-              <p className="px-4 type-code break-all select-text">
-                deploy@production-api-with-a-very-long-hostname.lab.ssterm.invalid:22
-              </p>
-              <SheetFooter>
-                <SheetClose render={<Button variant="outline" />}>
-                  Close fixture
-                </SheetClose>
-              </SheetFooter>
-            </SheetContent>
-          </Sheet>
-        </Example>
         <Example title="Menu & context menu">
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" />}>

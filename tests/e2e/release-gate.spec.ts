@@ -1,6 +1,6 @@
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect, changeCatalog, launchDesktop } from "./fixtures";
 
 // SST-027 / DS05 release-quality sweep (design-system.md §11) over every page with a populated fixture catalog.
@@ -135,8 +135,51 @@ async function focusAudit(page: Page, presses = 25) {
   return { findings, reached };
 }
 
-test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced motion — contrast, names, overflow, focus", async ({ desktop }, testInfo) => {
-  test.setTimeout(240_000);
+/** Drawer geometry on the current frame: with reduced motion it is already at rest once the starting style is gone. */
+function drawerGeometry(page: Page, selector: string) {
+  return page.evaluate((query) => {
+    const drawer = document.querySelector<HTMLElement>(query)!;
+    const box = drawer.getBoundingClientRect();
+    const controls = [...drawer.querySelectorAll(":is(input, button, [role=combobox], [role=radio], label):not([aria-hidden='true'])")].map((node) => ({ node, rect: node.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.width > 0);
+    return {
+      left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width,
+      viewport: { width: innerWidth, height: innerHeight },
+      duration: Math.max(...getComputedStyle(drawer).transitionDuration.split(",").map((part) => parseFloat(part) * (part.trim().endsWith("ms") ? 0.001 : 1))),
+      overflowing: controls.filter(({ rect }) => rect.left < box.left - 0.5 || rect.right > box.right + 0.5)
+        .map(({ node, rect }) => `${node.outerHTML.slice(0, 120)} ${rect.left}-${rect.right}`),
+      // Scroll containers only: clipped helpers (sr-only text, hidden form mirrors) never scroll.
+      scrolling: [drawer, ...drawer.querySelectorAll("*")].filter((node) => node.scrollWidth - node.clientWidth > 1 &&
+        (node === drawer || ["auto", "scroll"].includes(getComputedStyle(node).overflowX)))
+        .map((node) => `${node.outerHTML.slice(0, 160)} ${node.scrollWidth}/${node.clientWidth} ${getComputedStyle(node).overflowX}`),
+    };
+  }, selector);
+}
+
+/** The drawer contract's placement: flush right, from the titlebar's bottom to the window's, 480–560 px (640 for Settings). */
+async function placed(page: Page, g: Awaited<ReturnType<typeof drawerGeometry>>, size: string, max = 560) {
+  // The modal hides the page from the accessibility tree; the banner is still the titlebar.
+  const titlebar = (await page.getByRole("banner", { includeHidden: true }).boundingBox())!;
+  expect(g.duration, `${size}: no motion under reduced motion`).toBeLessThanOrEqual(0.00001);
+  expect(Math.abs(g.right - g.viewport.width), `${size}: flush with the right edge`).toBeLessThanOrEqual(1);
+  expect(Math.abs(g.top - (titlebar.y + titlebar.height)), `${size}: starts below the titlebar`).toBeLessThanOrEqual(1);
+  expect(Math.abs(g.bottom - g.viewport.height), `${size}: full height`).toBeLessThanOrEqual(1);
+  expect(g.width, `${size}: drawer width`).toBeGreaterThanOrEqual(Math.min(480, g.viewport.width));
+  expect(g.width, `${size}: drawer width`).toBeLessThanOrEqual(max);
+  expect(g.left, `${size}: the source screen stays visible`).toBeGreaterThan(0);
+  expect(g.overflowing, `${size}: fields stay inside the drawer`).toEqual([]);
+  expect(g.scrolling, `${size}: no horizontal scroll`).toEqual([]);
+}
+
+/** SST-040/08: any dialog, alert dialog or modal in the page must be the right-edge drawer — no centered modal remains. */
+function strayModals(page: Page) {
+  return page.evaluate(() => [...document.querySelectorAll("[role='dialog'], [role='alertdialog'], [aria-modal='true']")]
+    // Toasts are non-modal dialogs (aria-modal=false), not centered overlays.
+    .filter((node) => node.getAttribute("aria-modal") !== "false" && !node.closest("[data-slot='drawer']")).map((node) => node.outerHTML.slice(0, 160)));
+}
+
+test("DS05 release sweep: every page and drawer at 960×640 and 1280×800 with reduced motion — contrast, names, overflow, focus, drawer placement", async ({ desktop }, testInfo) => {
+  test.setTimeout(420_000);
   const { app, page } = desktop;
   // A populated, Thai-heavy catalog (no network): groups, PROD and DEV servers, tags, identities, rules, snippets.
   const ids = await changeCatalog(app, [
@@ -178,13 +221,47 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
     { name: "known-hosts", open: () => page.getByRole("button", { name: "Known hosts", exact: true }).click() },
     { name: "files", open: () => page.getByRole("button", { name: "Files", exact: true }).click() },
     // SST-034: the Recordings page (empty logs, shell-integration snippet and matrix); Settings › Recording is audited
-    // with the Settings dialog below.
+    // with the Settings drawer below.
     { name: "recordings", open: async () => {
       await page.getByRole("button", { name: "Recordings", exact: true }).click();
       await expect(page.getByTestId("recordings-page").getByRole("table")).toBeVisible();
     } },
     { name: "team-vault", open: async()=>{await page.getByRole("button",{name:"Team vault",exact:true}).click();await expect(page.getByTestId("team-workspace").getByRole("button",{name:"Set up Team vault",exact:true})).toBeVisible();} },
     { name: "terminals-empty", open: () => page.getByRole("button", { name: /^Terminals/u }).click() },
+  ];
+  const nav = (name: string | RegExp) => page.getByRole("button", { name, exact: typeof name === "string" }).click();
+  const hostsPage = page.getByTestId("hosts-page");
+  const host = page.getByTestId("host-detail");
+  const identity = "ผู้ดูแลระบบ";
+  const rule = "Postgres ผ่านเซิร์ฟเวอร์";
+  const servers = async () => {
+    await nav(/^All servers/u);
+    await hostsPage.locator("button[data-host-id]").first().click();
+  };
+  const identitiesTab = async (tab: string) => {
+    await nav("Identities");
+    await page.getByRole("tab", { name: tab, exact: true }).click();
+  };
+  // Live-session drawers (host trust, credentials, Paste/Run, close confirm, transfer conflicts, remote edits, Revoke
+  // trust, key rename/delete, recordings delete, Team member flows) need Docker or Keychain fixtures; their specs cover them.
+  const drawers: { name: string; go?(): Promise<unknown>; opener: Locator; max?: number }[] = [
+    { name: "settings", opener: page.getByRole("button", { name: /^Settings/u }).last(), max: 640 },
+    { name: "shortcuts", opener: page.getByRole("button", { name: /^Keyboard shortcuts/u }).last() },
+    { name: "new-server", go: () => nav(/^All servers/u), opener: hostsPage.getByRole("button", { name: "Add server", exact: true }) },
+    { name: "edit-server", go: servers, opener: host.getByRole("button", { name: "Edit", exact: true }) },
+    { name: "delete-server", go: servers, opener: host.getByRole("button", { name: "Delete", exact: true }) },
+    { name: "edit-group", go: () => nav(/^โครงสร้างพื้นฐาน การผลิต/u), opener: hostsPage.getByRole("button", { name: "Edit group", exact: true }) },
+    { name: "delete-group", go: () => nav(/^โครงสร้างพื้นฐาน การผลิต/u), opener: hostsPage.getByRole("button", { name: "Delete group", exact: true }) },
+    { name: "new-identity", go: () => identitiesTab("Identities"), opener: page.getByRole("button", { name: "New identity", exact: true }) },
+    { name: "edit-identity", go: () => identitiesTab("Identities"), opener: page.getByRole("button", { name: `Edit ${identity}`, exact: true }) },
+    { name: "delete-identity", go: () => identitiesTab("Identities"), opener: page.getByRole("button", { name: `Delete ${identity}`, exact: true }) },
+    { name: "import-key", go: () => identitiesTab("SSH keys"), opener: page.getByRole("button", { name: "Import key…", exact: true }) },
+    { name: "new-snippet", go: () => nav("Snippets"), opener: page.getByRole("button", { name: "New snippet", exact: true }).first() },
+    { name: "new-rule", go: () => nav(/^Port forwarding/u), opener: page.getByRole("button", { name: "New rule", exact: true }).first() },
+    { name: "edit-rule", go: () => nav(/^Port forwarding/u), opener: page.getByRole("button", { name: `Edit ${rule}`, exact: true }) },
+    { name: "delete-rule", go: () => nav(/^Port forwarding/u), opener: page.getByRole("button", { name: `Delete ${rule}`, exact: true }) },
+    { name: "workspace-tools", go: () => nav(/^Terminals/u), opener: page.getByRole("button", { name: "Workspace tools", exact: true }) },
+    { name: "team-setup", go: () => nav("Team vault"), opener: page.getByRole("button", { name: "Set up Team vault", exact: true }) },
   ];
   const findings: Finding[] = [];
   const matrix: Record<string, { checked: number; excepted: string[]; focusReached?: number }> = {};
@@ -196,6 +273,7 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await view.open();
       await page.waitForTimeout(150);
       const result = await audit(page);
+      expect(await strayModals(page), `${view.name}@${size}: no centered modal`).toEqual([]);
       matrix[`${view.name}@${size}`] = { checked: result.checked, excepted: result.excepted };
       findings.push(...result.findings.map((finding) => ({ page: view.name, size, ...finding })));
       if (width === 960) {
@@ -206,43 +284,42 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await page.screenshot({ path: testInfo.outputPath(`${view.name}-${size}.png`) });
       await view.close?.();
     }
-    // Dialogs: Settings and Keyboard shortcuts, then Esc returns focus to the opener.
-    for (const [name, dialog] of [["Settings", "settings"], ["Keyboard shortcuts", "shortcuts"]] as const) {
-      const opener = page.getByRole("button", { name: new RegExp(`^${name}`, "u") }).last();
-      await opener.focus();
+    // SST-040/08: every drawer reachable without a live SSH session, opened from its real control. Each is the
+    // right-edge drawer (flush right, titlebar bottom to window bottom, no horizontal scroll), no centered modal
+    // exists, its text passes the audit, and Esc returns focus to the opener.
+    for (const drawer of drawers) {
+      await drawer.go?.();
+      const label = `${drawer.name}@${size}`;
+      await drawer.opener.focus();
       await page.keyboard.press("Enter");
-      await expect(page.getByRole("dialog")).toBeVisible();
-      // Let the open transition settle (0.01 ms under reduced motion, plus a frame).
-      await page.waitForTimeout(250);
+      const open = page.locator("[data-slot='drawer']");
+      await expect(open, label).toHaveCount(1);
+      // The starting style is cleared on the next frame even with reduced motion.
+      await expect(open).not.toHaveAttribute("data-starting-style");
+      await placed(page, await drawerGeometry(page, "[data-slot='drawer']"), label, drawer.max);
+      expect(await strayModals(page), `${label}: no centered modal`).toEqual([]);
       const result = await audit(page);
-      expect(result.checked, `${name} dialog text was audited`).toBeGreaterThan(3);
-      // SST-040/04, 07: a right-edge drawer, full height below the titlebar, at most 640 px (Settings), no horizontal overflow.
-      const placement = await page.getByRole("dialog").evaluate((element) => {
-        const box = element.getBoundingClientRect();
-        return { right: Math.abs(innerWidth - box.right) <= 0.5, bottom: Math.abs(innerHeight - box.bottom) <= 0.5,
-          narrow: box.width <= 640.5, overflow: element.scrollWidth - element.clientWidth };
-      });
-      expect(placement, `${dialog} drawer at ${size}`).toEqual({ right: true, bottom: true, narrow: true, overflow: 0 });
-      matrix[`${dialog}-dialog@${size}`] = { checked: result.checked, excepted: result.excepted };
-      findings.push(...result.findings.map((finding) => ({ page: `${dialog}-dialog`, size, ...finding })));
-      if (dialog === "settings") {
+      expect(result.checked, `${label}: drawer text was audited`).toBeGreaterThan(3);
+      matrix[label] = { checked: result.checked, excepted: result.excepted };
+      findings.push(...result.findings.map((finding) => ({ page: drawer.name, size, ...finding })));
+      if (drawer.name === "settings") {
         // SST-040/07: one drawer with four tabs; each tab is audited (Terminal above). Colors are read-only Charcoal.
-        const drawer = page.getByRole("dialog");
-        await expect(drawer.getByRole("tab")).toHaveText(["Terminal", "Recording", "Security", "Sync"]);
-        await expect(drawer.getByText("Charcoal", { exact: true })).toBeVisible();
+        await expect(open.getByRole("tab")).toHaveText(["Terminal", "Recording", "Security", "Sync"]);
+        await expect(open.getByText("Charcoal", { exact: true })).toBeVisible();
         for (const tab of ["Recording", "Security", "Sync"]) {
-          await drawer.getByRole("tab", { name: tab }).click();
+          await open.getByRole("tab", { name: tab }).click();
           if (tab === "Recording")
             await expect(page.getByTestId("recording-settings").getByRole("switch", { name: "Record session output" })).not.toBeChecked();
           const audited = await audit(page);
           matrix[`settings-${tab.toLowerCase()}@${size}`] = { checked: audited.checked, excepted: audited.excepted };
           findings.push(...audited.findings.map((finding) => ({ page: `settings-${tab.toLowerCase()}`, size, ...finding })));
+          await placed(page, await drawerGeometry(page, "[data-slot='drawer']"), `settings-${tab.toLowerCase()}@${size}`, drawer.max);
         }
       }
-      await page.screenshot({ path: testInfo.outputPath(`${dialog}-dialog-${size}.png`) });
+      await page.screenshot({ path: testInfo.outputPath(`${drawer.name}-drawer-${size}.png`) });
       await page.keyboard.press("Escape");
-      await expect(page.getByRole("dialog")).toHaveCount(0);
-      await expect(opener, `${name} dialog returns focus to its opener`).toBeFocused();
+      await expect(open, label).toHaveCount(0);
+      await expect(drawer.opener, `${label} returns focus to its opener`).toBeFocused();
     }
   }
   await testInfo.attach("release-sweep", { body: JSON.stringify({ matrix, findings }, null, 2), contentType: "application/json" });
@@ -267,37 +344,8 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
   const edit = detail.getByRole("button", { name: "Edit", exact: true });
   const inside = (testId: string) => page.evaluate((id) =>
     !!document.querySelector(`[data-testid="${id}"]`)?.contains(document.activeElement), testId);
-  /** Geometry on the first frame it is visible: with reduced motion it is already at rest. */
-  const geometry = (testId: string) => page.evaluate((id) => {
-    const drawer = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
-    const box = drawer.getBoundingClientRect();
-    const controls = [...drawer.querySelectorAll(":is(input, button, [role=combobox], [role=radio], label):not([aria-hidden='true'])")].map((node) => ({ node, rect: node.getBoundingClientRect() }))
-      .filter(({ rect }) => rect.width > 0);
-    return {
-      left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width,
-      viewport: { width: innerWidth, height: innerHeight },
-      duration: Math.max(...getComputedStyle(drawer).transitionDuration.split(",").map((part) => parseFloat(part) * (part.trim().endsWith("ms") ? 0.001 : 1))),
-      overflowing: controls.filter(({ rect }) => rect.left < box.left - 0.5 || rect.right > box.right + 0.5)
-        .map(({ node, rect }) => `${node.outerHTML.slice(0, 120)} ${rect.left}-${rect.right}`),
-      // Scroll containers only: clipped helpers (sr-only text, hidden form mirrors) never scroll.
-      scrolling: [drawer, ...drawer.querySelectorAll("*")].filter((node) => node.scrollWidth - node.clientWidth > 1 &&
-        (node === drawer || ["auto", "scroll"].includes(getComputedStyle(node).overflowX)))
-        .map((node) => `${node.outerHTML.slice(0, 160)} ${node.scrollWidth}/${node.clientWidth} ${getComputedStyle(node).overflowX}`),
-    };
-  }, testId);
-  const placed = async (g: Awaited<ReturnType<typeof geometry>>, size: string) => {
-    // The modal hides the page from the accessibility tree; the banner is still the titlebar.
-    const titlebar = (await page.getByRole("banner", { includeHidden: true }).boundingBox())!;
-    expect(g.duration, `${size}: no motion under reduced motion`).toBeLessThanOrEqual(0.00001);
-    expect(Math.abs(g.right - g.viewport.width), `${size}: flush with the right edge`).toBeLessThanOrEqual(1);
-    expect(Math.abs(g.top - (titlebar.y + titlebar.height)), `${size}: starts below the titlebar`).toBeLessThanOrEqual(1);
-    expect(Math.abs(g.bottom - g.viewport.height), `${size}: full height`).toBeLessThanOrEqual(1);
-    expect(g.width, `${size}: drawer width`).toBeGreaterThanOrEqual(Math.min(480, g.viewport.width));
-    expect(g.width, `${size}: drawer width`).toBeLessThanOrEqual(560);
-    expect(g.left, `${size}: the source screen stays visible`).toBeGreaterThan(0);
-    expect(g.overflowing, `${size}: fields stay inside the drawer`).toEqual([]);
-    expect(g.scrolling, `${size}: no horizontal scroll`).toEqual([]);
-  };
+  const geometry = (testId: string) => drawerGeometry(page, `[data-testid="${testId}"]`);
+  const place = (g: Awaited<ReturnType<typeof drawerGeometry>>, size: string) => placed(page, g, size);
 
   /**
    * Samples the drawer every 8 ms from the moment it is inserted, for one second. Rest = flush right and opaque.
@@ -370,7 +418,7 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
     const instant = await motion("server-editor", () => page.keyboard.press("Enter"));
     expect(instant.rest, `${size}: at rest at once under reduced motion`).toBeLessThanOrEqual(50);
     await expect(editor).toBeVisible();
-    await placed(await geometry("server-editor"), size);
+    await place(await geometry("server-editor"), size);
     await expect(name).toBeFocused();
     await expect(editor.getByRole("heading", { name: "Edit server" })).toBeVisible();
     await expect(editor.getByText("PROD", { exact: true }).first()).toBeVisible();
@@ -414,11 +462,11 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
     // Delete: a drawer whose body is the confirmation, Cancel focused, a red specific action; Esc returns focus.
     const remove = detail.getByRole("button", { name: "Delete", exact: true });
     await remove.click();
-    const confirm = page.getByTestId("delete-host-dialog");
+    const confirm = page.getByTestId("delete-host-drawer");
     await expect(confirm.getByTestId("delete-impacts")).toBeVisible();
     // The starting style is cleared on the next frame even with reduced motion.
     await expect(confirm).not.toHaveAttribute("data-starting-style");
-    await placed(await geometry("delete-host-dialog"), size);
+    await place(await geometry("delete-host-drawer"), size);
     await expect(page.getByRole("alertdialog", { name: `Delete ${label}?` })).toBeVisible();
     await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
     await expect(confirm).toContainText("db-01.internal.example");

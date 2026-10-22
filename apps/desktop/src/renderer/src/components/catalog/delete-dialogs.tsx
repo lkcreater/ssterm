@@ -144,7 +144,7 @@ export function DeleteHostDialog({
       alert
       initialFocus={cancel}
       finalFocus={finalFocus(afterDelete)}
-      data-testid="delete-host-dialog"
+      data-testid="delete-host-drawer"
       title={<span className="break-all">Delete {host.label}?</span>}
       target={
         <>
@@ -241,7 +241,7 @@ export function DeleteGroupDialog({
       alert
       initialFocus={cancel}
       finalFocus={finalFocus(afterDelete)}
-      data-testid="delete-group-dialog"
+      data-testid="delete-group-drawer"
       title={<span className="break-all">Delete group {group.label}?</span>}
       description="Choose what happens to the servers and subgroups inside it. Open sessions keep their current connection."
       footer={

@@ -4,7 +4,7 @@
 
 **Blocked by:** 03, 04, 05, 06, 07
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] No feature area renders a centered Dialog or AlertDialog; unused dialog components are deleted
 - [ ] Native Open/Save, Keychain and Google flows are untouched

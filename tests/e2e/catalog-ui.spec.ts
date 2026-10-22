@@ -267,7 +267,7 @@ test("deleting a server and groups states the impact, keeps Cancel focused and h
   // Server: counts, Cancel focused, Escape closes without deleting.
   await h.row(relay).click();
   await h.detail.getByRole("button", { name: "Delete", exact: true }).click();
-  let dialog = page.getByTestId("delete-host-dialog");
+  let dialog = page.getByTestId("delete-host-drawer");
   await expect(dialog.getByRole("heading", { name: `Delete ${relay}?` })).toBeVisible();
   await expect(dialog.getByTestId("delete-impacts")).toHaveText("Also removes 1 tag assignment.");
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
@@ -293,7 +293,7 @@ test("deleting a server and groups states the impact, keeps Cancel focused and h
   await page.getByRole("button", { name: `Subgroups of ${root}` }).click();
   await h.nav(child).click();
   await h.hosts.getByRole("button", { name: "Delete group" }).click();
-  dialog = page.getByTestId("delete-group-dialog");
+  dialog = page.getByTestId("delete-group-drawer");
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
   await expect(dialog.getByRole("button", { name: "Delete group" })).toBeDisabled();
   await dialog.getByRole("radio", { name: `Move them to group ${root}` }).click();
@@ -393,7 +393,7 @@ test("long PROD labels and tags truncate inside the list at 960×640, and IPv6 t
   await page.getByRole("button", { name: `Subgroups of ${parent}` }).click();
   await h.nav("c").click();
   await h.hosts.getByRole("button", { name: "Delete group" }).click();
-  const dialog = page.getByTestId("delete-group-dialog");
+  const dialog = page.getByTestId("delete-group-drawer");
   await expect(dialog).toContainText("Open sessions keep their current connection.");
   await dialog.getByRole("radio", { name: `Move them to group ${parent}` }).click();
   await expect(dialog.getByRole("list", { name: "Affected servers" })).toBeVisible();

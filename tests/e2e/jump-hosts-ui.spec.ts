@@ -118,7 +118,7 @@ test("F-jump: a server saved with a jump host connects through it; each prompt n
     await bastionEditor.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(bastionEditor).toHaveCount(0);
     await detail.getByRole("button", { name: "Delete", exact: false }).first().click();
-    const remove = page.getByTestId("delete-host-dialog");
+    const remove = page.getByTestId("delete-host-drawer");
     // The preview already reports why; nothing can be confirmed.
     await expect(remove).toContainText("Another server connects through this one.");
     await remove.getByRole("button", { name: "Cancel" }).click();

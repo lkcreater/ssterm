@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import {
   CheckIcon,
@@ -458,7 +458,8 @@ function SnippetEditor({
   const tags = useMemo(() => [...state.tags].sort(compareLabel), [state.tags]);
   const bytes = useMemo(() => bodyBytes(draft.body), [draft.body]);
 
-  useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  // Layout effect: the close policy reads this on a document keydown (Esc), which must never see a stale value after an awaited save.
+  useLayoutEffect(() => onDirty(dirty), [dirty, onDirty]);
   // The fields appear once the body is decrypted: start there, unless the user already moved on inside the drawer.
   useEffect(() => {
     if (phase !== "ready" || !snippet) return;

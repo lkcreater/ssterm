@@ -287,8 +287,6 @@
   [role="alertdialog"],
   [role="menu"],
   [role="listbox"],
-  [data-slot="dialog-overlay"],
-  [data-slot="alert-dialog-overlay"],
   [data-slot="tooltip-content"]
 ) {
   -webkit-app-region: no-drag;

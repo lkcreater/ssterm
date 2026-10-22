@@ -1454,3 +1454,15 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
     - Full E2E 85/88. The 3 failures (`recording:42`, `terminal-flow:253`, `transfer-conflicts:59`) are in load-sensitive specs and passed when rerun alone.
     - In review, two failures were caused by stray OS keystrokes reaching the test windows (`app-lock:40`, `recording:355`).
     - After the fixes: settings, sync and recording 10/10; release sweep 1/1.
+- **SST-040/08 done (2026-10-22):**
+  - **Removed:** `ui/dialog.tsx` and `ui/alert-dialog.tsx` are deleted. The showcase dialog/sheet specimens are replaced by a drawer fixture. The test ids for deleting hosts and groups are now `-drawer`; other `-dialog` ids and file names stay for now (cosmetic).
+  - **Release sweep:** opens 17 drawers at both sizes, checking placement, overflow, audit and focus return, and fails on any stray modal. Toasts (`aria-modal=false`) are excluded.
+  - **Review:** APPROVED. Medium limitation: drawers that need live SSH, a key, recordings or Team state are covered only by their feature specs, and only some of those check placement. Full placement coverage stays a ticket 15 item.
+  - **Product race fixed (ticket 06 code):**
+    - Bug: the snippet editor's dirty flag reached the close policy through a passive effect. Esc right after a ⌘S save could wrongly ask to discard, and Esc right after adding a tag could drop the tag without asking.
+    - Fix: switched to `useLayoutEffect`.
+    - Found by reviewing a `snippets.spec:51` failure that occurred about once in nine runs.
+  - **Checks:**
+    - typecheck, unit 768/769, build pass.
+    - Full E2E 87/88 before the fix.
+    - After the fix: `snippets` ×3 plus `release-gate`, 21/21.

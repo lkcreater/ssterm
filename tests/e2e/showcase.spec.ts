@@ -94,17 +94,19 @@ test("showcases semantic colors, state independence, Thai text and both desktop 
   expect(externalRequests).toEqual([]);
 });
 
-test("keeps dialog keyboard focus contained and restores its trigger", async ({
+test("keeps drawer keyboard focus contained and restores its trigger", async ({
   desktop,
 }) => {
   const { page, errors } = desktop;
   const trigger = page.getByRole("button", {
-    name: "Open host dialog fixture",
+    name: "Open host drawer fixture",
     exact: true,
   });
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Host details · fixture" });
   await expect(dialog).toBeVisible();
+  // The specimen is the shipping right-edge drawer, not a centered modal.
+  await expect(dialog).toHaveAttribute("data-slot", "drawer");
   await expect(dialog.getByLabel("Fixture host name")).toBeFocused();
   for (let index = 0; index < 8; index++) {
     await page.keyboard.press("Tab");
