@@ -105,9 +105,11 @@ test("remote edit uses an owned editor process, private copies and exact explici
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(960);
     expect(await confirm.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await confirm.evaluate((node) => { const box = node.getBoundingClientRect(); return { right: Math.abs(innerWidth - box.right) <= 0.5, bottom: Math.abs(innerHeight - box.bottom) <= 0.5 }; }), "right-edge drawer below the titlebar").toEqual({ right: true, bottom: true });
+    await expect(page.getByRole("alertdialog"), "one confirmation drawer, no stacked overlay").toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const contrasts: Record<string, unknown> = {};
-    for (const [name, locator] of [["title", confirm.getByRole("heading")], ["description", confirm.locator('[data-slot="alert-dialog-description"]')], ["cancel", confirm.getByRole("button", { name: "Cancel", exact: true })], ["open", confirm.getByRole("button", { name: "Open TextEdit", exact: true })], ["PROD", confirm.getByText("PROD", { exact: true })]] as const) {
+    for (const [name, locator] of [["title", confirm.getByRole("heading")], ["description", confirm.locator('[data-slot="sheet-description"]')], ["cancel", confirm.getByRole("button", { name: "Cancel", exact: true })], ["open", confirm.getByRole("button", { name: "Open TextEdit", exact: true })], ["PROD", confirm.getByText("PROD", { exact: true })]] as const) {
       const measured = await renderedContrast(locator); contrasts[name] = measured; expect(measured.ratio, name).toBeGreaterThanOrEqual(4.5);
     }
     for (let index = 0; index < 5; index++) { await page.keyboard.press("Tab"); await expect.poll(() => confirm.evaluate((node) => node.contains(document.activeElement))).toBe(true); }

@@ -2,7 +2,7 @@ import { mkdir, open, readFile, readdir, realpath, stat, unlink, writeFile } fro
 import { basename, join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
-import { ROOT, LABEL, pane, setupTransferLab, snapshot, hash, renderedContrast } from "./support/transfer-fixture";
+import { ROOT, LABEL, pane, setupTransferLab, snapshot, hash, renderedContrast, chooseConflict } from "./support/transfer-fixture";
 
 // Credentials remain main-only fixture inputs; attach screenshots only at explicit empty-input points.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -15,25 +15,32 @@ const OLD = Buffer.from("original-destination-must-survive-until-publish");
 const sourceHash = hash(sourceBytes); const oldHash = hash(OLD);
 const queue = (page: Page) => page.getByTestId("transfer-panel");
 const row = (page: Page, source: string) => queue(page).locator(`[data-testid="transfer-job"][data-source-path=${JSON.stringify(source)}]`).last();
-const dialog = (page: Page) => page.getByTestId("transfer-overwrite-dialog");
+// SST-040/05: the conflict decision is a drawer; Overwrite's confirmation is a step inside it.
+const dialog = (page: Page) => page.getByTestId("transfer-conflict-drawer");
+const step = (page: Page) => page.getByTestId("transfer-overwrite-confirm");
 
 async function overwrite(page: Page, entry: Locator) {
-  await entry.getByRole("button", { name: "Overwrite", exact: true }).click();
-  await expect(dialog(page)).toBeVisible();
-  await expect(dialog(page).getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
-  await dialog(page).getByRole("button", { name: "Replace file", exact: true }).click();
+  const drawer = await chooseConflict(page, entry, "Overwrite");
+  await drawer.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(step(page)).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+  await drawer.getByRole("button", { name: "Replace file", exact: true }).click();
   await expect(dialog(page)).toHaveCount(0);
 }
-async function rename(entry: Locator, name: string) {
-  await entry.getByRole("button", { name: "Rename", exact: true }).click();
-  const input = entry.getByRole("textbox", { name: "New filename", exact: true });
-  await expect(input).toBeFocused();
+async function skip(page: Page, entry: Locator) {
+  await (await chooseConflict(page, entry, "Skip")).getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog(page)).toHaveCount(0);
+}
+async function rename(page: Page, entry: Locator, name: string) {
+  const drawer = await chooseConflict(page, entry, "Rename");
+  const input = drawer.getByRole("textbox", { name: "New filename", exact: true });
   await input.fill("../outside");
-  await entry.getByRole("button", { name: "Use new name", exact: true }).click();
+  await input.press("Enter");
   await expect(input).toHaveAttribute("aria-invalid", "true");
   await expect(entry).toHaveAttribute("data-state", "conflict");
   await input.fill(name);
-  await entry.getByRole("button", { name: "Use new name", exact: true }).click();
+  await drawer.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog(page)).toHaveCount(0);
 }
 async function staleDecision(page: Page, jobId: string, conflictId: string) {
   return page.evaluate(async ({ jobId, conflictId }) => {
@@ -73,9 +80,11 @@ test("conflict UI captures Overwrite, Skip and Rename for upload and download wi
     expect((await staleDecision(page, captured.id, "stale-nonce")).ok).toBe(false);
     await expect(row(page, `${root}/${OVERWRITE}`)).toHaveAttribute("data-state", "conflict");
 
-    // The confirm names the captured PROD target and destination; Cancel is the initial keyboard action.
-    await row(page, `${root}/${OVERWRITE}`).getByRole("button", { name: "Overwrite", exact: true }).click();
-    await expect(dialog(page)).toHaveAttribute("role", "alertdialog");
+    // The confirm step names the captured PROD target and destination; Cancel is the initial keyboard action.
+    const opener = row(page, `${root}/${OVERWRITE}`).getByRole("button", { name: /^Resolve conflict for / });
+    await (await chooseConflict(page, row(page, `${root}/${OVERWRITE}`), "Overwrite")).getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(step(page)).toHaveAttribute("role", "alert");
+    await expect(page.getByRole("dialog"), "the confirmation is a step, not a stacked overlay").toHaveCount(1);
     await expect(dialog(page)).toContainText(LABEL);
     await expect(dialog(page)).toContainText(`${ROOT}/${OVERWRITE}`);
     await expect(dialog(page).getByText("PROD", { exact: true })).toBeVisible();
@@ -85,12 +94,13 @@ test("conflict UI captures Overwrite, Skip and Rename for upload and download wi
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(960);
     await expect.poll(() => dialog(page).evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await dialog(page).evaluate((node) => { const box = node.getBoundingClientRect(); return { right: Math.abs(innerWidth - box.right) <= 0.5, bottom: Math.abs(innerHeight - box.bottom) <= 0.5 }; }), "right-edge drawer below the titlebar").toEqual({ right: true, bottom: true });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await testInfo.attach("transfer-overwrite-confirm-960x640-thai", { body: await page.screenshot(), contentType: "image/png" });
     const contrasts: Record<string, unknown> = {};
     for (const [label, element] of [
-      ["Confirm title", dialog(page).getByRole("heading")],
-      ["Confirm description", dialog(page).locator('[data-slot="alert-dialog-description"]')],
+      ["Confirm title", step(page).getByRole("heading")],
+      ["Confirm description", page.getByTestId("transfer-overwrite-description")],
       ["Confirm Cancel", cancel],
       ["Confirm Replace", dialog(page).getByRole("button", { name: "Replace file", exact: true })],
       ["Confirm PROD", dialog(page).getByText("PROD", { exact: true })],
@@ -102,14 +112,17 @@ test("conflict UI captures Overwrite, Skip and Rename for upload and download wi
       await page.keyboard.press("Tab");
       await expect.poll(() => dialog(page).evaluate((node) => node.contains(document.activeElement)), "confirm traps keyboard focus").toBe(true);
     }
-    await cancel.click(); await expect(dialog(page)).toHaveCount(0);
-    await expect(row(page, `${root}/${OVERWRITE}`).getByRole("button", { name: /^Cancel upload / })).toBeFocused();
+    // Cancel leaves the step, not the drawer; Esc then closes the drawer and focus returns to its opener.
+    await cancel.click(); await expect(step(page)).toHaveCount(0);
+    await expect(dialog(page).getByRole("button", { name: "Continue", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape"); await expect(dialog(page)).toHaveCount(0);
+    await expect(opener).toBeFocused();
     expect((await lab.remoteInfo(OVERWRITE))!.hash, "dismissing confirmation changes no file").toBe(oldHash);
     // Navigation does not change any captured conflict destination or rename directory.
     await remote.goto(`${ROOT}/elsewhere`);
     await overwrite(page, row(page, `${root}/${OVERWRITE}`));
-    await row(page, `${root}/skip.bin`).getByRole("button", { name: "Skip", exact: true }).click();
-    await rename(row(page, `${root}/rename.bin`), RENAMED);
+    await skip(page, row(page, `${root}/skip.bin`));
+    await rename(page, row(page, `${root}/rename.bin`), RENAMED);
     for (const name of [OVERWRITE, "rename.bin"]) await expect(row(page, `${root}/${name}`)).toHaveAttribute("data-state", "completed", { timeout: 30_000 });
     await expect(row(page, `${root}/skip.bin`)).toHaveAttribute("data-state", "skipped");
     expect((await staleDecision(page, captured.id, captured.conflictId!)).ok, "duplicate completed decision is rejected").toBe(false);
@@ -130,8 +143,8 @@ test("conflict UI captures Overwrite, Skip and Rename for upload and download wi
     await expect(row(page, `${ROOT}/download-independent-b.bin`)).toHaveAttribute("data-state", "completed", { timeout: 30_000 });
     await local.goto(`${download}/elsewhere`);
     await overwrite(page, row(page, `${ROOT}/download-overwrite.bin`));
-    await row(page, `${ROOT}/download-skip.bin`).getByRole("button", { name: "Skip", exact: true }).click();
-    await rename(row(page, `${ROOT}/download-rename.bin`), `ดาวน์โหลด-${RENAMED}`);
+    await skip(page, row(page, `${ROOT}/download-skip.bin`));
+    await rename(page, row(page, `${ROOT}/download-rename.bin`), `ดาวน์โหลด-${RENAMED}`);
     await expect(row(page, `${ROOT}/download-overwrite.bin`)).toHaveAttribute("data-state", "completed", { timeout: 30_000 });
     await expect(row(page, `${ROOT}/download-rename.bin`)).toHaveAttribute("data-state", "completed", { timeout: 30_000 });
     expect(hash(await readFile(join(download, "download-overwrite.bin")))).toBe(sourceHash);

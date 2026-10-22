@@ -46,6 +46,11 @@ export function useDrawerClose({
 }
 export type DrawerClose = ReturnType<typeof useDrawerClose>;
 
+/** For `finalFocus`: the first candidate still attached, visible and enabled, else the drawer's default (true). */
+export function firstUsable(...candidates: (HTMLElement | null | undefined)[]): HTMLElement | true {
+  return candidates.find((element) => element?.isConnected && element.checkVisibility() && !element.matches(":disabled")) ?? true;
+}
+
 const tabbable =
   ":is(input, button, select, textarea, a[href], [tabindex]):not([disabled], [tabindex='-1'], [aria-hidden='true'])";
 

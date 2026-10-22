@@ -1425,3 +1425,9 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
     - typecheck, unit 768/769, build pass.
     - Full E2E 85/86 before the review fixes; the one failure is `team.spec:42`, which was already failing.
     - After the fixes, focused E2E 19/19.
+- **SST-040/05 done (2026-10-22):**
+  - Transfer conflicts open a per-open drawer (Resolve conflict) bound to the captured conflict nonce: Skip/Rename/Overwrite with no default, an Overwrite confirm step and a `detail>1` guard.
+  - Remote-edit consents are alert drawers bound to the captured revision/approval; lifecycle stays in the rows.
+  - Shared `firstUsable` focus helper.
+  - Review APPROVED with no critical, high or medium findings. Lows fixed: stale errors in drawers, showcase preselect, docs, helper reuse. Kept: Skip now takes 3 actions, a same-spot Continue → Replace, and no UI E2E for drawer-closes-when-conflict-leaves (main-level only).
+  - Checks: typecheck, unit 768/769, build, full E2E 85/86 (`team.spec:42` failed before SST-040 too), focused rerun after fixes 13/13.

@@ -4,7 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Drawer, useDrawerClose } from "@/components/drawer";
+import { Drawer, firstUsable, useDrawerClose } from "@/components/drawer";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -86,9 +86,8 @@ export function WorkspaceTools({ owner, catalog, controller, returnFocus, onClos
     // Only while focus is nowhere useful (the removed step button left it on the page or the drawer itself).
     const now = document.activeElement;
     if (now && now !== document.body && !now.matches('[data-slot="drawer"]')) return;
-    const usable = (element: HTMLElement | null): element is HTMLElement =>
-      !!element?.isConnected && element.checkVisibility() && !element.matches(":disabled");
-    (usable(back) ? back : usable(input.current) ? input.current : null)?.focus();
+    const target = firstUsable(back, input.current);
+    if (target !== true) target.focus();
   }, [confirming, busy]);
   // Closing ends any operation now, not after the exit motion: late results are discarded.
   const opened = useRef(false);

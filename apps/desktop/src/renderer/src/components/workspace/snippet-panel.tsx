@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardPasteIcon, PlayIcon, SearchIcon, TextCursorInputIcon, TriangleAlertIcon } from "lucide-react";
 import type { CatalogSnippet, CatalogState, Owner, TerminalSession } from "@ssterm/contracts";
-import { Drawer, useDrawerClose } from "@/components/drawer";
+import { Drawer, firstUsable, useDrawerClose } from "@/components/drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -101,7 +101,8 @@ export function SnippetPanel({
     const back = resume.current;
     resume.current = null;
     // A confirmed send disables the button that opened the step: fall back to the search box.
-    if (back) (back.isConnected && back.checkVisibility() && !back.matches(":disabled") ? back : searchInput.current)?.focus();
+    const target = back && firstUsable(back, searchInput.current);
+    if (target && target !== true) target.focus();
   }, [confirming]);
   // A lock drops the decrypted composer text and any pending confirmation.
   useEffect(() => {

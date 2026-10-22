@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test, expect } from "./fixtures";
-import { ROOT, pane, setupTransferLab, snapshot, terminalState, hash, renderedContrast } from "./support/transfer-fixture";
+import { ROOT, pane, setupTransferLab, snapshot, terminalState, hash, renderedContrast, chooseConflict } from "./support/transfer-fixture";
 
 // Password input is filled from main; automatic credential-bearing traces/screenshots stay disabled.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -32,7 +32,7 @@ test("real UI transfers preserve hashes, queue/cancel independently, retain part
     // Navigate after enqueue: every job still writes to the captured folder.
     await remote.goto(`${ROOT}/elsewhere`);
     await expect(job(`${root}/existing.txt`)).toHaveAttribute("data-state", "conflict");
-    await job(`${root}/existing.txt`).getByRole("button", { name: "Skip", exact: true }).click();
+    await (await chooseConflict(page, job(`${root}/existing.txt`), "Skip")).getByRole("button", { name: "Continue", exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).filter(terminalState).length, { timeout: 45_000 }).toBe(4);
     await expect(job(`${root}/existing.txt`)).toHaveAttribute("data-state", "skipped");
     expect(await lab.remoteInfo("existing.txt")).toEqual({ size: 15, hash: hash(Buffer.from("original-server")) });
@@ -49,7 +49,7 @@ test("real UI transfers preserve hashes, queue/cancel independently, retain part
     await page.getByRole("button", { name: "Download selected files", exact: true }).click();
     await local.goto(`${root}/download/elsewhere`);
     await expect(job(`${ROOT}/existing.txt`)).toHaveAttribute("data-state", "conflict");
-    await job(`${ROOT}/existing.txt`).getByRole("button", { name: "Skip", exact: true }).click();
+    await (await chooseConflict(page, job(`${ROOT}/existing.txt`), "Skip")).getByRole("button", { name: "Continue", exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).filter(terminalState).length, { timeout: 45_000 }).toBe(8);
     await expect(job(`${ROOT}/existing.txt`)).toHaveAttribute("data-state", "skipped");
     expect(await readFile(join(root, "download", "existing.txt"), "utf8")).toBe("original-local");

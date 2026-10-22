@@ -4,9 +4,9 @@ SST-022/T028 extends the [transfer engine](transfers.md) with per-file conflict 
 
 ## Conflict decisions
 
-When a regular file exists at the captured destination, the job enters `conflict` and releases its worker without opening file handles. Its target, PROD label and full source/destination paths stay visible. Choose one action for that job:
+When a regular file exists at the captured destination, the job enters `conflict` and releases its worker without opening file handles. Its target, PROD label and full source/destination paths stay visible. **Resolve conflict** opens a right-edge drawer (SST-040/05) that shows the captured target and paths and offers the three actions with nothing preselected; Continue stays disabled until one is chosen. The drawer answers only the conflict nonce captured when it opened and closes unsent when the job leaves that conflict (decided, cancelled, locked). Cancel, Esc or the scrim close it without deciding; focus returns to Resolve conflict, or to the row's Cancel once the conflict is gone. Choose one action for that job:
 
-- **Overwrite** asks for confirmation with Cancel focused initially. The decision applies to the displayed captured pathname, not a particular inode. It is available only when the destination supports atomic replacement.
+- **Overwrite** asks for confirmation as a step inside the same drawer, with Cancel focused initially; Cancel or Esc goes back to the choice. The decision applies to the displayed captured pathname, not a particular inode. It is available only when the destination supports atomic replacement.
 - **Skip** ends this job without copying or modifying its destination.
 - **Rename** accepts one raw filename in the captured destination directory. It preserves Unicode and spaces; separators, dot-only names, NUL, malformed/unaddressable text and oversized names are refused. Another existing name produces another conflict with a new nonce.
 
@@ -23,7 +23,7 @@ The copy opens a random same-directory `.ssterm-<uuid>.part` exclusively, reques
 
 The protocol distinction and advertised-version gate follow [OpenSSH's protocol extension specification](https://raw.githubusercontent.com/openssh/openssh-portable/master/PROTOCOL) and [SFTP v3 rename semantics](https://www.openssh.org/txt/draft-ietf-secsh-filexfer-02.txt). There is no unlink-old/truncate-old fallback. Servers/filesystems that refuse a supported operation yield a failure; atomic replacement is not claimed universally. Missing publication support fails safely. Successful close/rename is not a durable fsync guarantee. A staged replacement uses the new file's requested permissions and may change prior destination ownership, permissions, timestamps, ACLs or extended metadata; these are not preserved.
 
-A destination created after preflight is preserved by nonreplacement publication. The job fails clearly and retains its stage; a fresh Retry can encounter that conflict normally. Overwrite rechecks target type before publication, but portable APIs do not provide compare-and-swap against the file originally observed in the dialog.
+A destination created after preflight is preserved by nonreplacement publication. The job fails clearly and retains its stage; a fresh Retry can encounter that conflict normally. Overwrite rechecks target type before publication, but portable APIs do not provide compare-and-swap against the file originally observed in the drawer.
 
 ## Partial files, cancellation and uncertain outcomes
 

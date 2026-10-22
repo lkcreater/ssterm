@@ -145,3 +145,13 @@ export async function renderedContrast(locator: Locator) {
     return { color, foreground, background, ratio: (light! + 0.05) / (dark! + 0.05) };
   });
 }
+
+/** SST-040/05: opens a job's conflict drawer and selects one action; nothing is preselected, so Continue starts disabled. */
+export async function chooseConflict(page: Page, entry: Locator, action: "Skip" | "Rename" | "Overwrite") {
+  await entry.getByRole("button", { name: /^Resolve conflict for / }).click();
+  const drawer = page.getByTestId("transfer-conflict-drawer");
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+  await drawer.getByRole("radio", { name: action, exact: true }).click();
+  return drawer;
+}

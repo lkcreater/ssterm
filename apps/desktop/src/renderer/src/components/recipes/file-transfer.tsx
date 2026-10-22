@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState, type RefObject } from "react";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import {
   ArrowRightIcon,
   FileIcon,
@@ -6,17 +7,6 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,9 +60,73 @@ function FilePane({
     </section>
   );
 }
+function ConflictFixtureDrawer({
+  opener,
+  onClose,
+}: {
+  opener: RefObject<HTMLButtonElement | null>;
+  onClose(): void;
+}) {
+  const [choice, setChoice] = useState<string[]>([]);
+  const close = useDrawerClose();
+  return (
+    <Drawer
+      close={close}
+      onClose={onClose}
+      finalFocus={opener}
+      title="app.conf already exists"
+      target={
+        <span className="min-w-0 break-all">
+          deploy@lab.ssterm.invalid:/srv/app/app.conf
+        </span>
+      }
+      description="Fixture destination. Choose an explicit conflict policy; no file will be changed."
+      footer={
+        <>
+          <Button variant="outline" onClick={close.request}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!choice.length}
+            onClick={() => {
+              close.discard();
+              toast.add({
+                title: "Fixture choice recorded",
+                description: `Selected: ${choice[0]}. No file was changed.`,
+                type: "info",
+              });
+            }}
+          >
+            Preview choice
+          </Button>
+        </>
+      }
+    >
+      <FieldGroup>
+        <Field>
+          <FieldTitle id="conflict-policy">Conflict policy</FieldTitle>
+          <ToggleGroup
+            aria-labelledby="conflict-policy"
+            value={choice}
+            onValueChange={(values) => {
+              if (values.length) setChoice(values);
+            }}
+            variant="outline"
+          >
+            <ToggleGroupItem value="skip">Skip</ToggleGroupItem>
+            <ToggleGroupItem value="rename">Rename</ToggleGroupItem>
+            <ToggleGroupItem value="replace">Replace</ToggleGroupItem>
+          </ToggleGroup>
+        </Field>
+      </FieldGroup>
+    </Drawer>
+  );
+}
+
 export function FileTransferRecipe() {
-  const [open, setOpen] = useState(false);
-  const [choice, setChoice] = useState(["rename"]);
+  // Serial per open: each open is a fresh drawer instance.
+  const [open, setOpen] = useState(0);
+  const opener = useRef<HTMLButtonElement>(null);
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="recipe-grid">
@@ -123,57 +177,20 @@ export function FileTransferRecipe() {
             <TableCell>app.conf</TableCell>
             <TableCell>Destination exists</TableCell>
             <TableCell>
-              <AlertDialog open={open} onOpenChange={setOpen}>
-                <AlertDialogTrigger render={<Button variant="outline" />}>
-                  Review conflict fixture
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>app.conf already exists</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Fixture destination:
-                      deploy@lab.ssterm.invalid:/srv/app/app.conf. Choose an
-                      explicit conflict policy; no file will be changed.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <FieldGroup>
-                    <Field>
-                      <FieldTitle id="conflict-policy">
-                        Conflict policy
-                      </FieldTitle>
-                      <ToggleGroup
-                        aria-labelledby="conflict-policy"
-                        value={choice}
-                        onValueChange={(values) => {
-                          if (values.length) setChoice(values);
-                        }}
-                        variant="outline"
-                      >
-                        <ToggleGroupItem value="skip">Skip</ToggleGroupItem>
-                        <ToggleGroupItem value="rename">Rename</ToggleGroupItem>
-                        <ToggleGroupItem value="replace">
-                          Replace
-                        </ToggleGroupItem>
-                      </ToggleGroup>
-                    </Field>
-                  </FieldGroup>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => {
-                        setOpen(false);
-                        toast.add({
-                          title: "Fixture choice recorded",
-                          description: `Selected: ${choice[0]}. No file was changed.`,
-                          type: "info",
-                        });
-                      }}
-                    >
-                      Preview choice
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <Button
+                ref={opener}
+                variant="outline"
+                onClick={() => setOpen((serial) => serial + 1)}
+              >
+                Review conflict fixture
+              </Button>
+              {open ? (
+                <ConflictFixtureDrawer
+                  key={open}
+                  opener={opener}
+                  onClose={() => setOpen(0)}
+                />
+              ) : null}
             </TableCell>
           </TableRow>
         </TableBody>

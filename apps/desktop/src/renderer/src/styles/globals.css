@@ -1774,16 +1774,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
-.transfer-overwrite-dialog {
-  display: flex;
-  max-height: calc(100dvh - 32px);
-  flex-direction: column;
-}
-.transfer-overwrite-details {
-  min-height: 0;
-  overflow: auto;
-  overflow-wrap: anywhere;
-}
 .transfer-job[data-state="conflict"] .transfer-job-heading > svg,
 .transfer-job[data-state="publishing"] .transfer-job-heading > svg {
   color: var(--connection-connecting);
@@ -1843,11 +1833,6 @@
 }
 .remote-edit-error {
   color: var(--destructive);
-}
-.remote-edit-confirm {
-  max-height: calc(100dvh - 32px);
-  overflow: auto;
-  overflow-wrap: anywhere;
 }
 
 /* SST-033 Workspace tools drawer body (SST-040/04); the terminal layer stays mounted underneath. */

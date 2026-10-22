@@ -118,7 +118,7 @@ test("keeps dialog keyboard focus contained and restores its trigger", async ({
   await page
     .getByRole("button", { name: "Review conflict fixture", exact: true })
     .click();
-  const conflict = page.getByRole("alertdialog", {
+  const conflict = page.getByRole("dialog", {
     name: "app.conf already exists",
   });
   await expect(conflict).toBeVisible();
@@ -127,6 +127,9 @@ test("keeps dialog keyboard focus contained and restores its trigger", async ({
   ).toBeVisible();
   await conflict.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(conflict).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Review conflict fixture", exact: true }),
+  ).toBeFocused();
   expect(errors).toEqual([]);
 });
 
