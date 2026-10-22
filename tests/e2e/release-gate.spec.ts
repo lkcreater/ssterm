@@ -205,7 +205,7 @@ test("DS05 release sweep: every page and drawer at 960×640 and 1280×800 with r
   const pages: { name: string; open(): Promise<void>; close?(): Promise<void> }[] = [
     { name: "servers", open: async () => {
       await page.getByRole("button", { name: /^All servers/u }).click();
-      await page.getByTestId("hosts-page").locator("button[data-host-id]").first().click();
+      await expect(page.getByTestId("hosts-page").getByRole("table")).toBeVisible();
     } },
     { name: "identities", open: () => page.getByRole("button", { name: "Identities", exact: true }).click() },
     { name: "snippets", open: async () => {
@@ -231,25 +231,26 @@ test("DS05 release sweep: every page and drawer at 960×640 and 1280×800 with r
   ];
   const nav = (name: string | RegExp) => page.getByRole("button", { name, exact: typeof name === "string" }).click();
   const hostsPage = page.getByTestId("hosts-page");
-  const host = page.getByTestId("host-detail");
+  const firstRow = hostsPage.locator("button[data-host-id]").first();
+  const rowActions = hostsPage.getByRole("button", { name: /^Actions for /u }).first();
   const identity = "ผู้ดูแลระบบ";
   const rule = "Postgres ผ่านเซิร์ฟเวอร์";
-  const servers = async () => {
-    await nav(/^All servers/u);
-    await hostsPage.locator("button[data-host-id]").first().click();
-  };
+  const servers = () => nav(/^All servers/u);
   const identitiesTab = async (tab: string) => {
     await nav("Identities");
     await page.getByRole("tab", { name: tab, exact: true }).click();
   };
   // Live-session drawers (host trust, credentials, Paste/Run, close confirm, transfer conflicts, remote edits, Revoke
   // trust, key rename/delete, recordings delete, Team member flows) need Docker or Keychain fixtures; their specs cover them.
-  const drawers: { name: string; go?(): Promise<unknown>; opener: Locator; max?: number }[] = [
+  /** `returnsTo`: where focus lands after Esc when the opener is transient (a menu item). */
+  const drawers: { name: string; go?(): Promise<unknown>; opener: Locator; returnsTo?: Locator; max?: number }[] = [
     { name: "settings", opener: page.getByRole("button", { name: /^Settings/u }).last(), max: 640 },
     { name: "shortcuts", opener: page.getByRole("button", { name: /^Keyboard shortcuts/u }).last() },
     { name: "new-server", go: () => nav(/^All servers/u), opener: hostsPage.getByRole("button", { name: "Add server", exact: true }) },
-    { name: "edit-server", go: servers, opener: host.getByRole("button", { name: "Edit", exact: true }) },
-    { name: "delete-server", go: servers, opener: host.getByRole("button", { name: "Delete", exact: true }) },
+    // SST-040/10: activating a row opens the host drawer; Delete is in the row's ⋯ menu.
+    { name: "edit-server", go: servers, opener: firstRow },
+    { name: "delete-server", go: async () => { await servers(); await rowActions.click(); },
+      opener: page.getByRole("menuitem", { name: "Delete", exact: true }), returnsTo: rowActions },
     { name: "edit-group", go: () => nav(/^โครงสร้างพื้นฐาน การผลิต/u), opener: hostsPage.getByRole("button", { name: "Edit group", exact: true }) },
     { name: "delete-group", go: () => nav(/^โครงสร้างพื้นฐาน การผลิต/u), opener: hostsPage.getByRole("button", { name: "Delete group", exact: true }) },
     { name: "new-identity", go: () => identitiesTab("Identities"), opener: page.getByRole("button", { name: "New identity", exact: true }) },
@@ -319,7 +320,7 @@ test("DS05 release sweep: every page and drawer at 960×640 and 1280×800 with r
       await page.screenshot({ path: testInfo.outputPath(`${drawer.name}-drawer-${size}.png`) });
       await page.keyboard.press("Escape");
       await expect(open, label).toHaveCount(0);
-      await expect(drawer.opener, `${label} returns focus to its opener`).toBeFocused();
+      await expect(drawer.returnsTo ?? drawer.opener, `${label} returns focus to its opener`).toBeFocused();
     }
   }
   await testInfo.attach("release-sweep", { body: JSON.stringify({ matrix, findings }, null, 2), contentType: "application/json" });
@@ -337,11 +338,12 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
     { type: "create-host", data: { label, address: "db-01.internal.example", groupId: "$0", environment: "PROD" } },
   ]);
   await page.reload();
-  const detail = page.getByTestId("host-detail");
+  const hostsPage = page.getByTestId("hosts-page");
   const editor = page.getByTestId("server-editor");
   const name = editor.getByLabel("Name", { exact: true });
   const discardStep = editor.getByRole("alert", { name: "Discard unsaved changes?" });
-  const edit = detail.getByRole("button", { name: "Edit", exact: true });
+  // SST-040/10: the row opens the host drawer (the server editor).
+  const edit = hostsPage.locator("button[data-host-id]").first();
   const inside = (testId: string) => page.evaluate((id) =>
     !!document.querySelector(`[data-testid="${id}"]`)?.contains(document.activeElement), testId);
   const geometry = (testId: string) => drawerGeometry(page, `[data-testid="${testId}"]`);
@@ -383,7 +385,6 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
   };
 
   // With motion allowed the drawer starts off-canvas and transparent, and slides and fades to rest in about 200 ms.
-  await page.getByTestId("hosts-page").locator("button[data-host-id]").first().click();
   const moving = await motion("server-editor", () => edit.click());
   expect(moving.first.starting, "the first frame carries the starting style").toBe(true);
   expect(moving.first.left, "the first frame is off-canvas").toBeGreaterThanOrEqual(moving.width - 1);
@@ -411,7 +412,6 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
     const size = `${width}x${height}`;
     await page.getByRole("button", { name: /^All servers/u }).click();
-    await page.getByTestId("hosts-page").locator("button[data-host-id]").first().click();
 
     // Opened from the keyboard: focus enters the first field; the header names the PROD target.
     await edit.focus();
@@ -457,11 +457,12 @@ test("drawer contract: right edge below the titlebar, focus entry/trap/return, E
     await editor.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(editor).toHaveCount(0);
     await expect(edit).toBeFocused();
-    await expect(detail.getByRole("heading", { name: label })).toBeVisible();
 
-    // Delete: a drawer whose body is the confirmation, Cancel focused, a red specific action; Esc returns focus.
-    const remove = detail.getByRole("button", { name: "Delete", exact: true });
+    // Delete (from the row's ⋯ menu): a drawer whose body is the confirmation, Cancel focused, a red specific
+    // action; Esc returns focus to the menu button.
+    const remove = hostsPage.getByRole("button", { name: `Actions for ${label}`, exact: true });
     await remove.click();
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
     const confirm = page.getByTestId("delete-host-drawer");
     await expect(confirm.getByTestId("delete-impacts")).toBeVisible();
     // The starting style is cleared on the next frame even with reduced motion.
@@ -517,8 +518,7 @@ test("keyboard-interactive sign-in against the real OpenSSH/PAM fixture through 
       { type: "create-host", data: { label: "PAM server", address: lab.host, port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId: "$0" } } },
     ]);
     await page.reload();
-    await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: "PAM server" }).click();
-    await page.getByTestId("host-detail").getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByTestId("hosts-page").getByRole("button", { name: "Connect PAM server", exact: true }).click();
     await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
     const prompt = page.getByTestId("credential-prompt-dialog");
     await expect(prompt).toBeVisible();

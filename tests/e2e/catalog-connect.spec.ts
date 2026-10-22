@@ -46,7 +46,8 @@ test("a server created in the UI connects through production main: trust, passwo
     await changeCatalog(app, [{ type: "create-identity", data: { label: identity, username: lab.username, method: "password" } }]);
     await page.reload();
     const hosts = page.getByTestId("hosts-page");
-    const detail = page.getByTestId("host-detail");
+    /** A Servers table row, by the server's name. */
+    const row = (label: string) => hosts.getByRole("row").filter({ has: page.locator("button[data-host-id]", { hasText: label }) });
     await expect(hosts.getByText("No servers yet", { exact: true })).toBeVisible();
     const choose = async (dialog: Locator, label: string, option: string) => {
       await dialog.getByLabel(label, { exact: true }).click();
@@ -70,12 +71,12 @@ test("a server created in the UI connects through production main: trust, passwo
       await choose(serverEditor, "Identity", auth);
       await serverEditor.getByRole("button", { name: "Save", exact: true }).click();
       await expect(serverEditor).toHaveCount(0);
-      await expect(detail.getByRole("heading", { name: label })).toBeVisible();
+      await expect(row(label)).toBeVisible();
     };
 
     // A server whose identity is cleared cannot connect, and says why.
     await addServer(unconfigured, "No identity");
-    const connect = detail.getByRole("button", { name: "Connect", exact: true });
+    let connect = hosts.getByRole("button", { name: `Connect ${unconfigured}`, exact: true });
     await expect(connect).toHaveAttribute("aria-disabled", "true");
     await expect(connect).toHaveAccessibleDescription("Choose an identity to connect.");
     // aria-disabled keeps it focusable; activating it from the keyboard opens nothing.
@@ -85,9 +86,17 @@ test("a server created in the UI connects through production main: trust, passwo
     await expect(page.getByRole("tablist", { name: "Terminal tabs" }), "no session was opened").toHaveCount(0);
 
     await addServer(server, `${identity} (${lab.username})`);
-    await expect(detail).toContainText(`${lab.port} · from group ${group}`);
-    await expect(detail).toContainText(`${lab.username}@${lab.host}:${lab.port}`);
-    await expect(detail.getByText("PROD", { exact: true }).first()).toBeVisible();
+    // The row names the execution target, identity and PROD; the host drawer says where the port comes from.
+    await expect(row(server).locator(".host-target")).toHaveText(`${lab.username}@${lab.host}:${lab.port}`);
+    await expect(row(server)).toContainText(`${identity} (${lab.username})`);
+    await expect(row(server).getByText("PROD", { exact: true })).toBeVisible();
+    await expect(row(server).locator(".connection-status")).toHaveText("Disconnected");
+    await row(server).locator("button[data-host-id]").click();
+    await expect(serverEditor.getByText(`Uses ${lab.port}, from group ${group}.`)).toBeVisible();
+    await expect(serverEditor.getByLabel("Saved connection")).toContainText(`${lab.username}@${lab.host}:${lab.port}`);
+    await page.keyboard.press("Escape");
+    await expect(serverEditor).toHaveCount(0);
+    connect = hosts.getByRole("button", { name: `Connect ${server}`, exact: true });
     await expect(connect).not.toHaveAttribute("aria-disabled", "true");
 
     // Connect switches to the terminal view before the session is Ready.
@@ -126,6 +135,15 @@ test("a server created in the UI connects through production main: trust, passwo
     await expect(rows).toContainText("UI-CONNECT-42");
     expect(await shells()).toBe(1);
 
+    // Servers shows the live state per row and the workspace summary (ready terminals and SFTP sessions).
+    await page.getByRole("button", { name: "Servers", exact: true }).click();
+    await expect(row(server).locator(".connection-status")).toHaveAttribute("data-state", "connected");
+    await expect(row(server).locator(".connection-status")).toHaveText("Connected");
+    await expect(row(unconfigured).locator(".connection-status")).toHaveText("Disconnected");
+    await expect(page.getByTestId("servers-summary")).toHaveText(/Local workspace\s*2 servers\s*1 connected/u);
+    await page.getByRole("button", { name: /^Terminals/u }).click();
+    await expect(pane).toBeVisible();
+
     // Lock closes the session; Connect from the servers page is the explicit unlock.
     await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("lock-screen"); });
     await expect(pane.getByText(locked, { exact: true })).toBeVisible({ timeout: 10_000 });
@@ -133,7 +151,6 @@ test("a server created in the UI connects through production main: trust, passwo
     await pane.getByRole("button", { name: "Close pane", exact: true }).click();
     await expect(pane).toHaveCount(0);
     await page.getByRole("button", { name: "Show servers" }).click();
-    await hosts.locator("button[data-host-id]", { hasText: server }).click();
     await connect.click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Terminals");
     // The key is remembered and the password was not saved: only the password is asked for again.

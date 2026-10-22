@@ -118,9 +118,13 @@ async function lab(desktop: Desktop, servers: { label: string; prod?: boolean; u
       await credentials.getByRole("button", { name: "Continue", exact: true }).click();
       await expect(credentials).toHaveCount(0);
     },
+    /** Views the server: opens its host drawer (making it the current row) and closes it again. */
     async select(label: string) {
       await page.getByRole("button", { name: /^All servers/u }).click();
       await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: label }).click();
+      await expect(page.getByTestId("server-editor").getByLabel("Name")).toHaveValue(label);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("server-editor")).toHaveCount(0);
     },
   };
 }
@@ -176,9 +180,10 @@ test("Files browses a real OpenSSH server and This Mac: hostile names, links, pe
   const label = "คลังไฟล์ ผลิตจริง";
   const w = await lab(desktop, [{ label, prod: true }]);
   try {
-    // Open SFTP from the host detail: trust, password, Ready at the remote home.
+    // Open files from the server's ⋯ menu on Servers: trust, password, Ready at the remote home.
     await w.select(label);
-    await page.getByTestId("host-detail").getByRole("button", { name: "Open SFTP", exact: true }).click();
+    await page.getByTestId("hosts-page").getByRole("button", { name: `Actions for ${label}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Open files", exact: true }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Files");
     await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
     await w.password(label);
@@ -504,7 +509,7 @@ test("Open in SFTP from a terminal pane uses that pane's saved host; closing SFT
   const w = await lab(desktop, [{ label: alpha, prod: true }, { label: bravo, username: "nobody-here" }]);
   try {
     await w.select(alpha);
-    await page.getByTestId("host-detail").getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${alpha}`, exact: true }).click();
     await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
     await w.password(alpha);
     const terminal = page.locator(`section[aria-label="Terminal for ${alpha}"]`);
@@ -512,7 +517,7 @@ test("Open in SFTP from a terminal pane uses that pane's saved host; closing SFT
     const screen = terminal.locator(".xterm-rows");
     await expect(screen).toContainText("fixture@", { timeout: 20_000 });
 
-    // Showing bravo's detail first makes sure the menu captures the pane's host, not the last one viewed.
+    // Viewing bravo first makes sure the menu captures the pane's host, not the last one viewed.
     await w.select(bravo);
     await page.getByRole("button", { name: /^Terminals/u }).click();
     await terminal.getByRole("button", { name: "Pane actions", exact: true }).click();

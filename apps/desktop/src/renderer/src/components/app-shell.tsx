@@ -80,6 +80,7 @@ import {
 } from "@/components/catalog/catalog-sidebar";
 import {
   HostsPage,
+  connection,
   type ConnectFailure,
 } from "@/components/catalog/hosts-page";
 import { GroupEditor, HostEditor } from "@/components/catalog/editors";
@@ -392,6 +393,8 @@ export function AppShell() {
     recordings: !owner,
     team: !ready,
   };
+  // Servers rows and summary: terminal and SFTP sessions alike.
+  const hostSessions = useMemo(() => [...sessions, ...sftp.sessions], [sessions, sftp.sessions]);
   const navCount: Partial<Record<Page, number>> = { terminals: sessions.length, tunnels: running || undefined };
 
   const sidebarToggleButton = (
@@ -690,13 +693,12 @@ export function AppShell() {
                     <RecordingsPage owner={owner} onOpenSettings={() => openSettings("recording")} />
                   ) : page !== "identities" && page !== "snippets" && page !== "tunnels" && page !== "recordings" && page !== "team" && state && ready ? (
                     <HostsPage
-                      catalog={catalog}
                       state={state}
                       hosts={view.hosts}
                       scope={view.scope}
                       filtering={view.filtering}
                       selectedId={selectedId}
-                      sessions={sessions}
+                      sessions={hostSessions}
                       connectFailure={connectFailure}
                       onSelect={setSelectedId}
                       onAddHost={() => setDialog({ kind: "host", groupId: groupScope })}
@@ -775,6 +777,11 @@ export function AppShell() {
           state={state}
           hostId={dialog.id}
           groupId={dialog.groupId}
+          status={
+            dialog.id
+              ? connection(hostSessions, dialog.id, (session) => session.phase === "connecting" && awaitingTrust.has(session.sessionId))
+              : undefined
+          }
           onClose={closeDialog}
           onSaved={(id) => {
             closeDialog();

@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangleIcon } from "lucide-react";
+import { AlertTriangleIcon, CheckIcon } from "lucide-react";
 import type {
   CatalogChangeIntent,
   CatalogEffective,
@@ -11,9 +11,10 @@ import type {
   ErrorCode,
 } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Drawer, useDrawerClose } from "@/components/drawer";
+import { ConnectionStatus, type ConnectionState } from "@/components/connection/connection-status";
+import { EnvironmentBadge } from "@/components/connection/host-identity";
 import {
   Field,
   FieldDescription,
@@ -23,6 +24,12 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -31,12 +38,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Catalog } from "@/hooks/use-catalog";
 import {
+  compareLabel,
+  endpointText,
   groupOptions,
   groupTree,
   memberDefaults,
+  normalized,
   provenance,
 } from "@/lib/catalog-filter";
 import {
@@ -47,6 +58,7 @@ import {
   hostDraft,
   hostErrors,
   hostIntent,
+  labelError,
   rebaseDraft,
   serverFieldErrors,
   type Field as FieldName,
@@ -157,6 +169,8 @@ function useEditor<D extends object, E extends Entity>(options: EditorOptions<D,
     await commit(result.value.token);
   }
   return {
+    /** The entity the draft started from (its revision fences the save). */
+    base,
     draft,
     errors,
     phase,
@@ -171,7 +185,7 @@ function useEditor<D extends object, E extends Entity>(options: EditorOptions<D,
     back: () => setPhase({ kind: "edit" }),
     reload() {
       // Rebase only once the reloaded state (the latest entity) has arrived.
-      void catalog.reload().then(() => setRebasing(true));
+      return catalog.reload().then(() => setRebasing(true));
     },
   };
 }
@@ -184,6 +198,8 @@ function EditorFrame<D extends object>({
   description,
   noun,
   onClose,
+  after,
+  hold = false,
   children,
 }: {
   editor: Editor<D>;
@@ -192,6 +208,10 @@ function EditorFrame<D extends object>({
   description: string;
   noun: "server" | "group";
   onClose(): void;
+  /** Shown under the form (not in the impact step): parts that apply on their own, outside the draft. */
+  after?: ReactNode;
+  /** Save waits while such a part is changing the same entity. */
+  hold?: boolean;
   children: ReactNode;
 }) {
   const { phase } = editor;
@@ -225,7 +245,7 @@ function EditorFrame<D extends object>({
             <Button variant="outline" disabled={busy} onClick={editor.close.request}>
               Cancel
             </Button>
-            <Button type="submit" form={formId} disabled={busy || phase.kind === "gone"}>
+            <Button type="submit" form={formId} disabled={busy || hold || phase.kind === "gone"}>
               {busy ? <Spinner data-icon="inline-start" /> : null}Save
             </Button>
           </>
@@ -289,6 +309,7 @@ function EditorFrame<D extends object>({
           </AlertDescription>
         </Alert>
       ) : null}
+      {phase.kind === "confirm" ? null : after}
     </Drawer>
   );
 }
@@ -532,11 +553,42 @@ const environments = [
   { value: "PROD", label: "PROD" },
 ];
 
+/** The execution target, e.g. "deploy@web-1:2222" or "[fd00::10]:22". */
+export function hostTarget(host: CatalogHost, identities: ReadonlyMap<string, CatalogIdentity>): string {
+  const identity =
+    host.effective.authSelection === "identity" && host.effective.identityId
+      ? identities.get(host.effective.identityId)
+      : undefined;
+  return endpointText(host.address, host.effective.port, identity?.username);
+}
+
+/** SST-030: the path outermost first, e.g. "Bastion → Inner → this server", or the proxy, or "Direct". */
+function routeText(host: CatalogHost, state: CatalogState): string {
+  if (host.proxy) return `${host.proxy.type === "http" ? "HTTP" : "SOCKS5"} proxy ${host.proxy.host}:${host.proxy.port}`;
+  if (!host.jumpHostId) return "Direct";
+  const byId = new Map(state.hosts.map((row) => [row.id, row]));
+  const path: string[] = [];
+  const seen = new Set<string>([host.id]);
+  for (let id: string | null = host.jumpHostId; id && !seen.has(id) && path.length < 4; ) {
+    seen.add(id);
+    const jump = byId.get(id);
+    if (!jump) { path.unshift("Missing server"); break; }
+    path.unshift(jump.environment === "PROD" ? `${jump.label} (PROD)` : jump.label);
+    id = jump.jumpHostId;
+  }
+  return `${path.join(" → ")} → this server`;
+}
+
+/**
+ * The host drawer (SST-040/10): editing a saved server also shows what the former detail panel did — its connection
+ * state, the saved target and route, and its tags, which apply at once (outside the draft).
+ */
 export function HostEditor({
   catalog,
   state,
   hostId,
   groupId = null,
+  status,
   onClose,
   onSaved,
 }: {
@@ -544,11 +596,14 @@ export function HostEditor({
   state: CatalogState;
   hostId?: string;
   groupId?: string | null;
+  status?: ConnectionState;
   onClose(): void;
   onSaved(createdId?: string): void;
 }) {
   const latest = hostId ? state.hosts.find((host) => host.id === hostId) : undefined;
   const { groups, identities, tree } = useCatalogMaps(state);
+  // A tag change in flight is revision-fenced on this server; a save meanwhile would conflict.
+  const [tagsBusy, setTagsBusy] = useState(false);
   const editor = useEditor<HostDraft, CatalogHost>({
     catalog,
     state,
@@ -574,16 +629,38 @@ export function HostEditor({
         latest ? (
           <>
             <span className="min-w-0 break-all">{latest.label}</span>
-            {latest.environment ? (
-              <Badge variant={latest.environment === "PROD" ? "production" : "outline"}>
-                {latest.environment}
-              </Badge>
-            ) : null}
+            <EnvironmentBadge environment={latest.environment} />
+            {status ? <ConnectionStatus state={status} /> : null}
           </>
         ) : undefined
       }
       description="Port and identity can come from the server's group. Address and environment are set here."
       onClose={onClose}
+      hold={tagsBusy}
+      after={
+        latest ? (
+          <>
+            <HostTags
+              catalog={catalog}
+              state={state}
+              host={latest}
+              busy={tagsBusy || editor.phase.kind === "busy"}
+              setBusy={setTagsBusy}
+              // The tag change moved the server's revision. A draft based on the revision the change started from is
+              // rebased on it, so Save is not a conflict; an older draft keeps the conflict path (Reload to review).
+              onChanged={(before) =>
+                before === editor.base?.revision ? editor.reload() : Promise.resolve()
+              }
+            />
+            <dl className="catalog-facts" aria-label="Saved connection">
+              <dt>Target</dt>
+              <dd className="host-target break-all">{hostTarget(latest, identities)}</dd>
+              <dt>Connect via</dt>
+              <dd className="break-all" data-testid="host-route">{routeText(latest, state)}</dd>
+            </dl>
+          </>
+        ) : undefined
+      }
     >
       <TextField
         id={field("label")}
@@ -774,5 +851,147 @@ export function GroupEditor({
         identities={identities}
       />
     </EditorFrame>
+  );
+}
+
+/** One membership change at a time, each revision-fenced on the host. Controls stay enabled (guarded) so keyboard focus is kept. */
+function HostTags({
+  catalog,
+  state,
+  host,
+  busy,
+  setBusy,
+  onChanged,
+}: {
+  catalog: Catalog;
+  state: CatalogState;
+  host: CatalogHost;
+  busy: boolean;
+  setBusy(busy: boolean): void;
+  /** With the host revision the change was fenced on; Save stays held until this settles. */
+  onChanged(before: number): Promise<void>;
+}) {
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState<string>();
+  const input = useRef<HTMLInputElement>(null);
+  const heading = useId();
+  const tags = useMemo(() => [...state.tags].sort(compareLabel), [state.tags]);
+  async function change(
+    intent: Parameters<Catalog["prepare"]>[0],
+  ): Promise<string | undefined> {
+    const conflict = async () => {
+      // Show the current revision so the retry is fenced on what the user now sees.
+      await catalog.reload();
+      setError("This server changed. Review it and try again.");
+    };
+    const prepared = await catalog.prepare(intent);
+    if (!prepared.ok)
+      return prepared.error.code === "conflict"
+        ? void (await conflict())
+        : void setError("Tags could not be changed. Try again.");
+    if (prepared.value.kind === "invalid") {
+      const errors = serverFieldErrors(prepared.value.fields);
+      return void setError(errors.label ?? errors.tag ?? "Tags could not be changed.");
+    }
+    const applied = await catalog.apply(prepared.value.token);
+    if (!applied.ok)
+      return applied.error.code === "conflict"
+        ? void (await conflict())
+        : void setError("Tags could not be changed. Try again.");
+    return applied.value.createdIds[0] ?? "";
+  }
+  async function toggle(tagId: string, present: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    const before = host.revision;
+    const done = await change({ type: "set-host-tag", hostId: host.id, tagId, present, expectedHostRevision: before });
+    if (done !== undefined) await onChanged(before);
+    setBusy(false);
+  }
+  async function add() {
+    if (busy) return;
+    const invalid = labelError(label);
+    if (invalid) {
+      setError(invalid);
+      input.current?.focus();
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    const before = host.revision;
+    const existing = state.tags.find((tag) => normalized(tag.label) === normalized(label));
+    const tagId = existing?.id ?? (await change({ type: "create-tag", data: { label: label.trim() } }));
+    if (tagId && !host.tagIds.includes(tagId)) {
+      const done = await change({
+        type: "set-host-tag",
+        hostId: host.id,
+        tagId,
+        present: true,
+        expectedHostRevision: before,
+      });
+      if (done !== undefined) {
+        setLabel("");
+        await onChanged(before);
+      }
+    } else if (tagId) setLabel("");
+    setBusy(false);
+  }
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-2" role="group" aria-labelledby={heading}>
+      <h3 id={heading} className="type-label">
+        Tags
+      </h3>
+      <p className="type-caption text-muted-foreground">Tags apply immediately, without Save.</p>
+      {tags.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((tag) => {
+            const assigned = host.tagIds.includes(tag.id);
+            return (
+              <Toggle
+                key={tag.id}
+                variant="outline"
+                size="sm"
+                className="max-w-full"
+                title={tag.label}
+                pressed={assigned}
+                onPressedChange={(pressed) => void toggle(tag.id, pressed)}
+              >
+                {assigned ? <CheckIcon data-icon="inline-start" /> : null}
+                <span className="min-w-0 truncate">{tag.label}</span>
+              </Toggle>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="type-caption text-muted-foreground">No tags yet.</p>
+      )}
+      <InputGroup className="max-w-xs">
+        <InputGroupInput
+          ref={input}
+          aria-label="New tag"
+          placeholder="New tag"
+          value={label}
+          aria-busy={busy || undefined}
+          aria-invalid={error ? true : undefined}
+          onChange={(event) => {
+            setLabel(event.target.value);
+            setError(undefined);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void add();
+            }
+          }}
+        />
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton disabled={!label.trim()} onClick={() => void add()}>
+            {busy ? <Spinner /> : null}Add tag
+          </InputGroupButton>
+        </InputGroupAddon>
+      </InputGroup>
+      {error ? <FieldError>{error}</FieldError> : null}
+    </div>
   );
 }

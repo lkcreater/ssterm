@@ -119,7 +119,10 @@ function privacy(app: ElectronApplication, secretFiles: string[]) {
 
 function ui(page: Page) {
   const hosts = page.getByTestId("hosts-page");
-  const detail = page.getByTestId("host-detail");
+  /** A Servers table row, by the server's name. */
+  const row = (label: string) => hosts.getByRole("row").filter({ has: page.locator("button[data-host-id]", { hasText: label }) });
+  // The server openServer showed last; its row holds Connect, the identity and the status.
+  let current = "";
   const identities = page.getByTestId("identities-page");
   const editor = page.getByTestId("identity-editor");
   const choose = async (dialog: Locator, label: string, option: string) => {
@@ -127,10 +130,12 @@ function ui(page: Page) {
     await page.getByRole("option", { name: option, exact: true }).click();
   };
   return {
-    hosts, detail, identities, editor, choose,
+    hosts, row, identities, editor, choose,
+    server: page.getByTestId("server-editor"),
+    get detail() { return row(current); },
+    get connect() { return hosts.getByRole("button", { name: `Connect ${current}`, exact: true }); },
     trust: page.getByTestId("host-trust-dialog"),
     prompt: page.getByTestId("credential-prompt-dialog"),
-    connect: detail.getByRole("button", { name: "Connect", exact: true }),
     pane: (label: string) => page.locator(`section[aria-label="Terminal for ${label}"]`),
     async openIdentities() {
       await page.getByRole("button", { name: "Identities", exact: true }).click();
@@ -138,8 +143,8 @@ function ui(page: Page) {
     },
     async openServer(label: string) {
       await page.getByRole("button", { name: /^All servers/u }).click();
-      await hosts.locator("button[data-host-id]", { hasText: label }).click();
-      await expect(detail.getByRole("heading", { name: label })).toBeVisible();
+      current = label;
+      await expect(row(label)).toBeVisible();
     },
     async addServer(options: { label: string; address: string; group?: string; identity?: string; environment?: string }) {
       await hosts.getByRole("button", { name: "Add server" }).click();
@@ -151,7 +156,8 @@ function ui(page: Page) {
       if (options.identity) await choose(server, "Identity", options.identity);
       await server.getByRole("button", { name: "Save", exact: true }).click();
       await expect(server).toHaveCount(0);
-      await expect(detail.getByRole("heading", { name: options.label })).toBeVisible();
+      current = options.label;
+      await expect(row(options.label)).toBeVisible();
     },
     /** Opens the editor for a new identity from either the empty state or the heading. */
     async newIdentity(label: string, username: string) {
@@ -240,7 +246,11 @@ test("F03: a shared password identity saved in the Keychain connects grouped ser
     await u.save(groupEditor);
     for (const label of [hostA, hostB]) await u.addServer({ label, address: lab.host, group, environment: "PROD" });
     await expect(u.detail).toContainText(`${identity} (${lab.username})`);
-    await expect(u.detail).toContainText(`from group ${group}`);
+    // The host drawer says where the identity comes from.
+    await u.detail.locator("button[data-host-id]").click();
+    await expect(u.server).toContainText(`Uses ${identity} (${lab.username}), from group ${group}.`);
+    await page.keyboard.press("Escape");
+    await expect(u.server).toHaveCount(0);
     await u.openIdentities();
     await expect(u.identityRow(identity)).toContainText("Used by 2 servers (0 direct, 2 via groups)");
 
@@ -275,6 +285,12 @@ test("F03: a shared password identity saved in the Keychain connects grouped ser
     paneB = u.pane(hostB);
     await expect(paneB).toContainText("Couldn't connect: the server rejected the credentials", { timeout: 20_000 });
     await expect(u.prompt).toHaveCount(0);
+    // Servers shows the failed session as its tab does, and hostA stays Connected.
+    await page.getByRole("button", { name: "Servers", exact: true }).click();
+    await expect(u.row(hostB).locator(".connection-status")).toHaveAttribute("data-state", "error");
+    await expect(u.row(hostB).locator(".connection-status")).toHaveText("Connection error");
+    await expect(u.row(hostA).locator(".connection-status")).toHaveText("Connected");
+    await page.getByRole("button", { name: /^Terminals/u }).click();
     await paneB.getByRole("button", { name: "Close pane", exact: true }).click();
     await expect(paneB).toHaveCount(0);
 

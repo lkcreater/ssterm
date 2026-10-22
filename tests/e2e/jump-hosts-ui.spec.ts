@@ -68,12 +68,15 @@ test("F-jump: a server saved with a jump host connects through it; each prompt n
     await editor.getByRole("button", { name: /^Save/u }).click();
     await expect(editor).toHaveCount(0);
 
-    const detail = page.getByTestId("host-detail");
-    await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: "ฐานข้อมูล Target" }).click();
-    await expect(detail.getByTestId("host-route")).toHaveText("Bastion → this server");
+    // The host drawer shows the saved route.
+    const hosts = page.getByTestId("hosts-page");
+    await hosts.locator("button[data-host-id]", { hasText: "ฐานข้อมูล Target" }).click();
+    await expect(editor.getByTestId("host-route")).toHaveText("Bastion → this server");
+    await page.keyboard.press("Escape");
+    await expect(editor).toHaveCount(0);
 
     // Connect: the bastion's key and password come first, each labelled as the bastion on the way to the target.
-    await detail.getByRole("button", { name: "Connect", exact: true }).click();
+    await hosts.getByRole("button", { name: "Connect ฐานข้อมูล Target", exact: true }).click();
     const trust = page.getByTestId("host-trust-dialog");
     await expect(trust).toContainText("Bastion");
     await expect(trust.getByTestId("trust-jump-for")).toHaveText("Jump host on the way to ฐานข้อมูล Target. This key belongs to the jump host.");
@@ -107,8 +110,8 @@ test("F-jump: a server saved with a jump host connects through it; each prompt n
 
     // A loop is refused in the editor, and the jump host cannot be deleted while the target uses it.
     await page.getByRole("button", { name: /^All servers/u }).click();
-    await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: "Bastion" }).click();
-    await detail.getByRole("button", { name: "Edit", exact: false }).first().click();
+    await hosts.getByRole("button", { name: "Actions for Bastion", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
     const bastionEditor = page.getByTestId("server-editor");
     await choose(page, bastionEditor, "Connect via", "A jump host (another saved server)");
     await choose(page, bastionEditor, "Jump host", "ฐานข้อมูล Target · PROD");
@@ -117,7 +120,8 @@ test("F-jump: a server saved with a jump host connects through it; each prompt n
     await bastionEditor.getByRole("button", { name: "Cancel" }).click();
     await bastionEditor.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(bastionEditor).toHaveCount(0);
-    await detail.getByRole("button", { name: "Delete", exact: false }).first().click();
+    await hosts.getByRole("button", { name: "Actions for Bastion", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
     const remove = page.getByTestId("delete-host-drawer");
     // The preview already reports why; nothing can be confirmed.
     await expect(remove).toContainText("Another server connects through this one.");

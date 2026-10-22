@@ -150,8 +150,7 @@ async function setup(initial: Desktop) {
         const { page } = desktop;
         const before = await ids(page);
         await page.getByRole("button", { name: /^All servers/u }).click();
-        await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: label }).click();
-        await page.getByTestId("host-detail").getByRole("button", { name: "Connect", exact: true }).click();
+        await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${label}`, exact: true }).click();
         if (trust) await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
         let id = "";
         await expect.poll(async () => id = (await ids(page)).find(id => !before.includes(id)) ?? "").not.toBe("");

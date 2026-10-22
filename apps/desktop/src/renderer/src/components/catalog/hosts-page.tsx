@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import { PageHeader } from "@/components/page-header";
 import {
   AlertTriangleIcon,
-  CheckIcon,
+  EllipsisIcon,
   FolderOpenIcon,
   FolderPlusIcon,
   PencilIcon,
@@ -19,8 +19,14 @@ import {
   type TerminalSession,
 } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyContent,
@@ -29,49 +35,40 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { FieldError } from "@/components/ui/field";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import { Spinner } from "@/components/ui/spinner";
-import { Toggle } from "@/components/ui/toggle";
 import {
   ConnectionStatus,
+  useAwaitingTrust,
   type ConnectionState,
 } from "@/components/connection/connection-status";
-import { identityText } from "@/components/catalog/editors";
+import { hostTarget, identityText } from "@/components/catalog/editors";
 import { EnvironmentBadge } from "@/components/connection/host-identity";
-import type { Catalog } from "@/hooks/use-catalog";
-import {
-  compareLabel,
-  endpointText,
-  normalized,
-  provenance,
-  type CatalogScope,
-} from "@/lib/catalog-filter";
-import { labelError, serverFieldErrors } from "@/lib/catalog-validation";
+import type { CatalogScope } from "@/lib/catalog-filter";
 
 export type ConnectFailure = { hostId: string; message: string };
 
-type Identities = ReadonlyMap<string, CatalogState["identities"][number]>;
-function target(host: CatalogHost, identities: Identities): string {
-  const identity =
-    host.effective.authSelection === "identity" && host.effective.identityId
-      ? identities.get(host.effective.identityId)
-      : undefined;
-  return endpointText(host.address, host.effective.port, identity?.username);
-}
-function connection(sessions: TerminalSession[], hostId: string): ConnectionState | undefined {
+type Session = Pick<TerminalSession, "sessionId" | "hostId" | "phase">;
+
+/**
+ * A server's state from its terminal and SFTP sessions, the healthiest first: any ready one is Connected; a connecting
+ * one waiting for a trust decision is Awaiting trust (as on its tab); a failed one is Connection error.
+ */
+export function connection(
+  sessions: readonly Session[],
+  hostId: string,
+  awaiting: (session: Session) => boolean = () => false,
+): ConnectionState | undefined {
   const own = sessions.filter((session) => session.hostId === hostId);
   if (own.some((session) => session.phase === "ready")) return "connected";
-  if (own.some((session) => session.phase === "connecting")) return "connecting";
+  const connecting = own.filter((session) => session.phase === "connecting");
+  if (connecting.length) return connecting.some(awaiting) ? "awaiting-trust" : "connecting";
+  if (own.some((session) => session.phase === "failed")) return "error";
 }
 
+/**
+ * Servers (SST-040/10): a column table sorted by name, one tab stop (arrows, Home and End move between rows), Connect
+ * and a ⋯ menu per row. Activating a row opens the host drawer, which holds what the former detail panel showed.
+ */
 export function HostsPage({
-  catalog,
   state,
   hosts,
   scope,
@@ -91,7 +88,6 @@ export function HostsPage({
   onClearFilters,
   toolbar,
 }: {
-  catalog: Catalog;
   /** Search and tag filter, shown first among the header actions. */
   toolbar?: ReactNode;
   state: CatalogState;
@@ -100,7 +96,8 @@ export function HostsPage({
   scope: CatalogScope;
   filtering: boolean;
   selectedId?: string;
-  sessions: TerminalSession[];
+  /** This window's terminal and SFTP sessions. */
+  sessions: readonly Session[];
   connectFailure?: ConnectFailure;
   onSelect(id: string): void;
   onAddHost(): void;
@@ -114,23 +111,34 @@ export function HostsPage({
   onClearFilters(): void;
 }) {
   const groups = useMemo(() => new Map(state.groups.map((group) => [group.id, group])), [state.groups]);
-  const tags = useMemo(() => new Map(state.tags.map((tag) => [tag.id, tag])), [state.tags]);
   const identities = useMemo(
     () => new Map(state.identities.map((row) => [row.id, row])),
     [state.identities],
   );
-  const list = useRef<HTMLUListElement>(null);
+  const body = useRef<HTMLTableSectionElement>(null);
+  const awaiting = useAwaitingTrust();
+  // As the removed global status bar counted them: ready terminals and ready SFTP sessions.
+  const connected = sessions.filter((session) => session.phase === "ready").length;
   const group = scope.kind === "group" ? groups.get(scope.groupId) : undefined;
-  const selected = hosts.find((host) => host.id === selectedId) ?? hosts[0];
-  const title =
+  const current = (hosts.find((host) => host.id === selectedId) ?? hosts[0])?.id;
+  const scopeLabel =
     scope.kind === "all" ? "All servers" : scope.kind === "ungrouped" ? "Ungrouped" : (group?.label ?? "Group");
   const empty = state.hosts.length === 0 && state.groups.length === 0 && !filtering;
+  const failed = connectFailure && state.hosts.find((host) => host.id === connectFailure.hostId);
+  const open = (id: string) => {
+    onSelect(id);
+    onEditHost(id);
+  };
+  const count = (n: number) => `${n} ${n === 1 ? "server" : "servers"}`;
   return (
     <div className="catalog-page" data-testid="hosts-page">
-      {/* Focus target after a deletion removes the focused control. */}
       <PageHeader
-        title={title}
-        subtitle={`Your SSH workspace · ${hosts.length} ${hosts.length === 1 ? "server" : "servers"}`}
+        title="Servers"
+        subtitle={
+          <>
+            <span data-testid="hosts-scope" className="[overflow-wrap:anywhere]">{scopeLabel}</span> · {count(hosts.length)}
+          </>
+        }
         actions={
           <>
             {toolbar}
@@ -157,6 +165,13 @@ export function HostsPage({
         <p className="type-caption text-muted-foreground">
           Showing the first {MAX_CATALOG_ITEMS.toLocaleString()} items of each kind.
         </p>
+      ) : null}
+      {failed ? (
+        <Alert variant="destructive">
+          <AlertTriangleIcon />
+          <AlertTitle className="[overflow-wrap:anywhere]">Could not connect to {failed.label}</AlertTitle>
+          <AlertDescription>{connectFailure.message}</AlertDescription>
+        </Alert>
       ) : null}
       {empty ? (
         <Empty>
@@ -224,339 +239,176 @@ export function HostsPage({
           </Empty>
         )
       ) : (
-        <div className="catalog-split">
-          <ul
-            ref={list}
-            className="catalog-list"
-            aria-label={`${title} servers`}
-            onKeyDown={(event) => {
-              const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>("button[data-host-id]") ?? [])];
-              const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-              const step: Record<string, number> = {
-                ArrowDown: index + 1,
-                ArrowUp: index - 1,
-                Home: 0,
-                End: buttons.length - 1,
-              };
-              const next = buttons[step[event.key] ?? -1];
-              if (index < 0 || !next) return;
-              event.preventDefault();
-              next.focus();
-              onSelect(next.dataset.hostId!);
-            }}
-          >
-            {hosts.map((host) => {
-              const current = host.id === selected?.id;
-              const status = connection(sessions, host.id);
-              const path = host.ancestry.map((row) => row.label).join(" / ");
-              return (
-                <li key={host.id}>
-                  <button
-                    type="button"
-                    className="catalog-row"
-                    data-host-id={host.id}
-                    // One tab stop: arrows, Home and End move between rows.
-                    tabIndex={current ? 0 : -1}
-                    aria-current={current ? "true" : undefined}
-                    onClick={() => onSelect(host.id)}
+        <div className="servers-frame">
+          <table className="servers-table" aria-label={`${scopeLabel} servers`}>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col" className="servers-address">Address</th>
+                <th scope="col" className="servers-identity">Identity</th>
+                <th scope="col" className="servers-env">Environment</th>
+                <th scope="col" className="servers-status">Status</th>
+                <th scope="col" className="servers-actions">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody
+              ref={body}
+              onKeyDown={(event) => {
+                const buttons = [...(body.current?.querySelectorAll<HTMLButtonElement>("button[data-host-id]") ?? [])];
+                const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                const step: Record<string, number> = {
+                  ArrowDown: index + 1,
+                  ArrowUp: index - 1,
+                  Home: 0,
+                  End: buttons.length - 1,
+                };
+                const next = buttons[step[event.key] ?? -1];
+                if (index < 0 || !next) return;
+                event.preventDefault();
+                next.focus();
+                onSelect(next.dataset.hostId!);
+              }}
+            >
+              {hosts.map((host) => {
+                const isCurrent = host.id === current;
+                // One tab stop for the table: only the current row's controls are in the tab order.
+                const tab = isCurrent ? 0 : -1;
+                const address = hostTarget(host, identities);
+                const identity = identityText(host.effective, identities);
+                const canConnect = host.effective.authSelection === "identity";
+                const reason = `${host.id}-connect-reason`;
+                const path = host.ancestry.map((row) => row.label).join(" / ");
+                return (
+                  <tr
+                    key={host.id}
+                    data-current={isCurrent || undefined}
+                    onClick={(event) => {
+                      // The row's own buttons (and the ⋯ menu, portalled but bubbling through React) act for themselves.
+                      if (
+                        event.detail > 1 ||
+                        !event.currentTarget.contains(event.target as Node) ||
+                        (event.target as Element).closest("button")
+                      )
+                        return;
+                      open(host.id);
+                    }}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 truncate font-medium" title={host.label}>{host.label}</span>
-                      <EnvironmentBadge environment={host.environment} />
-                      {status ? <span className="ml-auto shrink-0"><ConnectionStatus state={status} /></span> : null}
-                    </span>
-                    <span className="host-target truncate" title={target(host, identities)}>{target(host, identities)}</span>
-                    {path ? <span className="type-caption truncate text-muted-foreground" title={path}>{path}</span> : null}
-                    {host.tagIds.length ? (
-                      <span className="flex min-w-0 flex-wrap gap-1">
-                        {host.tagIds.map((id) => {
-                          const tag = tags.get(id);
-                          return tag ? (
-                            <Badge key={id} variant="secondary" className="max-w-full" title={tag.label}>
-                              <span className="min-w-0 truncate">{tag.label}</span>
-                            </Badge>
-                          ) : null;
-                        })}
+                    <td>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <ServerIcon aria-hidden="true" className="servers-row-icon size-4 shrink-0 text-muted-foreground" />
+                        <button
+                          type="button"
+                          className="servers-name"
+                          data-host-id={host.id}
+                          tabIndex={tab}
+                          aria-current={isCurrent ? "true" : undefined}
+                          title={path ? `${host.label} — ${path}` : host.label}
+                          onClick={(event) => {
+                            if (event.detail <= 1) open(host.id);
+                          }}
+                        >
+                          {host.label}
+                        </button>
                       </span>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {selected ? (
-            <HostDetail
-              key={selected.id}
-              catalog={catalog}
-              state={state}
-              host={selected}
-              groups={groups}
-              identities={identities}
-              status={connection(sessions, selected.id)}
-              failure={connectFailure?.hostId === selected.id ? connectFailure.message : undefined}
-              onEdit={() => onEditHost(selected.id)}
-              onDelete={() => onDeleteHost(selected.id)}
-              onConnect={() => onConnect(selected)}
-              onOpenSftp={() => onOpenSftp(selected)}
-            />
-          ) : null}
+                    </td>
+                    <td>
+                      <span className="host-target block truncate" title={address}>
+                        {address}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="block truncate" title={identity}>
+                        {identity}
+                      </span>
+                    </td>
+                    <td>
+                      <EnvironmentBadge environment={host.environment} />
+                    </td>
+                    <td>
+                      <ConnectionStatus
+                        state={
+                          connection(sessions, host.id, awaiting) ??
+                          (connectFailure?.hostId === host.id ? "error" : "disconnected")
+                        }
+                      />
+                    </td>
+                    <td>
+                      <span className="flex items-center justify-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          tabIndex={tab}
+                          aria-label={`Connect ${host.label}`}
+                          aria-disabled={canConnect ? undefined : true}
+                          aria-describedby={canConnect ? undefined : reason}
+                          title={canConnect ? undefined : "Choose an identity to connect."}
+                          className="aria-disabled:opacity-50"
+                          onClick={(event) => {
+                            onSelect(host.id);
+                            if (canConnect && event.detail <= 1) onConnect(host);
+                          }}
+                        >
+                          <TerminalIcon data-icon="inline-start" />
+                          <span className="servers-action-text">Connect</span>
+                        </Button>
+                        {canConnect ? null : (
+                          <span id={reason} className="sr-only">
+                            Choose an identity to connect.
+                          </span>
+                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={<Button size="icon-sm" variant="ghost" tabIndex={tab} />}
+                            aria-label={`Actions for ${host.label}`}
+                            // The row becomes current, so arrows and Tab go on from it once the menu closes.
+                            onClick={() => onSelect(host.id)}
+                          >
+                            <EllipsisIcon aria-hidden="true" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-40">
+                            <DropdownMenuItem onClick={() => open(host.id)}>
+                              <PencilIcon /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={!canConnect}
+                              aria-describedby={canConnect ? undefined : reason}
+                              title={canConnect ? undefined : "Choose an identity to connect."}
+                              onClick={() => onOpenSftp(host)}
+                            >
+                              <FolderOpenIcon /> Open files
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() => {
+                                onSelect(host.id);
+                                onDeleteHost(host.id);
+                              }}
+                            >
+                              <Trash2Icon /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
-    </div>
-  );
-}
-
-/** SST-030: the path outermost first, e.g. "Bastion → Inner → this server", or the proxy, or "Direct". */
-function routeText(host: CatalogHost, state: CatalogState): string {
-  if (host.proxy) return `${host.proxy.type === "http" ? "HTTP" : "SOCKS5"} proxy ${host.proxy.host}:${host.proxy.port}`;
-  if (!host.jumpHostId) return "Direct";
-  const byId = new Map(state.hosts.map((row) => [row.id, row]));
-  const path: string[] = [];
-  const seen = new Set<string>([host.id]);
-  for (let id: string | null = host.jumpHostId; id && !seen.has(id) && path.length < 4; ) {
-    seen.add(id);
-    const jump = byId.get(id);
-    if (!jump) { path.unshift("Missing server"); break; }
-    path.unshift(jump.environment === "PROD" ? `${jump.label} (PROD)` : jump.label);
-    id = jump.jumpHostId;
-  }
-  return `${path.join(" → ")} → this server`;
-}
-
-function HostDetail({
-  catalog,
-  state,
-  host,
-  groups,
-  identities,
-  status,
-  failure,
-  onEdit,
-  onDelete,
-  onConnect,
-  onOpenSftp,
-}: {
-  catalog: Catalog;
-  state: CatalogState;
-  host: CatalogHost;
-  groups: ReadonlyMap<string, CatalogState["groups"][number]>;
-  identities: Identities;
-  status?: ConnectionState;
-  failure?: string;
-  onEdit(): void;
-  onDelete(): void;
-  onConnect(): void;
-  onOpenSftp(): void;
-}) {
-  // A tag change in flight is revision-fenced on this host; editing or deleting it meanwhile would conflict.
-  const [tagsBusy, setTagsBusy] = useState(false);
-  const canConnect = host.effective.authSelection === "identity";
-  const reason = `${host.id}-connect-reason`;
-  return (
-    <section className="catalog-detail" aria-labelledby={`${host.id}-title`} data-testid="host-detail">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <h3 id={`${host.id}-title`} className="type-section min-w-0 break-all">
-          {host.label}
-        </h3>
-        <EnvironmentBadge environment={host.environment} />
-        {status ? <ConnectionStatus state={status} /> : null}
-      </div>
-      <p className="host-target break-all">{target(host, identities)}</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          aria-disabled={canConnect ? undefined : true}
-          aria-describedby={canConnect ? undefined : reason}
-          className="aria-disabled:opacity-50"
-          onClick={() => {
-            if (canConnect) onConnect();
-          }}
-        >
-          <TerminalIcon data-icon="inline-start" /> Connect
-        </Button>
-        <Button
-          variant="outline"
-          aria-disabled={canConnect ? undefined : true}
-          aria-describedby={canConnect ? undefined : reason}
-          className="aria-disabled:opacity-50"
-          onClick={() => {
-            if (canConnect) onOpenSftp();
-          }}
-        >
-          <FolderOpenIcon data-icon="inline-start" /> Open SFTP
-        </Button>
-        <Button variant="outline" disabled={tagsBusy} onClick={onEdit}>
-          <PencilIcon data-icon="inline-start" /> Edit
-        </Button>
-        <Button variant="outline" disabled={tagsBusy} onClick={onDelete}>
-          <Trash2Icon data-icon="inline-start" /> Delete
-        </Button>
-      </div>
-      {canConnect ? null : (
-        <p id={reason} className="type-caption text-muted-foreground">
-          Choose an identity to connect.
-        </p>
-      )}
-      {failure ? (
-        <Alert variant="destructive">
-          <AlertTriangleIcon />
-          <AlertTitle>Could not connect</AlertTitle>
-          <AlertDescription>{failure}</AlertDescription>
-        </Alert>
-      ) : null}
-      <dl className="catalog-facts">
-        <dt>Address</dt>
-        <dd className="font-mono break-all">{host.address}</dd>
-        <dt>Group</dt>
-        <dd className="break-all">
-          {host.ancestry.length ? host.ancestry.map((row) => row.label).join(" / ") : "No group"}
-        </dd>
-        <dt>Port</dt>
-        <dd>
-          {host.effective.port}{" "}
-          <span className="text-muted-foreground">· {provenance(host.effective.portSource, groups)}</span>
-        </dd>
-        <dt>Identity</dt>
-        <dd className="break-all">
-          {identityText(host.effective, identities)}{" "}
-          <span className="text-muted-foreground">· {provenance(host.effective.authSource, groups)}</span>
-        </dd>
-        <dt>Environment</dt>
-        <dd>{host.environment ?? "None"}</dd>
-        <dt>Connect via</dt>
-        <dd className="break-all" data-testid="host-route">{routeText(host, state)}</dd>
-      </dl>
-      <HostTags catalog={catalog} state={state} host={host} busy={tagsBusy} setBusy={setTagsBusy} />
-    </section>
-  );
-}
-
-/** One membership change at a time, each revision-fenced on the host. Controls stay enabled (guarded) so keyboard focus is kept. */
-function HostTags({
-  catalog,
-  state,
-  host,
-  busy,
-  setBusy,
-}: {
-  catalog: Catalog;
-  state: CatalogState;
-  host: CatalogHost;
-  busy: boolean;
-  setBusy(busy: boolean): void;
-}) {
-  const [label, setLabel] = useState("");
-  const [error, setError] = useState<string>();
-  const input = useRef<HTMLInputElement>(null);
-  const tags = useMemo(() => [...state.tags].sort(compareLabel), [state.tags]);
-  async function change(
-    intent: Parameters<Catalog["prepare"]>[0],
-  ): Promise<string | undefined> {
-    const conflict = async () => {
-      // Show the current revision so the retry is fenced on what the user now sees.
-      await catalog.reload();
-      setError("This server changed. Review it and try again.");
-    };
-    const prepared = await catalog.prepare(intent);
-    if (!prepared.ok)
-      return prepared.error.code === "conflict"
-        ? void (await conflict())
-        : void setError("Tags could not be changed. Try again.");
-    if (prepared.value.kind === "invalid") {
-      const errors = serverFieldErrors(prepared.value.fields);
-      return void setError(errors.label ?? errors.tag ?? "Tags could not be changed.");
-    }
-    const applied = await catalog.apply(prepared.value.token);
-    if (!applied.ok)
-      return applied.error.code === "conflict"
-        ? void (await conflict())
-        : void setError("Tags could not be changed. Try again.");
-    return applied.value.createdIds[0] ?? "";
-  }
-  async function toggle(tagId: string, present: boolean) {
-    if (busy) return;
-    setBusy(true);
-    setError(undefined);
-    await change({ type: "set-host-tag", hostId: host.id, tagId, present, expectedHostRevision: host.revision });
-    setBusy(false);
-  }
-  async function add() {
-    if (busy) return;
-    const invalid = labelError(label);
-    if (invalid) {
-      setError(invalid);
-      input.current?.focus();
-      return;
-    }
-    setBusy(true);
-    setError(undefined);
-    const existing = state.tags.find((tag) => normalized(tag.label) === normalized(label));
-    const tagId = existing?.id ?? (await change({ type: "create-tag", data: { label: label.trim() } }));
-    if (tagId && !host.tagIds.includes(tagId)) {
-      const done = await change({
-        type: "set-host-tag",
-        hostId: host.id,
-        tagId,
-        present: true,
-        expectedHostRevision: host.revision,
-      });
-      if (done !== undefined) setLabel("");
-    } else if (tagId) setLabel("");
-    setBusy(false);
-  }
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-2" role="group" aria-labelledby={`${host.id}-tags`}>
-      <h4 id={`${host.id}-tags`} className="type-label">
-        Tags
-      </h4>
-      {tags.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {tags.map((tag) => {
-            const assigned = host.tagIds.includes(tag.id);
-            return (
-              <Toggle
-                key={tag.id}
-                variant="outline"
-                size="sm"
-                className="max-w-full"
-                title={tag.label}
-                pressed={assigned}
-                onPressedChange={(pressed) => void toggle(tag.id, pressed)}
-              >
-                {assigned ? <CheckIcon data-icon="inline-start" /> : null}
-                <span className="min-w-0 truncate">{tag.label}</span>
-              </Toggle>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="type-caption text-muted-foreground">No tags yet.</p>
-      )}
-      <InputGroup className="max-w-xs">
-        <InputGroupInput
-          ref={input}
-          aria-label="New tag"
-          placeholder="New tag"
-          value={label}
-          aria-busy={busy || undefined}
-          aria-invalid={error ? true : undefined}
-          onChange={(event) => {
-            setLabel(event.target.value);
-            setError(undefined);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void add();
-            }
-          }}
-        />
-        <InputGroupAddon align="inline-end">
-          <InputGroupButton disabled={!label.trim()} onClick={() => void add()}>
-            {busy ? <Spinner /> : null}Add tag
-          </InputGroupButton>
-        </InputGroupAddon>
-      </InputGroup>
-      {error ? <FieldError>{error}</FieldError> : null}
+      {/* What the removed global status bar said about this workspace (SST-040 decision 2). */}
+      <p className="servers-footer" data-testid="servers-summary" data-connected={connected > 0 || undefined}>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="servers-dot" aria-hidden="true" />
+          Local workspace
+        </span>
+        <span className="ml-auto">{count(state.hosts.length)}</span>
+        <span className="servers-connected">{connected} connected</span>
+      </p>
     </div>
   );
 }

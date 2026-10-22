@@ -111,7 +111,9 @@ export function Drawer({
     <Sheet
       open={close.open}
       disablePointerDismissal={!dismissOnScrim}
-      onOpenChange={(open) => {
+      onOpenChange={(open, details) => {
+        // The second press of a double-click that opened this drawer lands on the scrim: not a dismissal.
+        if (details.reason === "outside-press" && ((details.event as MouseEvent | undefined)?.detail ?? 0) > 1) return;
         if (!open) close.request();
       }}
       onOpenChangeComplete={(open) => {

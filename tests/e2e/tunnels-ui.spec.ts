@@ -149,8 +149,8 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
 
     // Deleting the server while its tunnel runs is refused with a reason.
     await page.getByRole("button", { name: /^All servers/u }).click();
-    await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: server }).click();
-    await page.getByTestId("host-detail").getByRole("button", { name: "Delete", exact: false }).first().click();
+    await page.getByTestId("hosts-page").getByRole("button", { name: `Actions for ${server}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
     await expect(page.getByTestId("delete-host-drawer")).toContainText("A tunnel on this server is running.");
     await page.getByTestId("delete-host-drawer").getByRole("button", { name: "Cancel" }).click();
 

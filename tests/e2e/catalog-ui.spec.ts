@@ -12,13 +12,29 @@ const ui = (page: Page) => {
   const hosts = page.getByTestId("hosts-page");
   return {
     hosts,
-    detail: page.getByTestId("host-detail"),
+    /** The host drawer: the server editor, which also holds tags, the saved target and route. */
     server: page.getByTestId("server-editor"),
+    heading: hosts.getByRole("heading", { name: "Servers", exact: true }),
+    /** The Servers subtitle names the scope (All servers, Ungrouped or the group). */
+    scope: page.getByTestId("hosts-scope"),
     group: page.getByTestId("group-editor"),
     search: page.getByRole("searchbox", { name: "Search servers" }),
     status: hosts.locator("p[role=status]").first(),
     row: (label: string) => hosts.locator("button[data-host-id]", { hasText: label }),
     rows: hosts.locator("button[data-host-id]"),
+    /** A table row, by the server's name. */
+    tr: (label: string) => hosts.getByRole("row").filter({ has: page.locator("button[data-host-id]", { hasText: label }) }),
+    actions: (label: string) => hosts.getByRole("button", { name: `Actions for ${label}`, exact: true }),
+    /** Activating a row opens the host drawer. */
+    async open(label: string) {
+      await hosts.locator("button[data-host-id]", { hasText: label }).click();
+      await expect(page.getByTestId("server-editor").getByLabel("Name")).toHaveValue(label);
+    },
+    /** A clean drawer closes on Esc. */
+    async close() {
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("server-editor")).toHaveCount(0);
+    },
     /** Sidebar library entries start with their label; the disclosure trigger starts with "Subgroups of". */
     nav: (label: string) => page.getByRole("button", { name: new RegExp(`^${label}`) }),
     async add(kind: "New server" | "New group") {
@@ -70,16 +86,16 @@ test("F01 builds a Thai group tree whose servers inherit, override, validate and
   await h.group.getByLabel("Name").fill(root);
   await h.customPort(h.group, "2222");
   await h.save(h.group);
-  await expect(h.hosts.getByRole("heading", { name: root })).toBeVisible();
-  // The empty state's New group button is gone; focus lands on the new group's heading, not the body.
-  await expect(h.hosts.getByRole("heading", { name: root })).toBeFocused();
+  await expect(h.scope).toHaveText(root);
+  // The empty state's New group button is gone; focus lands on the page heading, not the body.
+  await expect(h.heading).toBeFocused();
 
   // Child group: the Add menu defaults to the selected group and shows what it inherits.
   await h.add("New group");
   await h.group.getByLabel("Name").fill(child);
   await expect(h.group.getByText(`Uses 2222, from group ${root}.`)).toBeVisible();
   await h.save(h.group);
-  await expect(h.hosts.getByRole("heading", { name: child })).toBeVisible();
+  await expect(h.scope).toHaveText(child);
   await expect(h.hosts.getByText("No servers in this group", { exact: true })).toBeVisible();
 
   // A server in the child group inherits the root's port.
@@ -88,9 +104,13 @@ test("F01 builds a Thai group tree whose servers inherit, override, validate and
   await h.server.getByLabel("Name").fill(web);
   await h.server.getByLabel("Address").fill("web-1.example.test");
   await h.save(h.server);
-  await expect(h.detail).toContainText(web);
-  await expect(h.detail).toContainText(`2222 · from group ${root}`);
-  await expect(h.detail).toContainText(`${root} / ${child}`);
+  // The new server is the current row; its drawer shows what it inherits and where it sits.
+  await expect(h.row(web)).toHaveAttribute("aria-current", "true");
+  await expect(h.tr(web).locator(".host-target")).toHaveText("web-1.example.test:2222");
+  await h.open(web);
+  await expect(h.server.getByText(`Uses 2222, from group ${root}.`)).toBeVisible();
+  await expect(h.server.getByLabel("Group", { exact: true }).locator("[data-slot=select-value]")).toHaveText(`${root} / ${child}`);
+  await h.close();
 
   // A sibling with its own port.
   await h.hosts.getByRole("button", { name: "Add server" }).click();
@@ -98,7 +118,7 @@ test("F01 builds a Thai group tree whose servers inherit, override, validate and
   await h.server.getByLabel("Address").fill("10.0.0.5");
   await h.customPort(h.server, "2022");
   await h.save(h.server);
-  await expect(h.detail).toContainText("2022 · set on this server");
+  await expect(h.tr(pinned).locator(".host-target")).toHaveText("10.0.0.5:2022");
 
   // Editing the parent's port moves the inheriting server and leaves the override alone.
   await h.nav(root).click();
@@ -109,10 +129,12 @@ test("F01 builds a Thai group tree whose servers inherit, override, validate and
   await expect(h.group.getByRole("list", { name: "Affected servers" })).toContainText(web);
   await h.group.getByRole("button", { name: "Save changes" }).click();
   await expect(h.group).toHaveCount(0);
-  await h.row(web).click();
-  await expect(h.detail).toContainText(`2200 · from group ${root}`);
-  await h.row(pinned).click();
-  await expect(h.detail).toContainText("2022 · set on this server");
+  await h.open(web);
+  await expect(h.server.getByText(`Uses 2200, from group ${root}.`)).toBeVisible();
+  await h.close();
+  await h.open(pinned);
+  await expect(h.server.getByLabel("Custom port")).toHaveValue("2022");
+  await h.close();
 
   // Validation: inline errors, focus on the first invalid field, nothing saved.
   await h.hosts.getByRole("button", { name: "Add server" }).click();
@@ -166,12 +188,12 @@ test("F01 builds a Thai group tree whose servers inherit, override, validate and
     const r = ui(again.page);
     await expect(r.rows).toHaveCount(2);
     await r.nav(root).click();
-    await expect(r.hosts.getByRole("heading", { name: root })).toBeVisible();
-    await r.row(web).click();
-    await expect(r.detail).toContainText(`2200 · from group ${root}`);
-    await expect(r.detail).toContainText(`${root} / ${child}`);
-    await r.row(pinned).click();
-    await expect(r.detail).toContainText("2022 · set on this server");
+    await expect(r.scope).toHaveText(root);
+    await r.open(web);
+    await expect(r.server.getByText(`Uses 2200, from group ${root}.`)).toBeVisible();
+    await expect(r.server.getByLabel("Group", { exact: true }).locator("[data-slot=select-value]")).toHaveText(`${root} / ${child}`);
+    await r.close();
+    await expect(r.tr(pinned).locator(".host-target")).toHaveText("10.0.0.5:2022");
     expect(again.errors).toEqual([]);
   } finally {
     await again.close();
@@ -184,20 +206,52 @@ test("tags filter with AND, search matches Thai names, addresses and groups, and
   const h = ui(page);
   await seed(desktop);
 
-  // Tags are toggled one at a time on the detail panel.
-  await h.row(web).click();
-  const tag = h.detail.getByRole("textbox", { name: "New tag" });
+  // A double-click opens the drawer once: its second press (on the scrim by then) does not dismiss it. On the name
+  // and on a plain cell, with the second press 60 and 150 ms after the first.
+  for (const [cell, gap] of [[h.row(relay), 60], [h.tr(relay).locator("td").nth(2), 150]] as const) {
+    const box = (await cell.boundingBox())!;
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    await page.mouse.click(x, y);
+    await page.waitForTimeout(gap);
+    // The second press of a real double-click: down/up with click count 2 (mouse.click would press twice).
+    await page.mouse.down({ clickCount: 2 });
+    await page.mouse.up({ clickCount: 2 });
+    await page.waitForTimeout(400);
+    await expect(h.server.getByLabel("Name"), `double-click, ${gap} ms`).toHaveValue(relay);
+    await expect(page.locator("[data-slot='drawer']")).toHaveCount(1);
+    await h.close();
+  }
+  // The group path is in the name's tooltip; opening another row's ⋯ menu makes that row current.
+  await expect(h.row(web)).toHaveAttribute("title", `${web} — ${root} / ${child}`);
+  await h.actions(spare).click();
+  // Esc only once the menu is open; an early one leaves the menu's backdrop over the page (cf. team.spec:42).
+  await expect(page.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menuitem")).toHaveCount(0);
+  await expect(h.row(spare)).toHaveAttribute("aria-current", "true");
+  await expect(h.actions(spare)).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(h.row(spare), "Shift+Tab reaches the now-current row's name").toBeFocused();
+
+  // Tags are toggled one at a time in the host drawer and apply at once, outside the draft.
+  await h.open(web);
+  const tag = h.server.getByRole("textbox", { name: "New tag" });
+  await expect(h.server.getByText("Tags apply immediately, without Save.")).toBeVisible();
   await tag.fill("web");
   await tag.press("Enter");
-  await expect(h.detail.getByRole("button", { name: "web", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(h.server.getByRole("button", { name: "web", exact: true })).toHaveAttribute("aria-pressed", "true");
   await tag.fill("critical");
   await tag.press("Enter");
-  await expect(h.detail.getByRole("button", { name: "critical", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await h.row(spare).click();
-  await expect(h.detail.getByRole("heading", { name: spare })).toBeVisible();
-  await h.detail.getByRole("button", { name: "web", exact: true }).click();
-  await expect(h.detail.getByRole("button", { name: "web", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(h.row(spare)).toContainText("web");
+  await expect(h.server.getByRole("button", { name: "critical", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await h.close();
+  await h.open(spare);
+  await h.server.getByRole("button", { name: "web", exact: true }).click();
+  await expect(h.server.getByRole("button", { name: "web", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // The tag change moved the server's revision; the draft is rebased on it, so a save right after is no conflict.
+  await h.customPort(h.server, "2201");
+  await h.save(h.server);
+  await expect(h.tr(spare).locator(".host-target")).toHaveText("db-2.example.test:2201");
 
   const filter = page.getByRole("combobox", { name: "Filter by tags" });
   await filter.click();
@@ -243,12 +297,33 @@ test("tags filter with AND, search matches Thai names, addresses and groups, and
   await expect(h.rows.nth(2)).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(h.rows.nth(1)).toBeFocused();
-  await expect(h.detail.getByRole("heading", { level: 3 })).toHaveText(await h.rows.nth(1).locator("span.font-medium").first().innerText());
+  // Enter opens the current row's host drawer; Esc returns focus to the row.
+  const second = await h.rows.nth(1).innerText();
+  await page.keyboard.press("Enter");
+  await expect(h.server.getByLabel("Name")).toHaveValue(second);
+  await h.close();
+  await expect(h.rows.nth(1)).toBeFocused();
+  // One tab stop for the table: Tab reaches the current row's Connect, then its ⋯ menu of the existing actions.
+  await page.keyboard.press("Tab");
+  await expect(h.hosts.getByRole("button", { name: `Connect ${second}`, exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(h.actions(second)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("menuitem")).toHaveText(["Edit", "Open files", "Delete"]);
+  // No identity on these servers: Open files is unavailable, as Connect is.
+  await expect(page.getByRole("menuitem", { name: "Open files" })).toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menuitem")).toHaveCount(0);
+  await expect(h.actions(second)).toBeFocused();
+  // No sort controls and no row checkboxes (SST-040 decision 3).
+  await expect(h.hosts.getByRole("checkbox")).toHaveCount(0);
+  await expect(h.hosts.getByRole("columnheader")).toHaveText(["Name", "Address", "Identity", "Environment", "Status", "Actions"]);
   await h.search.focus();
   await page.keyboard.press("Escape");
   await expect(h.search).toHaveValue("");
   await expect(h.status).toHaveText("");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal page scroll at 960×640").toBe(true);
+  expect(await h.hosts.locator(".servers-frame").evaluate((el) => el.scrollWidth <= el.clientWidth), "no horizontal scroll in the table").toBe(true);
   expect(desktop.errors).toEqual([]);
 });
 
@@ -265,8 +340,8 @@ test("deleting a server and groups states the impact, keeps Cancel focused and h
   ]);
 
   // Server: counts, Cancel focused, Escape closes without deleting.
-  await h.row(relay).click();
-  await h.detail.getByRole("button", { name: "Delete", exact: true }).click();
+  await h.actions(relay).click();
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
   let dialog = page.getByTestId("delete-host-drawer");
   await expect(dialog.getByRole("heading", { name: `Delete ${relay}?` })).toBeVisible();
   await expect(dialog.getByTestId("delete-impacts")).toHaveText("Also removes 1 tag assignment.");
@@ -274,7 +349,9 @@ test("deleting a server and groups states the impact, keeps Cancel focused and h
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(h.rows).toHaveCount(3);
-  await h.detail.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(h.actions(relay), "focus returns to the row's ⋯ menu").toBeFocused();
+  await h.actions(relay).click();
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
   await dialog.getByRole("button", { name: "Delete server" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(h.row(relay)).toHaveCount(0);
@@ -305,12 +382,13 @@ test("deleting a server and groups states the impact, keeps Cancel focused and h
   await expect(affected.filter({ hasText: web })).toContainText("connection settings change");
   await dialog.getByRole("button", { name: "Delete group" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(h.hosts.getByRole("heading", { name: root })).toBeVisible();
-  await expect(h.hosts.getByRole("heading", { name: root })).toBeFocused();
+  await expect(h.scope).toHaveText(root);
+  await expect(h.heading).toBeFocused();
   await expect(h.rows).toHaveCount(2);
-  await h.row(web).click();
-  await expect(h.detail).toContainText(`2222 · from group ${root}`);
-  await expect(h.detail.locator("dd").nth(1)).toHaveText(root);
+  await h.open(web);
+  await expect(h.server.getByText(`Uses 2222, from group ${root}.`)).toBeVisible();
+  await expect(h.server.getByLabel("Group", { exact: true }).locator("[data-slot=select-value]")).toHaveText(root);
+  await h.close();
 
   // Root group: delete everything inside it.
   await h.hosts.getByRole("button", { name: "Delete group" }).click();
@@ -329,8 +407,7 @@ test("a save after an out-of-band change shows the conflict, and Reload keeps th
   const ids = await seed(desktop);
   const renamed = "เปลี่ยนชื่อจากที่อื่น";
 
-  await h.row(web).click();
-  await h.detail.getByRole("button", { name: "Edit", exact: true }).click();
+  await h.open(web);
   await h.server.getByLabel("Address").fill("moved.example.test");
   // Another connection to this profile's catalog changes the same server.
   await changeCatalog(app, [{ type: "update-host", id: ids[2], expectedRevision: "current", data: { label: renamed } }]);
@@ -343,12 +420,11 @@ test("a save after an out-of-band change shows the conflict, and Reload keeps th
   await expect(h.server.getByLabel("Name")).toHaveValue(renamed);
   await expect(h.server.getByLabel("Address"), "the draft survives the reload").toHaveValue("moved.example.test");
   await h.save(h.server);
-  await expect(h.detail.getByRole("heading", { name: renamed })).toBeVisible();
-  await expect(h.detail).toContainText("moved.example.test");
+  await expect(h.tr(renamed).locator(".host-target")).toHaveText("moved.example.test:2222");
   expect(desktop.errors).toEqual([]);
 });
 
-test("long PROD labels and tags truncate inside the list at 960×640, and IPv6 targets are bracketed", async ({ desktop }) => {
+test("long PROD labels and tags truncate inside the table at 960×640 and 1280×800, and IPv6 targets are bracketed", async ({ desktop }, testInfo) => {
   const { app, page } = desktop;
   const h = ui(page);
   const label = "ฐานข้อมูลหลัก production primary 01".padEnd(38, "x");
@@ -362,24 +438,36 @@ test("long PROD labels and tags truncate inside the list at 960×640, and IPv6 t
     { type: "set-host-tag", hostId: "$0", tagId: "$2", present: true, expectedHostRevision: "current" },
   ]);
   await page.reload();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
-  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(960);
-  await h.row(label).click();
+  const table = h.hosts.locator(".servers-frame");
+  const row = h.tr(label);
+  for (const [width, height] of [[1280, 800], [960, 640]] as const) {
+    await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size[0], size[1]), [width, height] as const);
+    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
+    const box = (await table.boundingBox())!;
+    const badge = (await row.getByText("PROD", { exact: true }).boundingBox())!;
+    expect(badge.x, `${width}: PROD badge starts inside the table`).toBeGreaterThanOrEqual(box.x);
+    expect(badge.x + badge.width, `${width}: PROD badge ends inside the table`).toBeLessThanOrEqual(box.x + box.width);
+    expect(await table.evaluate((el) => el.scrollWidth <= el.clientWidth), `${width}: no horizontal scroll in the table`).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width}: no horizontal page scroll`).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`servers-${width}x${height}.png`) });
+    // The long name truncates with its full text in the title, and both name and target keep a legible width.
+    const name = h.row(label);
+    await expect(name).toHaveAttribute("title", label);
+    expect((await name.boundingBox())!.width, `${width}: the name stays legible`).toBeGreaterThanOrEqual(90);
+    const target = row.locator(".host-target");
+    await expect(target).toHaveText("[fd00::10]:22");
+    await expect(target).toHaveAttribute("title", "[fd00::10]:22");
+    expect(await target.evaluate((el) => el.scrollWidth <= el.clientWidth), `${width}: the whole target is shown`).toBe(true);
+  }
 
-  const list = h.hosts.getByRole("list", { name: "All servers servers" });
-  const box = (await list.boundingBox())!;
-  const badge = (await h.row(label).getByText("PROD", { exact: true }).boundingBox())!;
-  expect(badge.x, "PROD badge starts inside the list").toBeGreaterThanOrEqual(box.x);
-  expect(badge.x + badge.width, "PROD badge ends inside the list").toBeLessThanOrEqual(box.x + box.width);
-  expect(await list.evaluate((el) => el.scrollWidth <= el.clientWidth), "no horizontal scroll in the list").toBe(true);
-  await expect(h.row(label).locator(".host-target")).toHaveText("[fd00::10]:22");
-  await expect(h.detail.locator(".host-target")).toHaveText("[fd00::10]:22");
-  await expect(h.detail.locator("dd").first(), "the address field stays unbracketed").toHaveText("fd00::10");
-
-  const card = (await h.detail.boundingBox())!;
-  const toggle = (await h.detail.getByRole("button", { name: huge }).boundingBox())!;
-  expect(toggle.x + toggle.width, "a 200-character tag toggle stays inside the card").toBeLessThanOrEqual(card.x + card.width);
+  await h.open(label);
+  await expect(h.server.getByLabel("Saved connection").locator(".host-target")).toHaveText("[fd00::10]:22");
+  await expect(h.server.getByLabel("Address"), "the address field stays unbracketed").toHaveValue("fd00::10");
+  const card = (await h.server.boundingBox())!;
+  const toggle = (await h.server.getByRole("button", { name: huge }).boundingBox())!;
+  expect(toggle.x + toggle.width, "a 200-character tag toggle stays inside the drawer").toBeLessThanOrEqual(card.x + card.width);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await h.close();
 
   // Unbroken 200-character labels wrap inside the delete-group drawer.
   const parent = "ค".repeat(200);

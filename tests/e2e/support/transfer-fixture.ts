@@ -78,8 +78,7 @@ export async function setupTransferLab(desktop: Desktop) {
       { type: "create-host", data: { label: LABEL, address: fixture.host, environment: "PROD", port: { mode: "value", port: fixture.port }, auth: { mode: "value", identityId: "$0" } } },
     ]);
     await page.reload();
-    await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: LABEL }).click();
-    await page.getByTestId("host-detail").getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${LABEL}`, exact: true }).click();
     await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
     await password();
     const terminal = page.locator(`section[aria-label="Terminal for ${LABEL}"]`);

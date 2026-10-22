@@ -1466,3 +1466,15 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
     - typecheck, unit 768/769, build pass.
     - Full E2E 87/88 before the fix.
     - After the fix: `snippets` ×3 plus `release-gate`, 21/21.
+- **SST-040/10 done (2026-10-22):**
+  - **Servers page:**
+    - Title "Servers" with the scope in the subtitle.
+    - Columns: Name, Address (execution target), Identity, Environment and Status. Rows are sorted by name; there are no sort controls or checkboxes.
+    - Each row has Connect and a ⋯ menu (Edit, Open files, Delete).
+    - Clicking a row opens the host drawer. It replaces the detail panel and holds tags ("Tags apply immediately, without Save."), the route and the target.
+    - The footer counts ready terminal and SFTP sessions.
+  - **Row status:** Connected, then Awaiting trust, Connecting, Connection error, Disconnected, from terminal and SFTP sessions together.
+  - **Shared drawer:** ignores the second press of a double-click on the scrim.
+  - **Review:** APPROVED. Fixed both mediums (double-click dismissal, failed sessions shown as Disconnected) and lows L1–L6 and L8. L1: a tag change only rebases a draft taken at the same revision.
+  - **Checks:** typecheck pass, unit 768/769 (1 known skip), build pass, full E2E 88/88 after the fixes.
+  - **Loop paused after ticket 10 at the user's request** (“ทำถึง ticket 10 เสร็จแล้วหยุดก่อน”). Remaining: 11, 12, 13, 14, 15.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Drawer primitive with Server and Group editors; 09 — Shell v2
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Table rows sorted by name as today; no sort controls, no row checkboxes, no ⌘K hint
 - [ ] Each row has Connect and a ⋯ menu of existing actions (Edit, Open files, Delete …); keyboard row navigation preserved

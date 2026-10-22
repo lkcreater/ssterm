@@ -116,8 +116,7 @@ async function workspace(desktop: Desktop, servers: Server[]) {
     async connect(label: string, options: { trust?: boolean; ready?: boolean } = {}) {
       const before = await ids();
       await page.getByRole("button", { name: /^All servers/u }).click();
-      await page.getByTestId("hosts-page").locator("button[data-host-id]", { hasText: label }).click();
-      await page.getByTestId("host-detail").getByRole("button", { name: "Connect", exact: true }).click();
+      await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${label}`, exact: true }).click();
       if (options.trust) await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
       const pane = await opened(before);
       if (options.ready ?? true) await w.ready(pane);
