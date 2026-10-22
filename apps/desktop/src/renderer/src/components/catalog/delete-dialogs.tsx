@@ -8,14 +8,7 @@ import type {
   ErrorCode,
 } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -25,8 +18,6 @@ import type { Catalog } from "@/hooks/use-catalog";
 import { AffectedServers } from "@/components/catalog/editors";
 
 type Preview = { token: string; impacts: CatalogImpactSummary };
-const layout =
-  "flex max-h-[calc(100dvh-2rem)] flex-col [overflow-wrap:anywhere] data-[size=default]:sm:max-w-lg motion-reduce:animate-none";
 
 /** Prepares whenever the intent changes (including a newer revision after a conflict) and applies on confirm. */
 export function useDelete(catalog: Catalog, intent: CatalogChangeIntent | undefined, onDone: () => void) {
@@ -145,61 +136,48 @@ export function DeleteHostDialog({
     onDeleted,
   );
   const removed = preview ? extras(preview.impacts) : [];
+  const close = useDrawerClose({ busy });
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <AlertDialogContent
-        initialFocus={cancel}
-        finalFocus={finalFocus(afterDelete)}
-        className={layout}
-        data-testid="delete-host-dialog"
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-all">Delete {host.label}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            The saved server is removed from this workspace. Open sessions keep
-            their current connection.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="-mx-4 grid min-h-0 gap-3 overflow-y-auto px-4">
-          <p className="flex min-w-0 flex-wrap items-center gap-2 font-mono text-sm">
-            <span className="break-all">{host.address}</span>
-            {host.environment ? (
-              <Badge variant={host.environment === "PROD" ? "production" : "outline"}>
-                {host.environment}
-              </Badge>
-            ) : null}
-          </p>
-          {failure ? (
-            <DeleteFailure code={failure} retry={retry} />
-          ) : !preview ? (
-            <Spinner aria-label="Checking what will be removed" />
-          ) : (
-            <p className="text-sm" data-testid="delete-impacts">
-              {removed.length
-                ? `Also removes ${removed.join(", ")}.`
-                : "Nothing else is removed."}
-            </p>
-          )}
-        </div>
-        <AlertDialogFooter>
-          <Button ref={cancel} variant="outline" disabled={busy} onClick={onClose}>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      finalFocus={finalFocus(afterDelete)}
+      data-testid="delete-host-dialog"
+      title={<span className="break-all">Delete {host.label}?</span>}
+      target={
+        <>
+          <span className="min-w-0 break-all font-mono">{host.address}</span>
+          {host.environment ? (
+            <Badge variant={host.environment === "PROD" ? "production" : "outline"}>
+              {host.environment}
+            </Badge>
+          ) : null}
+        </>
+      }
+      description="The saved server is removed from this workspace. Open sessions keep their current connection."
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" disabled={busy} onClick={close.request}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            disabled={!preview || busy}
-            onClick={() => void confirm()}
-          >
+          <Button variant="destructive" disabled={!preview || busy} onClick={() => void confirm()}>
             {busy ? <Spinner data-icon="inline-start" /> : null}Delete server
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </>
+      }
+    >
+      {failure ? (
+        <DeleteFailure code={failure} retry={retry} />
+      ) : !preview ? (
+        <Spinner aria-label="Checking what will be removed" />
+      ) : (
+        <p className="text-sm" data-testid="delete-impacts">
+          {removed.length ? `Also removes ${removed.join(", ")}.` : "Nothing else is removed."}
+        </p>
+      )}
+    </Drawer>
   );
 }
 
@@ -255,75 +233,62 @@ export function DeleteGroupDialog({
           "servers'",
         )} inherited port or identity changes.`;
   const removed = impacts ? extras(impacts) : [];
+  const close = useDrawerClose({ busy });
   return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <AlertDialogContent
-        initialFocus={cancel}
-        finalFocus={finalFocus(afterDelete)}
-        className={layout}
-        data-testid="delete-group-dialog"
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle className="break-all">Delete group {group.label}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Choose what happens to the servers and subgroups inside it. Open
-            sessions keep their current connection.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="-mx-4 grid min-h-0 gap-4 overflow-y-auto px-4">
-          <RadioGroup
-            aria-label="Servers and subgroups"
-            value={mode ?? null}
-            onValueChange={(value) => {
-              if (value === "reparent" || value === "subtree") setMode(value);
-            }}
-            disabled={busy}
-          >
-            <Field orientation="horizontal">
-              <RadioGroupItem value="reparent" id={`${group.id}-reparent`} />
-              <FieldLabel htmlFor={`${group.id}-reparent`} className="min-w-0 font-normal">
-                Move them to {destination}
-              </FieldLabel>
-            </Field>
-            <Field orientation="horizontal">
-              <RadioGroupItem value="subtree" id={`${group.id}-subtree`} />
-              <FieldLabel htmlFor={`${group.id}-subtree`} className="font-normal">
-                Delete them with this group
-              </FieldLabel>
-            </Field>
-          </RadioGroup>
-          {failure ? (
-            <DeleteFailure code={failure} retry={retry} />
-          ) : mode && !preview ? (
-            <Spinner aria-label="Checking what will change" />
-          ) : summary ? (
-            <>
-              <p className="text-sm" data-testid="delete-impacts">
-                {summary}
-                {removed.length ? ` Also removes ${removed.join(", ")}.` : ""}
-              </p>
-              {affected.length ? <AffectedServers hosts={affected} /> : null}
-            </>
-          ) : null}
-        </div>
-        <AlertDialogFooter>
-          <Button ref={cancel} variant="outline" disabled={busy} onClick={onClose}>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      finalFocus={finalFocus(afterDelete)}
+      data-testid="delete-group-dialog"
+      title={<span className="break-all">Delete group {group.label}?</span>}
+      description="Choose what happens to the servers and subgroups inside it. Open sessions keep their current connection."
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" disabled={busy} onClick={close.request}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            disabled={!preview || busy}
-            onClick={() => void confirm()}
-          >
+          <Button variant="destructive" disabled={!preview || busy} onClick={() => void confirm()}>
             {busy ? <Spinner data-icon="inline-start" /> : null}Delete group
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </>
+      }
+    >
+      <RadioGroup
+        aria-label="Servers and subgroups"
+        value={mode ?? null}
+        onValueChange={(value) => {
+          if (value === "reparent" || value === "subtree") setMode(value);
+        }}
+        disabled={busy}
+      >
+        <Field orientation="horizontal">
+          <RadioGroupItem value="reparent" id={`${group.id}-reparent`} />
+          <FieldLabel htmlFor={`${group.id}-reparent`} className="min-w-0 font-normal">
+            Move them to {destination}
+          </FieldLabel>
+        </Field>
+        <Field orientation="horizontal">
+          <RadioGroupItem value="subtree" id={`${group.id}-subtree`} />
+          <FieldLabel htmlFor={`${group.id}-subtree`} className="font-normal">
+            Delete them with this group
+          </FieldLabel>
+        </Field>
+      </RadioGroup>
+      {failure ? (
+        <DeleteFailure code={failure} retry={retry} />
+      ) : mode && !preview ? (
+        <Spinner aria-label="Checking what will change" />
+      ) : summary ? (
+        <>
+          <p className="text-sm" data-testid="delete-impacts">
+            {summary}
+            {removed.length ? ` Also removes ${removed.join(", ")}.` : ""}
+          </p>
+          {affected.length ? <AffectedServers hosts={affected} /> : null}
+        </>
+      ) : null}
+    </Drawer>
   );
 }

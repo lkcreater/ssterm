@@ -11,23 +11,9 @@ import type {
   ErrorCode,
 } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import {
   Field,
   FieldDescription,
@@ -108,10 +94,10 @@ function useEditor<D extends object, E extends Entity>(options: EditorOptions<D,
   const [checked, setChecked] = useState(false);
   const [serverErrors, setServerErrors] = useState<FieldErrors>({});
   const [phase, setPhase] = useState<Phase>({ kind: "edit" });
-  const [discarding, setDiscarding] = useState(false);
   const [rebasing, setRebasing] = useState(false);
   const errors = { ...(checked ? validate(draft) : {}), ...serverErrors };
   const dirty = !draftsEqual(draft, initial);
+  const close = useDrawerClose({ dirty: dirty && phase.kind !== "gone", busy: phase.kind === "busy" });
 
   useEffect(() => {
     if (!rebasing) return;
@@ -140,7 +126,7 @@ function useEditor<D extends object, E extends Entity>(options: EditorOptions<D,
   }
   async function submit() {
     // An Enter that lands in the form while the discard prompt opens must not save behind it.
-    if (phase.kind === "busy" || phase.kind === "gone" || discarding) return;
+    if (phase.kind === "busy" || phase.kind === "gone" || close.discarding) return;
     const found = validate(draft);
     setChecked(true);
     setServerErrors({});
@@ -175,9 +161,7 @@ function useEditor<D extends object, E extends Entity>(options: EditorOptions<D,
     errors,
     phase,
     field,
-    dirty,
-    discarding,
-    setDiscarding,
+    close,
     set(patch: Partial<D>) {
       setDraft((current) => ({ ...current, ...patch }));
       setServerErrors({});
@@ -189,21 +173,14 @@ function useEditor<D extends object, E extends Entity>(options: EditorOptions<D,
       // Rebase only once the reloaded state (the latest entity) has arrived.
       void catalog.reload().then(() => setRebasing(true));
     },
-    requestClose() {
-      if (phase.kind === "busy") return;
-      if (dirty && phase.kind !== "gone") setDiscarding(true);
-      else options.onClose();
-    },
   };
 }
 type Editor<D extends object> = ReturnType<typeof useEditor<D, Entity>>;
 
-const dialogLayout =
-  "flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-lg motion-reduce:animate-none";
-
 function EditorFrame<D extends object>({
   editor,
   title,
+  target,
   description,
   noun,
   onClose,
@@ -211,6 +188,7 @@ function EditorFrame<D extends object>({
 }: {
   editor: Editor<D>;
   title: string;
+  target?: ReactNode;
   description: string;
   noun: "server" | "group";
   onClose(): void;
@@ -219,140 +197,99 @@ function EditorFrame<D extends object>({
   const { phase } = editor;
   const formId = useId();
   const back = useRef<HTMLButtonElement>(null);
-  const keep = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (phase.kind === "confirm") back.current?.focus();
   }, [phase.kind]);
   const busy = phase.kind === "busy";
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) editor.requestClose();
-      }}
+    <Drawer
+      close={editor.close}
+      onClose={onClose}
+      title={title}
+      target={target}
+      description={description}
+      discardText={`Your edits to this ${noun} will be lost.`}
+      data-testid={`${noun}-editor`}
+      footer={
+        phase.kind === "confirm" ? (
+          <>
+            <Button ref={back} variant="outline" onClick={editor.back}>
+              Back to editing
+            </Button>
+            <Button onClick={() => void editor.commit(phase.token)}>
+              Save changes
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="outline" disabled={busy} onClick={editor.close.request}>
+              Cancel
+            </Button>
+            <Button type="submit" form={formId} disabled={busy || phase.kind === "gone"}>
+              {busy ? <Spinner data-icon="inline-start" /> : null}Save
+            </Button>
+          </>
+        )
+      }
     >
-      <DialogContent className={dialogLayout} data-testid={`${noun}-editor`}>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <div className="-mx-4 grid min-h-0 gap-4 overflow-y-auto px-4 py-1">
-          {phase.kind === "confirm" ? (
-            <ImpactList hosts={phase.hosts} />
-          ) : (
-            <form
-              id={formId}
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault();
-                void editor.submit();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && event.nativeEvent.isComposing)
-                  event.preventDefault();
-              }}
-            >
-              <FieldGroup>{children}</FieldGroup>
-            </form>
-          )}
-          {phase.kind === "conflict" ? (
-            <Alert variant="destructive">
-              <AlertTriangleIcon />
-              <AlertTitle>Changed since you opened this</AlertTitle>
-              <AlertDescription className="grid gap-2">
-                <span>
-                  Your edits are kept. Reload to review the latest values, then
-                  save again.
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-fit"
-                  onClick={editor.reload}
-                >
-                  Reload
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : phase.kind === "gone" ? (
-            <Alert variant="destructive">
-              <AlertTriangleIcon />
-              <AlertTitle>This {noun} was deleted</AlertTitle>
-              <AlertDescription>
-                It no longer exists, so these changes cannot be saved.
-              </AlertDescription>
-            </Alert>
-          ) : phase.kind === "failed" ? (
-            <Alert variant="destructive">
-              <AlertTriangleIcon />
-              <AlertTitle>Changes were not saved</AlertTitle>
-              <AlertDescription>
-                {phase.code === "busy"
-                  ? "The workspace is busy. Try again in a moment."
-                  : "The workspace could not save this change. Try again."}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-        </div>
-        <DialogFooter>
-          {phase.kind === "confirm" ? (
-            <>
-              <Button ref={back} variant="outline" onClick={editor.back}>
-                Back to editing
-              </Button>
-              <Button onClick={() => void editor.commit(phase.token)}>
-                Save changes
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={editor.requestClose}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                form={formId}
-                disabled={busy || phase.kind === "gone"}
-              >
-                {busy ? <Spinner data-icon="inline-start" /> : null}Save
-              </Button>
-            </>
-          )}
-        </DialogFooter>
-        <AlertDialog
-          open={editor.discarding}
-          onOpenChange={(open) => {
-            if (!open) editor.setDiscarding(false);
+      {phase.kind === "confirm" ? (
+        <ImpactList hosts={phase.hosts} />
+      ) : (
+        <form
+          id={formId}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void editor.submit();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.nativeEvent.isComposing)
+              event.preventDefault();
           }}
         >
-          <AlertDialogContent initialFocus={keep}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Your edits to this {noun} will be lost.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <Button
-                ref={keep}
-                variant="outline"
-                onClick={() => editor.setDiscarding(false)}
-              >
-                Keep editing
-              </Button>
-              <Button variant="destructive" onClick={onClose}>
-                Discard
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </DialogContent>
-    </Dialog>
+          <FieldGroup>{children}</FieldGroup>
+        </form>
+      )}
+      {phase.kind === "conflict" ? (
+        <Alert variant="destructive">
+          <AlertTriangleIcon />
+          <AlertTitle>Changed since you opened this</AlertTitle>
+          <AlertDescription className="grid gap-2">
+            <span>
+              Your edits are kept. Reload to review the latest values, then
+              save again.
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-fit"
+              onClick={editor.reload}
+            >
+              Reload
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : phase.kind === "gone" ? (
+        <Alert variant="destructive">
+          <AlertTriangleIcon />
+          <AlertTitle>This {noun} was deleted</AlertTitle>
+          <AlertDescription>
+            It no longer exists, so these changes cannot be saved.
+          </AlertDescription>
+        </Alert>
+      ) : phase.kind === "failed" ? (
+        <Alert variant="destructive">
+          <AlertTriangleIcon />
+          <AlertTitle>Changes were not saved</AlertTitle>
+          <AlertDescription>
+            {phase.code === "busy"
+              ? "The workspace is busy. Try again in a moment."
+              : "The workspace could not save this change. Try again."}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+    </Drawer>
   );
 }
 
@@ -633,6 +570,18 @@ export function HostEditor({
       editor={editor as Editor<HostDraft>}
       noun="server"
       title={hostId ? "Edit server" : "New server"}
+      target={
+        latest ? (
+          <>
+            <span className="min-w-0 break-all">{latest.label}</span>
+            {latest.environment ? (
+              <Badge variant={latest.environment === "PROD" ? "production" : "outline"}>
+                {latest.environment}
+              </Badge>
+            ) : null}
+          </>
+        ) : undefined
+      }
       description="Port and identity can come from the server's group. Address and environment are set here."
       onClose={onClose}
     >
@@ -791,6 +740,7 @@ export function GroupEditor({
       editor={editor as Editor<GroupDraft>}
       noun="group"
       title={groupId ? "Edit group" : "New group"}
+      target={latest ? <span className="min-w-0 break-all">{latest.label}</span> : undefined}
       description="Servers and subgroups in this group inherit its port and identity unless they set their own."
       onClose={onClose}
     >

@@ -323,6 +323,45 @@ test("tabs and splits: split opens a session, merge/focus/move never reconnect, 
   }
 });
 
+// SST-040/02: a catalog drawer opened over a live terminal keeps every key, including Esc, Cancel and the discard step.
+test("drawer over a terminal: Esc, the discard step and Cancel never reach the shell behind it", async ({ desktop }) => {
+  test.setTimeout(180_000);
+  const { page } = desktop;
+  const w = await workspace(desktop, [{ label: alpha }]);
+  try {
+    const pane = await w.connect(alpha, { trust: true });
+    // Raw single-byte read: the first byte the shell receives is printed as its code (Esc 27, "d" 100, our "Z" 90).
+    await w.run(pane, `read -rsn1 x; printf 'D[%d]\\n' "'$x"`);
+    await expect(pane.locator(".xterm-helper-textarea")).toBeFocused();
+    const editor = page.getByTestId("server-editor");
+    const name = editor.getByLabel("Name", { exact: true });
+    const open = async () => {
+      await page.getByRole("button", { name: "Add server or group" }).click();
+      await page.getByRole("menuitem", { name: "New server" }).click();
+      await expect(name).toBeFocused();
+      await expect(pane, "the terminal stays visible beside the drawer").toBeVisible();
+    };
+    await open();
+    await page.keyboard.press("Escape");
+    await expect(editor).toHaveCount(0);
+    await open();
+    await page.keyboard.type("draft");
+    await page.keyboard.press("Escape");
+    await expect(editor.getByRole("alert", { name: "Discard unsaved changes?" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(name).toHaveValue("draft");
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await editor.getByRole("button", { name: "Discard", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    await pane.locator(".xterm-helper-textarea").focus();
+    await page.keyboard.type("Z");
+    await expect(w.screen(pane), "the first byte the shell read is the Z typed after the drawer closed").toContainText("D[90]", { timeout: 20_000 });
+    expect(desktop.errors).toEqual([]);
+  } finally {
+    await w.finish();
+  }
+});
+
 test("closing: Cmd+W asks only for a Ready pane; closing the window and quitting ask with a native sheet", async ({ desktop }) => {
   test.setTimeout(240_000);
   const { app, page } = desktop;

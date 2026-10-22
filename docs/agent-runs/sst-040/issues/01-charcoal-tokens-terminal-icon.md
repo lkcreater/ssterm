@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (df148b1)
 
 - [ ] Semantic tokens take the v2 values (canvas, sidebar, surface/drawer, field, line, text, secondary text, primary blue with white text); components keep using semantic tokens only
 - [ ] Status colors (connected/connecting/error/disconnected, PROD, destructive text) are re-tuned for charcoal and measure ≥4.5:1 as text

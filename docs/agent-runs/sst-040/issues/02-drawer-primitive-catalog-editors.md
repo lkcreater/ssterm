@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] One shared right-edge drawer built on the existing sheet component: full height below the titlebar, 480–560 px (up to 640 for complex review), full content width on small windows, scrim
 - [ ] Fixed header (title, optional target, close), scrolling body, fixed footer (Cancel, primary action); field-level validation with summary when useful

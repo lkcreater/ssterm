@@ -233,6 +233,179 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
   expect(desktop.errors).toEqual([]);
 });
 
+// SST-040/02 drawer contract on the catalog editors: placement, focus, Esc/dirty policy, reduced motion and sizing.
+test("drawer contract: right edge below the titlebar, focus entry/trap/return, Esc and discard step, instant with reduced motion, no overflow", async ({ desktop }, testInfo) => {
+  test.setTimeout(120_000);
+  const { app, page } = desktop;
+  const label = "ฐานข้อมูลหลัก ระบบการเงินภาคตะวันออกเฉียงเหนือ ลิ้นชัก";
+  await changeCatalog(app, [
+    { type: "create-group", data: { label: "โครงสร้างพื้นฐาน การผลิต", port: { mode: "value", port: 2222 } } },
+    { type: "create-host", data: { label, address: "db-01.internal.example", groupId: "$0", environment: "PROD" } },
+  ]);
+  await page.reload();
+  const detail = page.getByTestId("host-detail");
+  const editor = page.getByTestId("server-editor");
+  const name = editor.getByLabel("Name", { exact: true });
+  const edit = detail.getByRole("button", { name: "Edit", exact: true });
+  const inside = (testId: string) => page.evaluate((id) =>
+    !!document.querySelector(`[data-testid="${id}"]`)?.contains(document.activeElement), testId);
+  /** Geometry on the first frame it is visible: with reduced motion it is already at rest. */
+  const geometry = (testId: string) => page.evaluate((id) => {
+    const drawer = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
+    const box = drawer.getBoundingClientRect();
+    const controls = [...drawer.querySelectorAll(":is(input, button, [role=combobox], [role=radio], label):not([aria-hidden='true'])")].map((node) => ({ node, rect: node.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.width > 0);
+    return {
+      left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width,
+      viewport: { width: innerWidth, height: innerHeight },
+      duration: Math.max(...getComputedStyle(drawer).transitionDuration.split(",").map((part) => parseFloat(part) * (part.trim().endsWith("ms") ? 0.001 : 1))),
+      overflowing: controls.filter(({ rect }) => rect.left < box.left - 0.5 || rect.right > box.right + 0.5)
+        .map(({ node, rect }) => `${node.outerHTML.slice(0, 120)} ${rect.left}-${rect.right}`),
+      // Scroll containers only: clipped helpers (sr-only text, hidden form mirrors) never scroll.
+      scrolling: [drawer, ...drawer.querySelectorAll("*")].filter((node) => node.scrollWidth - node.clientWidth > 1 &&
+        (node === drawer || ["auto", "scroll"].includes(getComputedStyle(node).overflowX)))
+        .map((node) => `${node.outerHTML.slice(0, 160)} ${node.scrollWidth}/${node.clientWidth} ${getComputedStyle(node).overflowX}`),
+    };
+  }, testId);
+  const placed = async (g: Awaited<ReturnType<typeof geometry>>, size: string) => {
+    // The modal hides the page from the accessibility tree; the banner is still the titlebar.
+    const titlebar = (await page.getByRole("banner", { includeHidden: true }).boundingBox())!;
+    expect(g.duration, `${size}: no motion under reduced motion`).toBeLessThanOrEqual(0.00001);
+    expect(Math.abs(g.right - g.viewport.width), `${size}: flush with the right edge`).toBeLessThanOrEqual(1);
+    expect(Math.abs(g.top - (titlebar.y + titlebar.height)), `${size}: starts below the titlebar`).toBeLessThanOrEqual(1);
+    expect(Math.abs(g.bottom - g.viewport.height), `${size}: full height`).toBeLessThanOrEqual(1);
+    expect(g.width, `${size}: drawer width`).toBeGreaterThanOrEqual(Math.min(480, g.viewport.width));
+    expect(g.width, `${size}: drawer width`).toBeLessThanOrEqual(560);
+    expect(g.left, `${size}: the source screen stays visible`).toBeGreaterThan(0);
+    expect(g.overflowing, `${size}: fields stay inside the drawer`).toEqual([]);
+    expect(g.scrolling, `${size}: no horizontal scroll`).toEqual([]);
+  };
+
+  /**
+   * Samples the drawer every 8 ms from the moment it is inserted, for one second. Rest = flush right and opaque.
+   * Returns the first sample and the time it came to rest.
+   */
+  const motion = async (testId: string, open: () => Promise<void>) => {
+    await page.evaluate((id) => {
+      const frames: { t: number; left: number; right: number; opacity: number; starting: boolean }[] = [];
+      (window as unknown as { __drawerFrames: typeof frames }).__drawerFrames = frames;
+      const observer = new MutationObserver(() => {
+        const drawer = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+        if (!drawer) return;
+        observer.disconnect();
+        const start = performance.now();
+        const sample = () => {
+          const box = drawer.getBoundingClientRect();
+          frames.push({ t: performance.now() - start, left: box.left, right: box.right,
+            opacity: Number(getComputedStyle(drawer).opacity), starting: drawer.hasAttribute("data-starting-style") });
+        };
+        sample();
+        const timer = setInterval(() => {
+          sample();
+          if (performance.now() - start > 1000) clearInterval(timer);
+        }, 8);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    }, testId);
+    await open();
+    const read = () => page.evaluate(() => (window as unknown as { __drawerFrames: { t: number; left: number; right: number; opacity: number; starting: boolean }[] }).__drawerFrames);
+    await expect.poll(async () => (await read()).at(-1)?.t ?? 0).toBeGreaterThan(1000);
+    const frames = await read();
+    const width = await page.evaluate(() => innerWidth);
+    const rest = frames.find((frame) => Math.abs(frame.right - width) <= 0.5 && frame.opacity === 1);
+    return { first: frames[0]!, rest: rest?.t ?? Infinity, width };
+  };
+
+  // With motion allowed the drawer starts off-canvas and transparent, and slides and fades to rest in about 200 ms.
+  await page.getByTestId("hosts-page").locator("button[data-host-id]").first().click();
+  const moving = await motion("server-editor", () => edit.click());
+  expect(moving.first.starting, "the first frame carries the starting style").toBe(true);
+  expect(moving.first.left, "the first frame is off-canvas").toBeGreaterThanOrEqual(moving.width - 1);
+  expect(moving.first.opacity).toBeLessThan(1);
+  expect(moving.rest, "at rest after the slide").toBeGreaterThanOrEqual(150);
+  expect(moving.rest, "at rest after the slide").toBeLessThanOrEqual(500);
+  await expect(name).toBeFocused();
+  // Reopening during the exit motion gets a fresh drawer that the closing one never closes.
+  // The scrim blocks the page during the exit, so the reopen is dispatched straight to Edit inside the 200 ms exit.
+  await page.keyboard.press("Escape");
+  await edit.dispatchEvent("click");
+  await page.waitForTimeout(500);
+  await expect(editor).toHaveCount(1);
+  await expect(name).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(editor).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+
+  for (const [width, height] of SIZES) {
+    await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]!.setContentSize(size[0], size[1]), [width, height] as const);
+    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
+    const size = `${width}x${height}`;
+    await page.getByRole("button", { name: /^All servers/u }).click();
+    await page.getByTestId("hosts-page").locator("button[data-host-id]").first().click();
+
+    // Opened from the keyboard: focus enters the first field; the header names the PROD target.
+    await edit.focus();
+    const instant = await motion("server-editor", () => page.keyboard.press("Enter"));
+    expect(instant.rest, `${size}: at rest at once under reduced motion`).toBeLessThanOrEqual(50);
+    await expect(editor).toBeVisible();
+    await placed(await geometry("server-editor"), size);
+    await expect(name).toBeFocused();
+    await expect(editor.getByRole("heading", { name: "Edit server" })).toBeVisible();
+    await expect(editor.getByText("PROD", { exact: true }).first()).toBeVisible();
+    await expect(editor.getByRole("button", { name: "Save", exact: true }), "the footer stays in view").toBeInViewport();
+    const audited = await audit(page);
+    expect(audited.findings, `${size}: drawer audit`).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath(`server-drawer-${size}.png`) });
+
+    // Focus is trapped: Tab cycles through the drawer only.
+    for (let i = 0; i < 24; i++) {
+      await page.keyboard.press("Tab");
+      // Wrapping passes through Base UI's focus guard, which hands focus back inside on the next task.
+      await expect.poll(() => inside("server-editor"), `${size}: Tab ${i + 1} stays in the drawer`).toBe(true);
+    }
+    // Clean: Esc closes and focus returns to the opener.
+    await page.keyboard.press("Escape");
+    await expect(editor).toHaveCount(0);
+    await expect(edit).toBeFocused();
+
+    // Dirty: Esc shows the discard step in the same drawer; Esc there keeps editing with the draft intact.
+    await page.keyboard.press("Enter");
+    await name.fill("แก้ไขแล้ว");
+    await page.keyboard.press("Escape");
+    const discard = editor.getByRole("alert", { name: "Discard unsaved changes?" });
+    await expect(discard).toBeVisible();
+    await expect(page.getByRole("dialog"), "no stacked overlay").toHaveCount(1);
+    await expect(editor.getByRole("button", { name: "Keep editing" })).toBeFocused();
+    await expect(name).toBeHidden();
+    await page.keyboard.press("Escape");
+    await expect(discard).toHaveCount(0);
+    await expect(name).toBeFocused();
+    await expect(name).toHaveValue("แก้ไขแล้ว");
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await editor.getByRole("button", { name: "Discard", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    await expect(edit).toBeFocused();
+    await expect(detail.getByRole("heading", { name: label })).toBeVisible();
+
+    // Delete: a drawer whose body is the confirmation, Cancel focused, a red specific action; Esc returns focus.
+    const remove = detail.getByRole("button", { name: "Delete", exact: true });
+    await remove.click();
+    const confirm = page.getByTestId("delete-host-dialog");
+    await expect(confirm.getByTestId("delete-impacts")).toBeVisible();
+    // The starting style is cleared on the next frame even with reduced motion.
+    await expect(confirm).not.toHaveAttribute("data-starting-style");
+    await placed(await geometry("delete-host-dialog"), size);
+    await expect(page.getByRole("alertdialog", { name: `Delete ${label}?` })).toBeVisible();
+    await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await expect(confirm).toContainText("db-01.internal.example");
+    await expect(confirm.getByRole("button", { name: "Delete server" })).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await expect(confirm).toHaveCount(0);
+    await expect(remove).toBeFocused();
+  }
+  expect(desktop.errors).toEqual([]);
+});
+
 test("storage denial: an unwritable workspace folder opens with a sanitized blocked state and no data shown", async () => {
   const { mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");

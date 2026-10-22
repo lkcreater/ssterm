@@ -115,7 +115,7 @@ test("F-jump: a server saved with a jump host connects through it; each prompt n
     await bastionEditor.getByRole("button", { name: /^Save/u }).click();
     await expect(bastionEditor).toContainText("A host cannot be reached through itself.");
     await bastionEditor.getByRole("button", { name: "Cancel" }).click();
-    await page.getByRole("button", { name: "Discard", exact: true }).click();
+    await bastionEditor.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(bastionEditor).toHaveCount(0);
     await detail.getByRole("button", { name: "Delete", exact: false }).first().click();
     const remove = page.getByTestId("delete-host-dialog");

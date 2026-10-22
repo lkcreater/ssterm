@@ -201,7 +201,10 @@ export function AppShell() {
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [dialog, setDialog] = useState<CatalogDialog>();
+  // Each open gets its own drawer instance, so reopening during the previous one's exit motion is never closed by it.
+  const [dialog, setDialogState] = useState<CatalogDialog & { key: number }>();
+  const dialogKey = useRef(0);
+  const setDialog = (next: CatalogDialog) => setDialogState({ ...next, key: ++dialogKey.current });
   const [connectFailure, setConnectFailure] = useState<ConnectFailure>();
   const [startingLocal, setStartingLocal] = useState(false);
   const localLaunch = useRef(false);
@@ -361,7 +364,7 @@ export function AppShell() {
     if (next) setScope(next);
   };
   const groupScope = view.scope.kind === "group" ? view.scope.groupId : null;
-  const closeDialog = () => setDialog(undefined);
+  const closeDialog = () => setDialogState(undefined);
   const deletingGroup =
     dialog?.kind === "delete-group"
       ? state?.groups.find((group) => group.id === dialog.id)
@@ -776,6 +779,7 @@ export function AppShell() {
       </SidebarProvider>
       {state && dialog?.kind === "host" ? (
         <HostEditor
+          key={dialog.key}
           catalog={catalog}
           state={state}
           hostId={dialog.id}
@@ -794,6 +798,7 @@ export function AppShell() {
       ) : null}
       {state && dialog?.kind === "group" ? (
         <GroupEditor
+          key={dialog.key}
           catalog={catalog}
           state={state}
           groupId={dialog.id}
@@ -809,6 +814,7 @@ export function AppShell() {
       ) : null}
       {deletingHost ? (
         <DeleteHostDialog
+          key={dialog?.key}
           catalog={catalog}
           host={deletingHost}
           onClose={closeDialog}
@@ -822,6 +828,7 @@ export function AppShell() {
       ) : null}
       {deletingGroup ? (
         <DeleteGroupDialog
+          key={dialog?.key}
           catalog={catalog}
           group={deletingGroup}
           parent={state?.groups.find((group) => group.id === deletingGroup.parentId)}

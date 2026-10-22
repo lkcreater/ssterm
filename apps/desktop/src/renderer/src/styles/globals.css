@@ -72,6 +72,8 @@
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
   --radius: 8px;
+  /* The custom titlebar; drawers open below it. */
+  --titlebar-height: 40px;
   --motion-fast: 120ms;
   --motion-normal: 160ms;
 }
@@ -271,8 +273,8 @@
 /* One 40 px bar replaces the native titlebar: it drags the window, its controls do not. */
 .app-titlebar {
   display: flex;
-  height: 40px;
-  min-height: 40px;
+  height: var(--titlebar-height);
+  min-height: var(--titlebar-height);
   align-items: center;
   gap: 4px;
   padding-right: 8px;

@@ -141,17 +141,20 @@ test("F01 builds a Thai group tree whose servers inherit, override, validate and
   // A submit that reaches the form (an Enter typed before the prompt takes focus) must not save behind the discard prompt.
   await h.server.getByLabel("Custom port").fill("22");
   await page.keyboard.press("Escape");
-  const discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" });
+  // The discard step replaces the form inside the same drawer; nothing is stacked over it.
+  const discard = h.server.getByRole("alert", { name: "Discard unsaved changes?" });
   await expect(discard).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
   await h.server.locator("form").evaluate((form: HTMLFormElement) => form.requestSubmit());
   await expect(discard).toBeVisible();
-  await discard.getByRole("button", { name: "Keep editing" }).click();
+  await h.server.getByRole("button", { name: "Keep editing" }).click();
   await expect(discard).toHaveCount(0);
   await expect(h.server).toBeVisible();
+  await expect(h.server.getByLabel("Custom port")).toBeFocused();
   await expect(h.rows).toHaveCount(2);
   await h.server.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(discard.getByRole("button", { name: "Keep editing" })).toBeFocused();
-  await discard.getByRole("button", { name: "Discard" }).click();
+  await expect(h.server.getByRole("button", { name: "Keep editing" })).toBeFocused();
+  await h.server.getByRole("button", { name: "Discard", exact: true }).click();
   await expect(h.server).toHaveCount(0);
   await expect(h.rows).toHaveCount(2);
   expect(desktop.errors).toEqual([]);
@@ -378,7 +381,7 @@ test("long PROD labels and tags truncate inside the list at 960×640, and IPv6 t
   expect(toggle.x + toggle.width, "a 200-character tag toggle stays inside the card").toBeLessThanOrEqual(card.x + card.width);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-  // Unbroken 200-character labels wrap inside the delete-group dialog.
+  // Unbroken 200-character labels wrap inside the delete-group drawer.
   const parent = "ค".repeat(200);
   await changeCatalog(app, [
     { type: "create-group", data: { label: parent, port: { mode: "value", port: 2222 } } },
