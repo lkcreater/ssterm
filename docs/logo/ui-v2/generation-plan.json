@@ -1,0 +1,347 @@
+{
+  "version": 2,
+  "date": "2026-10-22",
+  "tool": "built-in image_gen",
+  "status": "complete",
+  "basePrompt": "Use case: ui-mockup. Deliver exactly ONE high-fidelity desktop application UI screenshot concept, landscape 1536x1024. Fill entire image with one macOS ssterm desktop window, front-on pixel-perfect, no perspective, no poster, no explanatory outside captions, no multiple frames. This is a complete UI redesign reference for existing ssterm workflows.\nReference 1 is the approved Charcoal v2 brand board: use its flat neutral-charcoal palette and existing SST logo identity. Reference 2 is the original official SST monogram and lowercase ssterm wordmark, preserve the existing silhouette faithfully. If a third image is supplied it is the master Servers screen: match its title bar, sidebar, layout geometry, typography and spacing closely.\nVisual system: main canvas #1E1E1E, sidebar #202020, raised surfaces #252525, fields #292929, dividers #383838, primary text #F3F3F3, secondary #A3A3A3. Electric blue #2563EB for primary button, focus ring, active navigation and tabs. Cyan belongs to the original logo. Green/amber/red only for operational status, always with readable word and icon. Neutral gray surfaces dominate, no navy cast, no purple, no decorative gradient wash, no neon glow or glassmorphism. Inter UI typography, JetBrains Mono terminal/code, precise restrained thin-stroke Lucide-style icons, professional technical desktop app. Modest 8px control corners, compact 36px controls, 4/8px spacing rhythm, generous 24-32px content padding.\nStable app shell: macOS traffic-light controls top left in a 48px title bar, subtle top border. Left sidebar approximately 224px wide. At its top original small SST icon and lowercase ssterm. Navigation exactly: Servers, Terminals, Files, Identities, Known hosts, Snippets, Port forwarding, Recordings, Team vault. Bottom Settings and Lock workspace. Short group tree under main navigation only when relevant: All servers, Development, Staging, Production. Do not add cloud-account-required banners or unrelated features.\nAll entity forms and in-app overlay forms MUST be RIGHT-EDGE DRAWERS: attached to the actual extreme right edge of the window, full usable height below title bar, flat #252525, approximately 480-560px wide, vertical left divider, title and close X fixed at top, scrollable middle, sticky action footer at bottom. For complex settings 640px width is allowed. The parent screen remains identifiable behind a subtle dark scrim; no heavy blur. No centered modal form, no floating form card, no gap to right edge, no stacked drawers. Confirmation steps replace the current drawer body, not a second centered popup. A static image shows the fully open endpoint of a slide from right; do not draw motion arrows.\nUse short readable English UI labels. Only invented nonsecret demo hosts such as web-dev-01 and 192.0.2.10, usernames dev, .example endpoints. Password and passphrase fields EMPTY with placeholders, no actual credentials, tokens, private keys, long invented crypto keys or secrets. Never show private key material. Keep actual target user@host:port visible, PROD explicitly labeled. Connected status distinct from selected blue navigation. No AI assistant, no unimplemented Mosh/FIDO/mobile/remote-to-remote/resume functions. Avoid charts/metrics invented for SSH software.\nScreen-specific content:\n",
+  "screens": [
+    {
+      "id": "01-servers",
+      "title": "Servers · library",
+      "nav": "Servers",
+      "drawer": false,
+      "content": "Show the primary Servers catalog, no drawer. Heading Servers, subtitle Your SSH workspace. Top search Search servers, tag filter, New group outline, Add server blue. Left group tree Development 3, Staging 2, Production 2. Main compact table Name / Address / Identity / Environment / Status / actions. Six demo rows web-dev-01 192.0.2.10 dev-key DEV Connected; api-dev-02 192.0.2.11 dev-key DEV Disconnected; staging-01 192.0.2.20 ops-key STAGING Connecting; prod-web-01 192.0.2.30 prod-ops PROD Disconnected; prod-db-01 192.0.2.31 prod-ops PROD Disconnected; build-lab 192.0.2.40 dev-key DEV Error. Blue selected first row with separate green Connected text. Discreet Connect button per row. Bottom status Local workspace / 6 servers / 1 connected. Large realistic data table, not marketing cards.",
+      "file": "01-servers.png"
+    },
+    {
+      "id": "02-server-editor-drawer",
+      "title": "Server · create/edit",
+      "nav": "Servers",
+      "drawer": true,
+      "content": "On Servers catalog parent, open RIGHT drawer titled Add server. Sections Connection with Name web-dev-03, Address 192.0.2.12, Port 22; Organization with Group Development, Tags api / linux chips, Environment segmented DEV / STAGING / PROD with DEV selected; Authentication Identity selector Development key, effective username dev. Readonly summary dev@192.0.2.12:22. Collapsed Connection route section Direct / Configure. Footer Cancel outline, Save server blue. One clean vertical form; names labels fully legible. Saved host edit uses same pattern.",
+      "file": "02-server-editor-drawer.png"
+    },
+    {
+      "id": "03-connection-route-drawer",
+      "title": "Server · jump hosts and proxy",
+      "nav": "Servers",
+      "drawer": true,
+      "content": "Servers parent and RIGHT drawer title Connection route, subtitle web-dev-01. A route diagram as compact neutral stacked nodes This Mac → bastion-dev → web-dev-01. Sections Jump hosts with two ordered selector rows bastion-dev, gateway-lab; Add jump host outlined, helper Up to 3 jump hosts. Proxy type segmented None / HTTP CONNECT / SOCKS5, HTTP CONNECT selected. Proxy address proxy.example, Port 8080. Muted note Proxy authentication is not supported. Target dev@192.0.2.10:22. Footer Back outline and Save route blue. Do not request proxy credentials.",
+      "file": "03-connection-route-drawer.png"
+    },
+    {
+      "id": "04-group-tags-drawer",
+      "title": "Group · inheritance and tags",
+      "nav": "Servers",
+      "drawer": true,
+      "content": "Servers parent and RIGHT drawer Edit group. Name Development, Parent group None, inherited Port toggle Use default 22, Authentication Identity Development key. Section Tags with linux and api chips and Add tag input. Small impact review block 3 servers affected, shows web-dev-01 and api-dev-02 plus build-lab and explains inherited settings will change. Footer Cancel and Review changes. Avoid falsely making tags inherit; tags section says Manage workspace tags. Inheritance provenance visible.",
+      "file": "04-group-tags-drawer.png"
+    },
+    {
+      "id": "05-identities",
+      "title": "Identities · keys",
+      "nav": "Identities",
+      "drawer": false,
+      "content": "Primary Identities page no drawer. Heading Identities, subtitle Reusable SSH sign-in details. Buttons Import SSH key outline and New identity blue. Two sections tabs Identities and SSH keys, Identities selected. Table Name / User name / Method / Used by / actions. Development key dev SSH key 3 servers; Operations ops Password 2 servers; Challenge login dev Keyboard-interactive 1 server. Small lower SSH keys list shows dev-ed25519 algorithm Ed25519 and masked-short fingerprint SHA256:demo… with Keychain badge; never private material. A neutral storage strip Secrets stored in macOS Keychain. Show edit and menu actions.",
+      "file": "05-identities.png"
+    },
+    {
+      "id": "06-identity-editor-drawer",
+      "title": "Identity · authentication form",
+      "nav": "Identities",
+      "drawer": true,
+      "content": "Identities parent and RIGHT drawer New identity. Name Operations, User name ops. Sign in with segmented Password / SSH key / Keyboard-interactive with Password selected. Empty Password field placeholder Enter password, toggle Save password in Keychain on. Helper Never stored in the catalog. Small method explainer for alternative key selection, not extra full forms. Used by section No servers yet. Footer Cancel and Save identity. Password content not present.",
+      "file": "06-identity-editor-drawer.png"
+    },
+    {
+      "id": "07-ssh-key-import-drawer",
+      "title": "SSH key · import/rename",
+      "nav": "Identities",
+      "drawer": true,
+      "content": "Identities page with SSH keys tab parent, RIGHT drawer Import SSH key. Button Choose file, selected demo filename dev_ed25519, badges Ed25519 and Passphrase protected. Fingerprint label and short demonstrative SHA256:demo… not private key. Name Development key. EMPTY Passphrase field placeholder Enter passphrase, checkbox Save passphrase in Keychain unchecked. Helper Asked each time when not saved. Informational secure storage message Private key stays in macOS Keychain. Footer Cancel and Import key. No key material, no upload-cloud icon. Name field shows rename pattern.",
+      "file": "07-ssh-key-import-drawer.png"
+    },
+    {
+      "id": "08-known-hosts",
+      "title": "Known hosts · trust inventory",
+      "nav": "Known hosts",
+      "drawer": false,
+      "content": "Known hosts page no drawer. Heading Known hosts, subtitle Trust decisions stored on this Mac. Search field and table Host / Port / Key type / Fingerprint / Trust. Demo rows 192.0.2.10 22 Ed25519 SHA256:demo… Trusted; 192.0.2.20 22 RSA SHA256:stage… Trusted. Row menu Revoke trust. Side note Connection trust is checked for terminal, files and forwarding. No Trust all action, no auto-accept switch. Clean compact data-centric layout.",
+      "file": "08-known-hosts.png"
+    },
+    {
+      "id": "09-host-trust-drawer",
+      "title": "Connection · unknown host",
+      "nav": "Terminals",
+      "drawer": true,
+      "content": "Terminals parent with connecting session web-dev-01, RIGHT drawer Trust this host? amber outlined shield icon. Target dev@192.0.2.10:22, Key type Ed25519 and readonly monospaced fingerprint SHA256:demo-fingerprint-for-design-only. Explain This host is not yet trusted. Verify its fingerprint independently before continuing. Neutral details box Terminal connection / Development. Footer Cancel outline and Trust and continue blue. No automatically selected trust checkbox. Underlying terminal clearly says Awaiting trust.",
+      "file": "09-host-trust-drawer.png"
+    },
+    {
+      "id": "10-changed-host-key-drawer",
+      "title": "Connection · changed key blocked",
+      "nav": "Terminals",
+      "drawer": true,
+      "content": "Terminals parent with failed-to-connect row, RIGHT drawer Host key changed red shield alert. Target dev@192.0.2.30:22, PROD badge. Alert Connection blocked. Compare Previous trusted fingerprint and Presented fingerprint in two neutral bordered blocks with short design-only labels SHA256:previous-demo… and SHA256:new-demo…. Text Verify the change outside ssterm. Checkbox I verified the new fingerprint, UNCHECKED. Footer Cancel and Replace trusted key disabled. No connect action until explicit replacement. Clear red warning is restrained.",
+      "file": "10-changed-host-key-drawer.png"
+    },
+    {
+      "id": "11-terminals-ssh-splits",
+      "title": "Terminals · SSH tabs and splits",
+      "nav": "Terminals",
+      "drawer": false,
+      "content": "Full SSH terminal workspace no drawer. Top tab strip web-dev-01 connected green dot and blue active underline; staging-01 connecting amber dot; prod-web-01 green Connected but INACTIVE gray tab with explicit PROD badge, demonstrating focus/status distinction. Toolbar New local terminal, Split right, Split down, Workspace tools. Main area two side-by-side terminal panes, each has context bar dev@192.0.2.10:22 DEV and ops@192.0.2.30:22 PROD. Left focused pane thin blue outline, displays harmless pwd and ls output. Right production pane displays uptime output, no destructive command. Bottom session status Connected / UTF-8, font in JetBrains Mono. Crisp terminal-first app, minimal chrome.",
+      "file": "11-terminals-ssh-splits.png"
+    },
+    {
+      "id": "12-local-terminal",
+      "title": "Terminals · local shell",
+      "nav": "Terminals",
+      "drawer": false,
+      "content": "Terminals page no drawer, active tab Local · zsh with small laptop icon, second inactive SSH web-dev-01. Terminal context bar Local / This Mac / zsh, no host endpoint pretending to be SSH. Terminal shows demo@mac ~ % pwd and /Users/demo and demo@mac ~ % ls with projects and notes. Top actions New local terminal, Split right, Restart. A subtle bottom label Local process · UTF-8. No SFTP/jump/broadcast controls for this local pane. Large quiet charcoal terminal surface.",
+      "file": "12-local-terminal.png"
+    },
+    {
+      "id": "13-snippet-composer-drawer",
+      "title": "Terminal · captured Paste/Run target",
+      "nav": "Terminals",
+      "drawer": true,
+      "content": "Terminal parent with web-dev-01 active, RIGHT drawer Prepare snippet. Captured target box ops@192.0.2.30:22 PROD, prominent independent from background focus. Snippet selector Check disk, editable monospaced code textarea 'df -h'. Plain explanation Paste inserts into the composer. Run sends the command with Enter. Button row Paste and Run as distinct actions; Show PROD confirmation phase in lower drawer body: Review target / confirm checkbox unchecked, Confirm Run disabled until acknowledged. Footer Cancel. Helper Sending bytes does not confirm command success. No implication background tab focus changes captured target.",
+      "file": "13-snippet-composer-drawer.png"
+    },
+    {
+      "id": "14-ssh-auth-drawer",
+      "title": "Connection · transient auth",
+      "nav": "Terminals",
+      "drawer": true,
+      "content": "Terminal connecting parent, RIGHT drawer SSH authentication. Target dev@192.0.2.10:22, section Password, empty protected input placeholder Enter password; second visual challenge section small collapsed Keyboard-interactive challenge alternative, no actual secret. Subtitle Attempt 1 of 3. Neutral note Used only for this connection. No save-password default or Google sign in for SSH. Footer Cancel connection outline and Continue blue. Parent terminal says Authentication required.",
+      "file": "14-ssh-auth-drawer.png"
+    },
+    {
+      "id": "15-files-transfers",
+      "title": "Files · SFTP and transfer queue",
+      "nav": "Files",
+      "drawer": false,
+      "content": "Files page no drawer. Heading Files with saved server selector web-dev-01 and Connected green. Two well-balanced panes, left Local /Users/demo/projects, right Remote dev@192.0.2.10:22 /home/dev/app. Each has back/up/refresh, path bar and file table Name Size Modified. Sample folders assets src and regular files README.md app.conf. Clear Upload right arrow and Download left arrow controls. Lower transfer queue table with upload app.conf 68% progress and download logs.txt Completed, plus queued archive.zip and Cancel actions. Summary 1 active · 1 queued. No remote-to-remote or Resume controls.",
+      "file": "15-files-transfers.png"
+    },
+    {
+      "id": "16-transfer-conflict-drawer",
+      "title": "Transfers · overwrite/skip/rename",
+      "nav": "Files",
+      "drawer": true,
+      "content": "Files dual-pane parent, RIGHT drawer File already exists, subtitle Upload to dev@192.0.2.10:22. File app.conf. Compare Source local 2.4 KB and Destination remote 2.1 KB with paths. Three large radio rows Skip / Rename / Overwrite, Rename selected. Rename field app-copy.conf. Subtle note Retry starts from byte zero; interrupted partial files may remain. Footer Cancel transfer outline and Continue blue. Overwrite is an explicit choice, never preselected. Queue remains visible behind.",
+      "file": "16-transfer-conflict-drawer.png"
+    },
+    {
+      "id": "17-remote-edit-drawer",
+      "title": "Files · external edit lifecycle",
+      "nav": "Files",
+      "drawer": true,
+      "content": "Files parent, RIGHT drawer Remote edit for /home/dev/app/app.conf on dev@192.0.2.10:22. A vertical three-step status Download snapshot completed / Open in TextEdit pending / Upload reviewed snapshot pending. Explain A private plaintext working copy is stored on this Mac while editing. Clearly separate actions Open in TextEdit outline and Upload snapshot blue; Finish and Discard tertiary. Visible consent checkbox I agree to open a local working copy, unchecked. Helper Remote file is checked before upload; other writes can still race. Do NOT draw an integrated in-app code editor or claim atomic save. Footer Close. No user plaintext document displayed.",
+      "file": "17-remote-edit-drawer.png"
+    },
+    {
+      "id": "18-snippets",
+      "title": "Snippets · encrypted library",
+      "nav": "Snippets",
+      "drawer": false,
+      "content": "Snippets library page no drawer. Heading Snippets, subtitle Saved commands, encrypted on this Mac. Search snippets, tag filter, New snippet blue. Left list Check disk with linux tag; Service status with ops tag; List ports with network tag. Selected Check disk has blue accent. Main preview monospaced 'df -h', title Check disk, tags linux / diagnostics, Edit and Delete actions. Lower helper Open a terminal to Paste or Run with a captured target. No misleading command success badges. Show locked secure-storage icon text Encrypted at rest.",
+      "file": "18-snippets.png"
+    },
+    {
+      "id": "19-snippet-editor-drawer",
+      "title": "Snippet · create/edit",
+      "nav": "Snippets",
+      "drawer": true,
+      "content": "Snippets parent, RIGHT drawer Edit snippet. Name Check disk, Tags linux and diagnostics, monospaced multiline Command field 'df -h' and 'du -sh .'. Helper Snippets are encrypted on this Mac. Informational section Use Paste to review before Run. Sticky footer Cancel and Save snippet. Body editor has good vertical space, line numbers optional. No secret values or implied automatically executed snippets.",
+      "file": "19-snippet-editor-drawer.png"
+    },
+    {
+      "id": "20-port-forwarding",
+      "title": "Port forwarding · all types",
+      "nav": "Port forwarding",
+      "drawer": false,
+      "content": "Port forwarding page no drawer. Heading Port forwarding, subtitle Rules start only when you choose Start. New rule blue. Table Name / Server / Type / Listen / Destination / Status / action. Dev database web-dev-01 Local 127.0.0.1:5433 127.0.0.1:5432 Running green Stop outline; Preview callback staging-01 Remote 127.0.0.1:8081 127.0.0.1:3000 Stopped muted Start blue; Dev SOCKS web-dev-01 Dynamic 127.0.0.1:1080 SOCKS5 Stopped Start; Busy port web-dev-01 Local 127.0.0.1:9000 127.0.0.1:8080 Failed red with Port already in use helper. No autostart enabled.",
+      "file": "20-port-forwarding.png"
+    },
+    {
+      "id": "21-local-forward-drawer",
+      "title": "Forwarding · local rule",
+      "nav": "Port forwarding",
+      "drawer": true,
+      "content": "Port forwarding parent, RIGHT drawer New forwarding rule. Name Dev database, Server web-dev-01. Type segmented Local / Remote / Dynamic, Local selected. Local address 127.0.0.1, Local port 5433. Destination host 127.0.0.1, Port 5432. Small route This Mac :5433 → SSH → Remote :5432. Loopback badge, helper Starts only when you choose Start. Footer Cancel and Save rule. No autostart checkbox.",
+      "file": "21-local-forward-drawer.png"
+    },
+    {
+      "id": "22-remote-forward-drawer",
+      "title": "Forwarding · remote rule",
+      "nav": "Port forwarding",
+      "drawer": true,
+      "content": "Port forwarding parent, RIGHT drawer Edit forwarding rule. Name Preview callback, Server staging-01. Type segmented Local / Remote / Dynamic, Remote selected. Server address 127.0.0.1, Server port 8081. Destination host 127.0.0.1, Port 3000. Small route Remote :8081 → SSH → This Mac :3000. Loopback badge and helper Server policy may reject remote listeners. Footer Cancel and Save rule. Correctly distinguish server listener from local destination.",
+      "file": "22-remote-forward-drawer.png"
+    },
+    {
+      "id": "23-dynamic-forward-drawer",
+      "title": "Forwarding · dynamic SOCKS5 rule",
+      "nav": "Port forwarding",
+      "drawer": true,
+      "content": "Port forwarding parent, RIGHT drawer New forwarding rule. Name Dev SOCKS, Server web-dev-01. Type segmented Local / Remote / Dynamic, Dynamic selected. Local address 127.0.0.1, Local port 1080. Informational box SOCKS5 proxy / Configure your application to use 127.0.0.1:1080. NO fixed destination host/port fields for dynamic mode. Helper Bound to loopback; stops with its SSH session. Footer Cancel and Save rule.",
+      "file": "23-dynamic-forward-drawer.png"
+    },
+    {
+      "id": "24-recordings-history",
+      "title": "Recordings · output and history",
+      "nav": "Recordings",
+      "drawer": false,
+      "content": "Recordings page no drawer. Heading Recordings, subtitle Encrypted terminal output and command history. Filter All sessions, Search history. Table Session / Kind / Started / Size / State with web-dev-01 Output 10:42 64 KB Complete, Local zsh History 10:45 8 KB Complete, staging-01 Output 10:47 16 KB Incomplete amber. Selected output preview shows harmless pwd and ls output with Export and Delete. Command history subtab with commands 'pwd', 'ls', 'df -h' and Prepare in terminal action. Neutral note Capture is opt-in; output can include echoed sensitive text. Do not draw video playback timeline, remote execution success or AI suggestions.",
+      "file": "24-recordings-history.png"
+    },
+    {
+      "id": "25-recording-settings-drawer",
+      "title": "Settings · recording privacy",
+      "nav": "Recordings",
+      "drawer": true,
+      "content": "Recordings parent, RIGHT drawer Settings with small tabs Terminal / Recording / Security / Sync, Recording selected. Two OFF switches Record session output and Save command history. Helper New sessions only when enabled; turning off stops capture now. Retention controls days 30 and Maximum storage 256 MiB. Small section Shell history integration with bash / zsh tabs and Copy setup command button, without long code. Notice Output can include echoed secrets. Export creates plaintext files. Separate dangerous Forget history action near bottom. Footer Done. No cloud upload or AI integration.",
+      "file": "25-recording-settings-drawer.png"
+    },
+    {
+      "id": "26-workspace-templates-drawer",
+      "title": "Workspace · templates",
+      "nav": "Terminals",
+      "drawer": true,
+      "content": "Terminal parent, wide RIGHT drawer Workspace tools, top tabs Templates / Multi-target, Templates selected. Saved layouts list Development pair, Staging checks. Selected template has preview of two SSH panes labeled web-dev-01 and api-dev-02 with split layout outlines. Form Template name Development pair, Host references two rows, optional Saved snippet selector None. Buttons Save current SSH layout outline and Open fresh sessions blue. Note Templates store references, not commands or credentials; local terminals excluded. Footer Close. Do not imply local PTY session restored.",
+      "file": "26-workspace-templates-drawer.png"
+    },
+    {
+      "id": "27-broadcast-composer-drawer",
+      "title": "Workspace · explicit multi-target input",
+      "nav": "Terminals",
+      "drawer": true,
+      "content": "Terminal parent, wide RIGHT drawer Workspace tools with Templates / Multi-target, Multi-target selected. Existing sessions / New sessions toggle with Existing selected. Selected SSH targets checkbox rows web-dev-01 DEV and prod-web-01 PROD. Captured targets section clearly lists dev@192.0.2.10:22 DEV and ops@192.0.2.30:22 PROD. Code textarea 'uptime'. Two distinct actions Insert and Run, captured target review warning including PROD and Confirm Run phase in same drawer body. Helper Ordinary terminal typing stays in its pane. No auto-broadcast switch, no local targets. Footer Reset targets outline and Review targets blue.",
+      "file": "27-broadcast-composer-drawer.png"
+    },
+    {
+      "id": "28-terminal-settings-drawer",
+      "title": "Settings · terminal appearance",
+      "nav": "Terminals",
+      "drawer": true,
+      "content": "Terminal parent, RIGHT drawer Settings. Tabs Terminal / Recording / Security / Sync, Terminal selected. Font size 14 px stepper, Scrollback 10000 lines, Cursor segmented Block / Bar / Underline, Blinking cursor off. Readonly App theme Charcoal Dark and Terminal colors Charcoal / independent ANSI palette. Small terminal preview 'dev@lab:~$ ls' with blue folder names and neutral background. Helper Changes apply to open panes and are saved on this Mac. No light theme switch. Footer Done.",
+      "file": "28-terminal-settings-drawer.png"
+    },
+    {
+      "id": "29-security-settings-drawer",
+      "title": "Settings · app lock and sign in",
+      "nav": "Servers",
+      "drawer": true,
+      "content": "Servers parent, RIGHT drawer Settings. Tabs Terminal / Recording / Security / Sync with Security selected. App lock section Local account / User name demo / Lock workspace button outline. Change password link, all password fields remain empty if shown. Optional Google sign-in section clearly optional, button Sign in with Google. Recovery section Recovery code saved / Change recovery code action, never display actual code. Helper Local account works offline. No Google requirement for workspace or SSH. Footer Done. Avoid biometric/Touch ID unsupported toggles.",
+      "file": "29-security-settings-drawer.png"
+    },
+    {
+      "id": "30-sync-setup-drawer",
+      "title": "Personal sync · explicit setup",
+      "nav": "Servers",
+      "drawer": true,
+      "content": "Servers parent, wide RIGHT drawer Settings > Personal sync. Sync OFF badge and brief Off by default. Setup tabs Create vault / Join device / Recover, Create vault selected. Self-hosted endpoint https://sync.example, Scope ID placeholder, EMPTY Transport token password field, Device name This Mac. Checkbox I reviewed what will be shared unchecked. Compact included list Host metadata, groups, tags, snippet bodies; excluded list Passwords, SSH keys, trust, local paths, recordings. Button Create encrypted vault disabled until consent. Footer Cancel. Clearly manual personal sync, no hosted service subscription.",
+      "file": "30-sync-setup-drawer.png"
+    },
+    {
+      "id": "31-personal-sync-drawer",
+      "title": "Personal sync · manual actions",
+      "nav": "Servers",
+      "drawer": true,
+      "content": "Servers parent, wide RIGHT drawer Settings > Personal sync. Status Ready green, endpoint https://sync.example, Device This Mac / Owner. Four explicit action buttons Publish / Fetch / Review / Apply, Apply disabled until review. Counts Pending upload 2, Fetched changes 3, Conflicts 1. Device table This Mac Owner / Lab Mac Writer / Read-only Mac Reader with owner actions. Recovery status Needs refresh amber with Update recovery kit action. Separate Lock sync and Forget transport token links. Helper Nothing syncs automatically. No passwords or keys included. Footer Done.",
+      "file": "31-personal-sync-drawer.png"
+    },
+    {
+      "id": "32-sync-review-drawer",
+      "title": "Personal sync · conflict resolution",
+      "nav": "Servers",
+      "drawer": true,
+      "content": "Servers parent, wide RIGHT drawer Review sync changes. Summary 3 changes · 1 conflict. A review list web-dev-01 Address conflict selected, group Development update, Check disk snippet update. Side-by-side small value blocks Local 192.0.2.10 and Remote 192.0.2.15. Three explicit radio choices Keep local / Use remote / Restore as new record, Keep local selected. Warning Passwords and host trust are not imported. Footer Cancel and Apply reviewed changes blue. Host selection and projected changes visible, no timestamp chosen winner.",
+      "file": "32-sync-review-drawer.png"
+    },
+    {
+      "id": "33-sync-enrollment-recovery-drawer",
+      "title": "Personal sync · enrollment/recovery",
+      "nav": "Servers",
+      "drawer": true,
+      "content": "Servers parent, wide RIGHT drawer Personal sync / Device enrollment. Wizard tabs Join / Verify / Recovery, Verify selected. Public candidate exchange field placeholder Paste public enrollment text, owner fingerprint short design-only placeholder, explicit Compare fingerprint outside ssterm checkbox unchecked. Requested role Writer selector. Status Awaiting approval. Section Recovery kit collapsed with Save encrypted kit / Verify saved kit actions and note Secret must be stored separately, NO secret or token value visible. Footer Back and Approve device disabled. Show public exchange only, no private cryptographic data.",
+      "file": "33-sync-enrollment-recovery-drawer.png"
+    },
+    {
+      "id": "34-team-vault",
+      "title": "Team vault · shared hosts",
+      "nav": "Team vault",
+      "drawer": false,
+      "content": "Team vault page no drawer. Heading Team vault, subtitle Separate from your personal workspace. Status Ready green and role Owner. Header Fetch / Publish / Add team host / Manage members / Lock team. Self-hosted endpoint https://team.example small muted. Table Shared hosts Name / Endpoint / Login / Environment / Credential / Connect. Team web 192.0.2.60:22 ops PROD Shared password Ready, Team lab 192.0.2.61:22 dev DEV Shared password Ready. Muted policy note New connections require online permission checks. No shared SSH keys, no Files or tunneling action for team hosts, no full plaintext password. Distinct personal/team boundary.",
+      "file": "34-team-vault.png"
+    },
+    {
+      "id": "35-team-host-drawer",
+      "title": "Team vault · managed host/password",
+      "nav": "Team vault",
+      "drawer": true,
+      "content": "Team vault parent, RIGHT drawer Add team host, Owner badge. Name Team web, Address 192.0.2.60, Port 22, User name ops, Environment DEV / STAGING / PROD with PROD selected. Empty Shared password field placeholder Enter shared password. Checkbox I consent to sharing this password with authorized team members unchecked. Note Credential is bound to this endpoint and login. Helper Direct SSH terminal connections only. Footer Cancel and Save team host. Never show private key sharing or personal credential fallback.",
+      "file": "35-team-host-drawer.png"
+    },
+    {
+      "id": "36-team-members-drawer",
+      "title": "Team vault · roles and enrollment",
+      "nav": "Team vault",
+      "drawer": true,
+      "content": "Team vault parent, wide RIGHT drawer Team members. Members list Alex Owner / Morgan Editor / Sam Connector / Taylor Viewer with human readable role descriptions. Viewer Metadata only / Connector Connect / Editor Edit and connect / Owner Manage. Invite member outline button and public enrollment textarea placeholder Paste candidate text. Selected Morgan has role selector Editor, note Changing a role removes all of this member's devices and rotates keys. Fingerprint verification checkbox unchecked. Footer Close and Review membership change blue. No automatic email send, no shared private keys.",
+      "file": "36-team-members-drawer.png"
+    },
+    {
+      "id": "37-team-setup-recovery-drawer",
+      "title": "Team vault · setup and separate recovery",
+      "nav": "Team vault",
+      "drawer": true,
+      "content": "Team vault parent in unconfigured state, wide RIGHT drawer Set up Team vault. Tabs Create / Join / Recover with Create selected. Fields Self-hosted endpoint https://team.example, Deployment ID placeholder, Team ID placeholder, Device name This Mac, EMPTY Owner token password field. Explicit enrollment and sharing consent checkbox unchecked. Neutral separate section Team recovery with Encrypted recovery kit Choose file and empty Recovery secret field, visually under collapsed Recover alternative summary rather than active create inputs. Text Team recovery is separate from personal sync and app lock. Footer Cancel / Create team vault. No hosted account or deployment operations.",
+      "file": "37-team-setup-recovery-drawer.png"
+    },
+    {
+      "id": "38-app-unlock",
+      "title": "App lock · local sign in",
+      "nav": "Lock",
+      "drawer": false,
+      "content": "Exception to shell: full window app-lock gate, no workspace data or sidebar visible. Entire canvas flat #1E1E1E with macOS title bar. Original SST mark and ssterm wordmark at left upper-middle with small line Local SSH workspace. On RIGHT attached full-height approximately 500px panel #252525, title Unlock workspace, User name empty field placeholder User name, Password EMPTY field placeholder Password, blue Unlock button. Link Use recovery code, divider and optional Sign in with Google outline. Small local privacy text Your workspace stays on this Mac. No real secrets, no center floating login card, no background host list exposed.",
+      "file": "38-app-unlock.png"
+    },
+    {
+      "id": "39-app-setup-recovery",
+      "title": "App lock · first setup and recovery",
+      "nav": "Lock",
+      "drawer": true,
+      "content": "Exception to shell: first-launch window no sensitive catalog or sidebar. Original SST logo at left on matte charcoal. RIGHT full-height panel Set up local access. Step indicator Account / Recovery / Ready with Account selected. User name placeholder Choose a user name; Password empty and Confirm password empty. Blue Create local account button. Optional Continue with Google outline, secondary line Local access works offline. Below a collapsed Recovery step summary Save a recovery code before continuing with a checked-outline icon, do NOT display actual code. No mandatory email. All form structure right-aligned attached panel, not centered modal.",
+      "file": "39-app-setup-recovery.png"
+    },
+    {
+      "id": "40-keyboard-shortcuts-drawer",
+      "title": "Help · keyboard shortcuts",
+      "nav": "Terminals",
+      "drawer": true,
+      "content": "Terminal parent, RIGHT drawer Keyboard shortcuts. Search shortcuts field. Sections Sessions, Layout, Terminal. Clean two-column action/keyboard keycap rows New tab Cmd+T, Close pane Cmd+W, Next tab Ctrl+Tab, Previous tab Ctrl+Shift+Tab, Find Cmd+F, Copy Cmd+C, Paste Cmd+V. Explicit note Terminal key behavior depends on focus. A bottom Help strip Press Esc to close. Footer Done. Use attractive subtle outlined keycaps. No centered help modal.",
+      "file": "40-keyboard-shortcuts-drawer.png"
+    },
+    {
+      "id": "41-empty-error-states",
+      "title": "States · empty/loading/failure",
+      "nav": "Servers",
+      "drawer": false,
+      "content": "ONE single app window showing Servers page in empty filtered state, no collage. Search field value nonexistent-server; heading Servers and Add server button; central small server outline icon, No matching servers, Try a different search or clear your filters, Clear filters outline button. At top a restrained inline red notification Connection failed with Retry and Dismiss, no secrets. One disabled-looking row area at lower left labeled Loading group… with three small skeleton rows. Bottom status Offline workspace available. This is a review state concept, avoid charts and giant illustrations. Preserve same shell.",
+      "file": "41-empty-error-states.png"
+    },
+    {
+      "id": "42-destructive-confirmation-drawer",
+      "title": "Confirmations · delete/reassign/unsaved",
+      "nav": "Identities",
+      "drawer": true,
+      "content": "Identities parent, RIGHT drawer Delete identity? target Operations. Small warning Used by 2 servers. Two radio options Detach identity from affected servers / Reassign to another identity, Reassign selected with selector Development key. Affected servers list staging-01 and prod-web-01 with PROD badge. Note Removing a saved credential cannot remove copies elsewhere. Lower drawer includes a compact unsaved-change alternative as plain helper Save or discard changes before closing forms, not a second popup. Footer Cancel outline and Delete identity red. Destructive action is never primary blue. No nested centered dialog.",
+      "file": "42-destructive-confirmation-drawer.png"
+    }
+  ],
+  "completedImages": 42,
+  "scope": "Design concepts and handoff only; application source unchanged."
+}

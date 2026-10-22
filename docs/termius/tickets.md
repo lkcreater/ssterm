@@ -465,6 +465,14 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 
 **Validation:** unit (schemas, verifiers, backoff, gate, OAuth with fake JWKS, loopback listener) and E2E (setup, relaunch, wrong/right password, recovery, fake Google provider), development and packaged.
 
+### SST-040 — UI v2 Charcoal
+
+**Status:** `READY` (ready-for-agent) — T054; [spec](../agent-runs/sst-040-spec.md), [ADR 0008](../adr/0008-ui-v2-charcoal.md), [ADR 0004 amendment](../adr/0004-local-app-lock.md#amendment--manual-relock-sst-040-2026-10-22), [decisions](../agent-runs/implementation-plan.md#sst-040-authorization--ui-v2-charcoal-2026-10-22).
+
+**Acceptance:** v2 tokens/terminal palette/icon; every in-app form, setting, tool and confirmation is a right-edge drawer meeting the handoff drawer contract; shell per ADR 0008 (tabs on Terminals, Settings/Lock in sidebar, no global status bar, all shortcuts kept); Servers table without new sort/selection; working Files server picker over existing SFTP open; Lock workspace runs the session lock then the app-lock gate in every window, with a drawer confirmation when live resources exist; existing behavior, target/PROD visibility and trust/auth rules unchanged.
+
+**Validation:** existing Electron E2E (development and packaged) updated for the shell and extended for drawers, Files picker and Lock workspace; app-lock unit tests for relock races; rendered contrast (text ≥4.5:1, ADR 0008 excepted roles measured as evidence); icon QA and package artifact check. Four phases, one local commit each, no push.
+
 ## Definition of done ร่วม
 
 เมื่อ ticket เริ่มหลัง confirm: acceptance criteria ผ่าน, error/cancel paths ที่เกี่ยวข้องตรวจแล้ว, evidence/ADR/spec references อัปเดต, tests ที่ตรวจพฤติกรรมจริงผ่าน, ไม่มี secret ใน committed artifacts/logs และ reviewable diff พร้อม known limitations ห้ามปิด ticket เพียงเพราะมี mock UI หรือ adapter stub

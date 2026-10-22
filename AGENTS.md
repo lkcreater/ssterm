@@ -21,7 +21,7 @@ SST-030 jump hosts / multi-hop / proxies are delivered ([behavior](docs/jump-hos
 | Architecture, domain, and lifecycle contracts | [proposed-architecture.md](docs/termius/proposed-architecture.md), [domain-storage-spec.md](docs/termius/domain-storage-spec.md) |
 | Implementation scope, milestones, and confirmation | [implementation-plan.md](docs/termius/implementation-plan.md) |
 | Acceptance criteria and task dependencies | [tickets.md](docs/termius/tickets.md), [tasks.md](docs/termius/tasks.md) |
-| Signal Blue visual specification | [design-system.md](docs/termius/design-system.md) |
+| Visual specification (Signal Blue, superseded in part by [ADR 0008](docs/adr/0008-ui-v2-charcoal.md)) | [design-system.md](docs/termius/design-system.md) |
 | Design handoff DS01–DS06 | [design-system-implementation.md](docs/termius/design-system-implementation.md) |
 | Supplied artwork and export requirements | [docs/logo/README.md](docs/logo/README.md) |
 | Installed skills and their fit | [implementation-skills.md](docs/termius/implementation-skills.md), [skills-lock.json](skills-lock.json) |
@@ -52,7 +52,7 @@ SST-032 remote edits are transient (schema remains 4), bounded to eight retained
 
 ## Design system and assets
 
-- Follow **Signal Blue**: dark-first navy surfaces; blue for focus/selection/action; green/amber/red/muted operational states with icon/text. Active tab and connected state must remain independently legible. Show the execution target and explicit PROD labels.
+- Follow **UI v2 Charcoal** ([ADR 0008](docs/adr/0008-ui-v2-charcoal.md), SST-040): neutral charcoal surfaces, right-edge drawers instead of centered modals; blue for focus/selection/action; green/amber/red/muted operational states with icon/text. Active tab and connected state must remain independently legible. Show the execution target and explicit PROD labels.
 - Use semantic Tailwind/shadcn tokens and shared variants. Keep terminal foreground/background/cursor/selection/ANSI colors and typography independent of application theme styling.
 - Use Inter for UI and JetBrains Mono for code/terminal, with offline packaging, license checks, and Thai/system fallbacks. Honor keyboard focus, reduced motion, and scaling; validate actual rendered contrast.
 - Use the supplied **SST-style monogram**, not the superseded conceptual Connected S direction. `docs/logo/brand-logo.png` is the lockup; `icon-logo.png` is the icon reference; `design-logo.png` is the presentation reference.

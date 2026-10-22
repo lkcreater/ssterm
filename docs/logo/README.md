@@ -1,5 +1,11 @@
 # ssterm — Logo & app icon
 
+## Charcoal direction / UI v2 — 2026-10-22
+
+ภาพ [brand visual direction Charcoal v2](brand-visual-direction-charcoal-v2.png) และ [ชุด UI v2 / gallery](ui-v2/README.md) ใช้โลโก้เดิมกับพื้นชาร์โคลตามคำขอใหม่ ฟอร์ม overlay เสนอเป็น drawer ชิดขวา ดูข้อกำหนดและขอบเขตใน handoff ของชุดภาพ ภาพเป็น design concepts; งานนี้ยังไม่เปลี่ยน UI runtime หรือทับ source artwork ดั้งเดิมด้านล่าง
+
+ไฟล์แยกสำหรับ direction นี้: [brand-logo-v2.png](brand-logo-v2.png), [icon-logo-v2.png](icon-logo-v2.png) และ [prompt/asset notes](brand-assets-v2.md) ไอคอนเป็น PNG concept พื้นนอก tile โปร่งใส ยังไม่ใช่ production `.icns` ที่ผ่าน packaging/edge QA
+
 **สถานะ:** รับ artwork ที่ผู้ใช้ส่งมาเป็น reference สำหรับ brand/logo/icon ของ ssterm แล้ว; ยังรอ confirm ก่อนนำไป implement หรือสร้าง production exports
 
 ตรวจเปิดไฟล์ใน repo ได้วันที่ 2026-10-14 ปัจจุบัน `docs/logo/icon-logo.png` มีอยู่และอ่านได้ ใช้ path แบบ relative ตามตำแหน่งเอกสารในลิงก์ด้านล่าง

@@ -1,5 +1,7 @@
 # ssterm — Design System
 
+> **Superseded in part (2026-10-22):** UI v2 Charcoal replaces the navy surfaces, overlay pattern, shell layout and some contrast rules below; see [ADR 0008](../adr/0008-ui-v2-charcoal.md) and the [UI v2 handoff](../logo/ui-v2/README.md). Principles in §1 still apply.
+
 > **Version:** 1.0\
 > **Brand direction:** 02 — Signal Blue\
 > **Platform:** macOS desktop (Electron + React + TypeScript)\

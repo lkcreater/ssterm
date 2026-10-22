@@ -1,0 +1,86 @@
+{
+  "tool": "built-in image_gen",
+  "date": "2026-10-22",
+  "refinements": [
+    {
+      "id": "03-connection-route-drawer",
+      "prompt": "Use case: precise-object-edit. Asset type: existing UI concept refinement. Edit the provided existing screenshot with these narrow corrections. Change only the Route overview at the top of the drawer: it must show the complete selected jump chain This Mac → bastion-dev → gateway-lab → web-dev-01. Use four compact nodes, or a neat vertical sequence so it fits. Both selected jump hosts below remain unchanged. Preserve all other controls, identity, layout, fonts, charcoal palette and full right-edge drawer. Preserve one 1536x1024 app window. No centered modal forms, no new features, no secret values."
+    },
+    {
+      "id": "05-identities",
+      "prompt": "Use case: precise-object-edit. Asset type: existing UI concept refinement. Edit the provided existing screenshot with these narrow corrections. Change only the text in the bottom secure-storage info strip. Keep heading 'Secrets stored in macOS Keychain.' Replace its description with exactly 'Private keys and saved passwords use the system Keychain.' Remove the inaccurate absolute claim 'never leave this device'. Preserve all other UI and original SST identity unchanged. Preserve one 1536x1024 app window. No centered modal forms, no new features, no secret values."
+    },
+    {
+      "id": "07-ssh-key-import-drawer",
+      "prompt": "Use case: precise-object-edit. Asset type: existing UI concept refinement. Edit the provided existing screenshot with these narrow corrections. Change only two elements: replace the unsupported background navigation tabs 'SSH keys', 'Certificates', 'Agents' with just 'Identities' and 'SSH keys', with SSH keys selected. Certificates and Agents must be absent. In the bottom secure-storage info box use short text 'Private key stored in macOS Keychain.' and 'Key material is not saved in the catalog.' Remove absolute never-leave-device claims. Preserve all fields, drawer right-edge placement, footer, charcoal colors and original SST logo unchanged. Preserve one 1536x1024 app window. No centered modal forms, no new features, no secret values."
+    },
+    {
+      "id": "09-host-trust-drawer",
+      "prompt": "Use case: precise-object-edit. Asset type: existing UI concept refinement. Edit the provided existing screenshot with these narrow corrections. Change only the pending connection indicators in the background: the web-dev-01 tab dot MUST be AMBER and add short label 'Awaiting trust'; do not show any green Connected indicator for this untrusted session. Replace background terminal body with a clean neutral placeholder 'Connecting to dev@192.0.2.10:22' then 'Awaiting host verification…', without fabricated SSH shell output. Keep the entire existing right-edge Trust this host drawer and original logo, colors, layout and buttons unchanged. Preserve one 1536x1024 app window. No centered modal forms, no new features, no secret values."
+    },
+    {
+      "id": "14-ssh-auth-drawer",
+      "prompt": "Use case: precise-object-edit. Refine the provided existing ssterm UI concept. Correct the background to match an authentication-PENDING session: tab dot amber, short label Authenticating; replace all fake terminal ssh output, Last login, host trust prompt, automatic yes, and Permanently added lines with only 'Connecting to dev@192.0.2.10:22' and 'Authentication required…'. In the drawer target box change the incorrect PROD badge to DEV. Keep password field empty and all current drawer layout, buttons, palette and SST logo unchanged. Preserve one 1536x1024 full app screenshot, no new unrelated features. Preserve original SST logo geometry."
+    },
+    {
+      "id": "13-snippet-composer-drawer",
+      "prompt": "Use case: precise-object-edit. Refine the provided existing ssterm UI concept. Correct the captured host alias everywhere from prod-db-01 to prod-web-01, keeping ops@192.0.2.30:22 and PROD unchanged. In the shown Confirm PROD execution phase, make the earlier Paste and Run buttons visually disabled so only the confirmation footer governs execution. Keep Confirm Run disabled with its checkbox unchecked. Preserve the rest of the entire screenshot, charcoal colors, right-edge drawer and original logo. Preserve one 1536x1024 full app screenshot, no new unrelated features. Preserve original SST logo geometry."
+    },
+    {
+      "id": "19-snippet-editor-drawer",
+      "prompt": "Use case: precise-object-edit. Refine the provided existing ssterm UI concept. Remove the unsupported Description (optional) field and its value from the drawer, leaving only Name, Tags and Command. In the background table, change the Description column heading to Command and use short command-body previews such as df -h, uptime and ls. Preserve the same charcoal design, right drawer geometry, original SST logo, code textarea, encrypted-on-this-Mac helper and Save snippet footer. Preserve one 1536x1024 full app screenshot, no new unrelated features. Preserve original SST logo geometry."
+    },
+    {
+      "id": "21-local-forward-drawer",
+      "prompt": "Use case: precise-object-edit. Refine the provided existing ssterm UI concept. Change only the unsupported wildcard listener address in the background Production DB row: replace 0.0.0.0:15432 with 127.0.0.1:15432. Preserve everything else, especially the right drawer Local type, loopback fields, route, footer and logo. Preserve one 1536x1024 full app screenshot, no new unrelated features. Preserve original SST logo geometry."
+    },
+    {
+      "id": "17-remote-edit-drawer",
+      "prompt": "Use case: precise-object-edit. Refine the provided existing ssterm UI concept. Change the incorrect red PROD badge beside dev@192.0.2.10:22 to a blue DEV badge, matching web-dev-01. Leave the target, TextEdit external-editor flow, full right-edge drawer, controls, consent, fonts, charcoal palette and logo unchanged. No embedded editor. Preserve one 1536x1024 full app screenshot, no new unrelated features. Preserve original SST logo geometry."
+    },
+    {
+      "id": "18-snippets",
+      "prompt": "Use case: precise-object-edit. Make these narrow factual refinements to the supplied existing ssterm UI screenshot. Remove the unsupported Description heading and description text in the preview. In list rows replace descriptive subtitles with short actual command previews such as df -h, uptime, and ss -lnt. Since no execution target is captured on this library page, replace its Paste and Run buttons with one outline button 'Open terminal'. Keep the command preview df -h, encryption helper, other layout and logo unchanged. Keep the full single 1536x1024 app window, exact identity and matte charcoal art direction."
+    },
+    {
+      "id": "26-workspace-templates-drawer",
+      "prompt": "Use case: precise-object-edit. Make these narrow factual refinements to the supplied existing ssterm UI screenshot. Fix only the footer button label: replace the accidental literal text 'Save current SSH layout outline' with 'Save SSH layout'. Make this button outlined neutral instead of filled blue; keep Open fresh sessions blue. In the template preview replace green connected-status dots with neutral server outline icons because saved templates are references rather than live sessions. Preserve other UI and original logo. Keep the full single 1536x1024 app window, exact identity and matte charcoal art direction."
+    },
+    {
+      "id": "23-dynamic-forward-drawer",
+      "prompt": "Use case: precise-object-edit. Make these narrow factual refinements to the supplied existing ssterm UI screenshot. Change only the wildcard Local address 0.0.0.0 in the background remote-redis row to 127.0.0.1. Keep all Dynamic SOCKS5 drawer fields, geometry, colors, footer and logo unchanged. Keep the full single 1536x1024 app window, exact identity and matte charcoal art direction."
+    },
+    {
+      "id": "27-broadcast-composer-drawer",
+      "prompt": "Use case: precise-object-edit. Make these narrow factual refinements to the supplied existing ssterm UI screenshot. Correct connection/focus semantics: the prod-web-01 background tab should have a GREEN connected dot and a separate small PROD badge, not a red status dot merely because it is production. In the current review phase make Insert and Run buttons disabled; keep Review targets as the active next step in footer. Add one short helper under captured targets: 'Ordinary terminal typing stays in its pane.' Preserve exact captured targets, drawer layout, code uptime, charcoal palette and logo. Keep the full single 1536x1024 app window, exact identity and matte charcoal art direction."
+    },
+    {
+      "id": "28-terminal-settings-drawer",
+      "prompt": "Use case: precise-object-edit. Make these narrow factual refinements to the supplied existing ssterm UI screenshot. Make fixed settings visibly read-only: Font family JetBrains Mono, App theme Charcoal Dark, Terminal colors Charcoal (default), and ANSI palette Independent (default) must be plain text values in the same positions, with NO dropdown chevrons or selector boxes. Keep editable font size, scrollback, cursor style, blinking toggle, preview and Done footer unchanged. Preserve the rest of the screenshot and logo. Keep the full single 1536x1024 app window, exact identity and matte charcoal art direction."
+    },
+    {
+      "id": "25-recording-settings-drawer",
+      "prompt": "Use case: precise-object-edit. Make these narrow factual refinements to the supplied existing ssterm UI screenshot. Correct only misleading privacy text: under Save command history use 'Requires opt-in bash/zsh history integration.' instead of 'Record all commands you type.' Under Shell history integration use 'Install the optional integration to report shell history to ssterm.' In Danger zone keep Forget history and use description 'Remove saved command history. Output recordings are managed separately.' Keep BOTH capture switches OFF, all controls and right drawer layout unchanged. Keep the full single 1536x1024 app window, exact identity and matte charcoal art direction."
+    },
+    {
+      "id": "35-team-host-drawer",
+      "prompt": "Use case: precise-object-edit. Narrow correction to supplied ssterm UI concept. Change only Save team host to a disabled grey button while the Shared password field is empty and sharing consent checkbox is unchecked. Add a small Owner badge beside Add team host. Keep all other UI, original SST logo and charcoal colors unchanged. Preserve one 1536x1024 image."
+    },
+    {
+      "id": "42-destructive-confirmation-drawer",
+      "prompt": "Use case: precise-object-edit. Narrow correction to supplied ssterm UI concept. Clarify destructive target. Change title to 'Delete Operations?' and small subtitle 'Identity · ops'. Background selected first row label must be Operations, method Password, instead of dev-key. Select 'Reassign to another identity' radio and unselect 'Detach identity', making the Development key selector consistent. Keep all warnings, affected server list, right-edge full-height drawer, Cancel and red Delete identity footer, original logo and palette unchanged. Preserve one 1536x1024 image."
+    },
+    {
+      "id": "36-team-members-drawer",
+      "correctionSpec": "Replace unsupported shared identities/snippets/audit tabs with Hosts / Members / Devices. Remove emails and email form field. Keep human roles. Require independent complete fingerprint comparison for new device approval. Public candidate/approval exchange is manual."
+    },
+    {
+      "id": "37-team-setup-recovery-drawer",
+      "correctionSpec": "Team setup shares hosts and Owner-managed SSH passwords only. Consent refers to Team roles/shared-password policy. Disable Create while required fields and consent are incomplete. Team recovery remains separate."
+    },
+    {
+      "id": "39-app-setup-recovery",
+      "correctionSpec": "First-launch gate exposes no sidebar/navigation/catalog/group counts. Preserve original brand in left charcoal area and right form panel. Remove invented numeric username/password rules. Disable Create while required fields are empty."
+    }
+  ]
+}
