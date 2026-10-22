@@ -88,6 +88,7 @@ test("recording over SSH bash 5.2 through production main: opt-in, encrypted, ex
     // 2. Enable both switches in Settings.
     await page.getByRole("button", { name: "Settings", exact: true }).first().click();
     const settings = page.getByRole("dialog", { name: "Settings" });
+    await settings.getByRole("tab", { name: "Recording" }).click();
     const section = settings.getByTestId("recording-settings");
     await section.getByRole("switch", { name: "Record session output" }).click();
     await expect(section.getByRole("switch", { name: "Record session output" })).toBeChecked();

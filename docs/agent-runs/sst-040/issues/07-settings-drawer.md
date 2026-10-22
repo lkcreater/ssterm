@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Drawer primitive with Server and Group editors
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Settings drawer has Terminal, Recording, Security and Sync tabs (up to 640 px)
 - [ ] Terminal tab shows font, size, scrollback, cursor and blink as today, and terminal colors as read-only Charcoal

@@ -19,8 +19,9 @@ export function SignInSettings({ owner }: { owner: Owner }) {
   const [busy, setBusy] = useState(false);
   const refresh = () => void call((bridge) => bridge.appLockState({ owner })).then((result) => { if (result.ok) setStatus(result.value); });
   useEffect(refresh, [owner.windowId, owner.generation]);
+  if (!status) return null;
   // Test profiles run without the lock; there is nothing to manage.
-  if (!status?.method) return null;
+  if (!status.method) return <p className="text-muted-foreground" data-testid="sign-in-settings">The app lock is off for this profile.</p>;
   const done = (code?: string) => {
     setProblem(undefined);
     setStep(code ? { code } : "idle");

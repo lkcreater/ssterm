@@ -8,7 +8,7 @@
 - **Every app start** shows *Unlock ssterm*. Until it succeeds, main serves only bootstrap and the app-lock channels; every other IPC answers `unauthorized`, and no feature state is pushed. Wrong attempts back off 1, 2, 4 … 30 s. Screen lock/sleep keep the existing behavior.
 - **Google:** ssterm opens the system browser; Google redirects to `http://127.0.0.1:55411/oauth/callback`, a listener that exists only during the sign-in (at most 5 minutes, one callback, Host and `state` checked). PKCE S256, `nonce`, ID token verified with Google's keys (`iss`, `aud`/`azp`, `exp`, verified email). Only the account bound at setup unlocks. No Google token is stored. Port 55411 in use is reported. Offline: “Continue offline” if the last Google sign-in is under 7 days old and Google is unreachable.
 - **Recovery:** *Forgot? Use a recovery code* → a correct code allows a new setup (password or Google) and issues a new code; the old code stops working. If the Keychain record is missing but the profile marker exists, only the recovery code is offered.
-- **Settings → Sign-in:** confirm the current password (or Google) to change the password, switch method or create a new recovery code (a 2-minute window).
+- **Settings → Security (Sign-in):** confirm the current password (or Google) to change the password, switch method or create a new recovery code (a 2-minute window).
 
 ## Build with Google
 

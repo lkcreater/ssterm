@@ -216,25 +216,28 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await page.waitForTimeout(250);
       const result = await audit(page);
       expect(result.checked, `${name} dialog text was audited`).toBeGreaterThan(3);
-      if (dialog === "shortcuts") {
-        // SST-040/04: a right-edge drawer, full height below the titlebar, with no horizontal overflow.
-        const placement = await page.getByRole("dialog").evaluate((element) => {
-          const box = element.getBoundingClientRect();
-          return { right: Math.abs(innerWidth - box.right) <= 0.5, bottom: Math.abs(innerHeight - box.bottom) <= 0.5,
-            overflow: element.scrollWidth - element.clientWidth };
-        });
-        expect(placement, `shortcuts drawer at ${size}`).toEqual({ right: true, bottom: true, overflow: 0 });
-      }
+      // SST-040/04, 07: a right-edge drawer, full height below the titlebar, at most 640 px (Settings), no horizontal overflow.
+      const placement = await page.getByRole("dialog").evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return { right: Math.abs(innerWidth - box.right) <= 0.5, bottom: Math.abs(innerHeight - box.bottom) <= 0.5,
+          narrow: box.width <= 640.5, overflow: element.scrollWidth - element.clientWidth };
+      });
+      expect(placement, `${dialog} drawer at ${size}`).toEqual({ right: true, bottom: true, narrow: true, overflow: 0 });
       matrix[`${dialog}-dialog@${size}`] = { checked: result.checked, excepted: result.excepted };
       findings.push(...result.findings.map((finding) => ({ page: `${dialog}-dialog`, size, ...finding })));
       if (dialog === "settings") {
-        // The Recording section sits below the fold of the scrolling dialog.
-        await page.getByTestId("recording-settings").scrollIntoViewIfNeeded();
-        await expect(page.getByTestId("recording-settings").getByRole("switch", { name: "Record session output" })).not.toBeChecked();
-        const recording = await audit(page);
-        matrix[`settings-recording@${size}`] = { checked: recording.checked, excepted: recording.excepted };
-        findings.push(...recording.findings.map((finding) => ({ page: "settings-recording", size, ...finding })));
-        await page.getByRole("dialog").getByRole("heading", { name: "Settings" }).scrollIntoViewIfNeeded();
+        // SST-040/07: one drawer with four tabs; each tab is audited (Terminal above). Colors are read-only Charcoal.
+        const drawer = page.getByRole("dialog");
+        await expect(drawer.getByRole("tab")).toHaveText(["Terminal", "Recording", "Security", "Sync"]);
+        await expect(drawer.getByText("Charcoal", { exact: true })).toBeVisible();
+        for (const tab of ["Recording", "Security", "Sync"]) {
+          await drawer.getByRole("tab", { name: tab }).click();
+          if (tab === "Recording")
+            await expect(page.getByTestId("recording-settings").getByRole("switch", { name: "Record session output" })).not.toBeChecked();
+          const audited = await audit(page);
+          matrix[`settings-${tab.toLowerCase()}@${size}`] = { checked: audited.checked, excepted: audited.excepted };
+          findings.push(...audited.findings.map((finding) => ({ page: `settings-${tab.toLowerCase()}`, size, ...finding })));
+        }
       }
       await page.screenshot({ path: testInfo.outputPath(`${dialog}-dialog-${size}.png`) });
       await page.keyboard.press("Escape");

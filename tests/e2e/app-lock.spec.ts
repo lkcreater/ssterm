@@ -85,6 +85,7 @@ test("password lock: zod-validated first setup, recovery code, locked relaunch w
 
     // Settings: confirm, then issue a new recovery code (the old one stops working).
     await page.getByRole("button", { name: "Settings", exact: true }).first().click();
+    await page.getByRole("dialog", { name: "Settings" }).getByRole("tab", { name: "Security" }).click();
     const settings = page.getByTestId("sign-in-settings");
     await expect(settings).toContainText("Password · alice");
     await settings.getByLabel("Current password").fill(PASSWORD);

@@ -1443,3 +1443,14 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
     - typecheck, unit 768/769, build pass.
     - Full E2E 85/86 before the fixes; the one failure (`sync.spec:60`, element detached) passed when run alone.
     - Focused E2E after the fixes: 14/14, and 6/6 in the re-review.
+- **SST-040/07 done (2026-10-22):**
+  - Settings is one drawer, keyed per open and up to 640 px wide, with keepMounted tabs Terminal/Recording/Security/Sync.
+  - Terminal colors show as read-only "Charcoal".
+  - A catalog lock closes the drawer from any tab.
+  - Sync busy blocks closing, shows "Sync running" in the footer and disables Manage recordings.
+  - Review APPROVED. Lows L1, L2 and L5 fixed; L3 (reopen ignored during the exit) and L4 (Sync stays mounted for about 200 ms after a lock) kept.
+  - Checks:
+    - typecheck, unit 768/769 and build pass.
+    - Full E2E 85/88. The 3 failures (`recording:42`, `terminal-flow:253`, `transfer-conflicts:59`) are in load-sensitive specs and passed when rerun alone.
+    - In review, two failures were caused by stray OS keystrokes reaching the test windows (`app-lock:40`, `recording:355`).
+    - After the fixes: settings, sync and recording 10/10; release sweep 1/1.

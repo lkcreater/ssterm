@@ -60,7 +60,7 @@ import { useTerminals } from "@/hooks/use-terminals";
 import { useSftp } from "@/hooks/use-sftp";
 import { FilesWorkspace } from "@/components/sftp/files-workspace";
 import { useSettings } from "@/hooks/use-settings";
-import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { SettingsDrawer, type SettingsTab } from "@/components/settings/settings-dialog";
 import { SessionTabs } from "@/components/workspace/session-tabs";
 import { ShortcutsDrawer } from "@/components/workspace/shortcuts-dialog";
 import {
@@ -220,6 +220,13 @@ export function AppShell() {
     setOverlay("shortcuts");
     setShortcutsKey((key) => key + 1);
   };
+  const [settingsOpen, setSettingsOpen] = useState<{ key: number; tab?: SettingsTab }>({ key: 0 });
+  const openSettings = (tab?: SettingsTab) => {
+    // An open (or closing) Settings drawer is kept: a reopen must not drop a running sync action.
+    if (overlay === "settings") return;
+    setOverlay("settings");
+    setSettingsOpen(({ key }) => ({ key: key + 1, tab }));
+  };
   // The open Workspace tools drawer's key (0 = closed): each open is a fresh instance, even during the exit motion.
   const [workspaceTools, setWorkspaceTools] = useState(0);
   const toolsSerial = useRef(0);
@@ -367,7 +374,7 @@ export function AppShell() {
   const onCommand = (command: WorkspaceCommand) => {
     if (command === "toggle-sidebar") toggleSidebar();
     else if (command === "shortcuts") openShortcuts();
-    else setOverlay(command);
+    else openSettings();
   };
   const showTerminals = () => setPage("terminals");
   const terminalsShown = page === "terminals" && !!owner;
@@ -590,7 +597,7 @@ export function AppShell() {
               <SidebarFooter className="gap-2 border-t border-sidebar-border p-2">
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton disabled={!owner} aria-keyshortcuts="Meta+Comma" onClick={() => setOverlay("settings")}>
+                    <SidebarMenuButton disabled={!owner} aria-keyshortcuts="Meta+Comma" onClick={() => openSettings()}>
                       <Settings2Icon />
                       <span>Settings</span>
                       <span className="ml-auto type-caption text-muted-foreground" aria-hidden="true">⌘,</span>
@@ -680,7 +687,7 @@ export function AppShell() {
                     <TunnelsPage owner={owner} catalog={catalog} state={state} tunnels={tunnelState} />
                   ) : page === "recordings" && owner ? (
                     // Works while storage is blocked too: capture there fails closed, and Delete still works.
-                    <RecordingsPage owner={owner} onOpenSettings={() => setOverlay("settings")} />
+                    <RecordingsPage owner={owner} onOpenSettings={() => openSettings("recording")} />
                   ) : page !== "identities" && page !== "snippets" && page !== "tunnels" && page !== "recordings" && page !== "team" && state && ready ? (
                     <HostsPage
                       catalog={catalog}
@@ -828,14 +835,17 @@ export function AppShell() {
           afterDelete={hostsHeading}
         />
       ) : null}
-      <SettingsDialog
-        open={overlay === "settings"}
-        onOpenChange={(open) => setOverlay(open ? "settings" : undefined)}
-        settings={settings}
-        terminals={sessions.length}
-        owner={owner}
-        onOpenRecordings={() => { setOverlay(undefined); setPage("recordings"); }}
-      />
+      {overlay === "settings" ? (
+        <SettingsDrawer
+          key={settingsOpen.key}
+          tab={settingsOpen.tab}
+          onClose={() => setOverlay(undefined)}
+          settings={settings}
+          terminals={sessions.length}
+          owner={owner}
+          onOpenRecordings={() => setPage("recordings")}
+        />
+      ) : null}
       {overlay === "shortcuts" ? (
         <ShortcutsDrawer key={shortcutsKey} onClose={() => setOverlay(undefined)} />
       ) : null}

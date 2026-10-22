@@ -27,6 +27,15 @@ test("terminal settings persist across relaunch; invalid values show an inline e
   let relaunched: Desktop | undefined;
   try {
     const s = await openSettings(desktop.page);
+    // SST-040/07: one right-edge drawer (up to 640 px) with four tabs, Terminal first; terminal colors are read-only.
+    await expect(s.dialog.getByRole("tab")).toHaveText(["Terminal", "Recording", "Security", "Sync"]);
+    await expect(s.dialog.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
+    await expect(s.dialog.getByText("Terminal colors", { exact: true })).toBeVisible();
+    await expect(s.dialog.getByText("Charcoal", { exact: true })).toBeVisible();
+    await expect.poll(() => s.dialog.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { right: Math.round(innerWidth - box.right), width: box.width <= 640 };
+    }), { message: "settles at the right edge" }).toEqual({ right: 0, width: true });
     await expect(s.font).toHaveValue("13");
     await expect(s.scrollback).toHaveValue("10000");
     await expect(s.cursor("Block")).toHaveAttribute("aria-pressed", "true");
@@ -70,6 +79,19 @@ test("terminal settings persist across relaunch; invalid values show an inline e
   } finally {
     await relaunched?.close();
   }
+  expect(desktop.errors).toEqual([]);
+});
+
+test("Settings › Recording opens the Recording tab; Manage recordings closes Settings on the Recordings page", async ({ desktop }) => {
+  const { page } = desktop;
+  await page.locator("#app-sidebar").getByRole("button", { name: "Recordings", exact: true }).click();
+  await page.getByTestId("recordings-page").getByRole("button", { name: "Settings › Recording" }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await expect(dialog.getByRole("tab", { name: "Recording" })).toHaveAttribute("aria-selected", "true");
+  await expect(dialog.getByTestId("recording-settings").getByRole("switch", { name: "Record session output" })).not.toBeChecked();
+  await dialog.getByRole("button", { name: "Manage recordings and shell integration" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId("recordings-page")).toBeVisible();
   expect(desktop.errors).toEqual([]);
 });
 

@@ -90,6 +90,7 @@ test("two devices sync encrypted catalog through UI/bridge, merge independent ed
       .getByRole("button", { name: "Settings", exact: true })
       .first()
       .click();
+    await owner.page.getByRole("dialog", { name: "Settings" }).getByRole("tab", { name: "Sync" }).click();
     const panel = owner.page.getByTestId("sync-settings");
     await expect(panel).toContainText("disabled");
     await panel.getByLabel("Server URL", { exact: true }).fill(endpoint);
@@ -364,6 +365,7 @@ test("sync setup remains keyboard accessible at supported sizes and clears trans
       .locator("#app-sidebar")
       .getByRole("button", { name: "Settings", exact: true });
     await trigger.click();
+    await page.getByRole("dialog", { name: "Settings" }).getByRole("tab", { name: "Sync" }).click();
     const dialog = page.getByRole("dialog", { name: "Settings" });
     const panel = dialog.getByTestId("sync-settings");
     const endpoint = panel.getByLabel("Server URL", { exact: true });
@@ -386,6 +388,7 @@ test("sync setup remains keyboard accessible at supported sizes and clears trans
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await trigger.click();
+    await page.getByRole("dialog", { name: "Settings" }).getByRole("tab", { name: "Sync" }).click();
     await expect(
       page.getByLabel("Server account token", { exact: true }),
     ).toHaveValue("");
@@ -475,6 +478,7 @@ test("recovery secrets and delayed native saves are fenced by lock without rotat
       .getByRole("button", { name: "Settings", exact: true });
     const settings = page.getByRole("dialog", { name: "Settings" });
     await trigger.click();
+    await page.getByRole("dialog", { name: "Settings" }).getByRole("tab", { name: "Sync" }).click();
     await settings
       .getByRole("button", { name: "Retry pending sync", exact: true })
       .click();
@@ -485,6 +489,9 @@ test("recovery secrets and delayed native saves are fenced by lock without rotat
       .getByRole("button", { name: "Save new encrypted recovery kit" })
       .click();
     await expect(settings.getByTestId("sync-recovery-secret")).toBeVisible();
+    // The lock closes Settings from any tab: the Sync panel stays mounted behind the Terminal tab.
+    await settings.getByRole("tab", { name: "Terminal" }).click();
+    await expect(settings.getByTestId("sync-recovery-secret")).toBeHidden();
     const before = await page.evaluate(async () => {
       const boot = await window.ssterm.bootstrap();
       return boot.ok ? boot.value.owner : null;
@@ -494,6 +501,7 @@ test("recovery secrets and delayed native saves are fenced by lock without rotat
     });
     await expect(settings).toHaveCount(0);
     await trigger.click();
+    await page.getByRole("dialog", { name: "Settings" }).getByRole("tab", { name: "Sync" }).click();
     await expect(settings.getByTestId("sync-recovery-secret")).toHaveCount(0);
     await app.evaluate(({ dialog, ipcMain }) => {
       dialog.showSaveDialog = (() =>
@@ -526,12 +534,18 @@ test("recovery secrets and delayed native saves are fenced by lock without rotat
         app.evaluate(() => typeof (globalThis as any).__sstermSyncPendingSave),
       )
       .toBe("function");
+    // While the action runs, every tab shows it, Done waits and Manage recordings cannot drop its reply.
+    await expect(settings.getByRole("status").filter({ hasText: "Sync running" })).toBeVisible();
+    await expect(settings.getByRole("button", { name: "Done" })).toBeDisabled();
+    await settings.getByRole("tab", { name: "Recording" }).click();
+    await expect(settings.getByRole("button", { name: "Manage recordings and shell integration" })).toBeDisabled();
     await app.evaluate(({ powerMonitor }) => {
       powerMonitor.emit("lock-screen");
     });
     await expect(settings).toHaveCount(0);
     // Re-unlocking this service through the same window must not revive its old native dialog callback.
     await trigger.click();
+    await page.getByRole("dialog", { name: "Settings" }).getByRole("tab", { name: "Sync" }).click();
     await expect(settings.getByTestId("sync-settings")).toContainText(
       "enrolled",
     );
