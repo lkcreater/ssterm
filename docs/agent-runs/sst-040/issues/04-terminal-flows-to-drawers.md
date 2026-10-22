@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Drawer primitive with Server and Group editors
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Paste/Run drawer shows the captured target prominently; switching tab or pane afterwards never changes it
 - [ ] PROD Run requires an explicit confirmation step inside the drawer; Paste and Run stay distinct

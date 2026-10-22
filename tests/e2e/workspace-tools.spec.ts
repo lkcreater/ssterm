@@ -255,7 +255,7 @@ test("templates persist configuration across relaunch, restore fresh tabs/splits
     await closeTools(page);
     await expect(tabs).toHaveCount(4);
 
-    // 960×640, reduced motion: safe empty composer, bounded dialog, readable labels and keyboard close.
+    // 960×640, reduced motion: safe empty composer, a right-edge drawer inside the window, readable labels and keyboard close.
     await page.emulateMedia({ reducedMotion: "reduce" });
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(960, 640));
     await expect.poll(() => page.evaluate(() => `${innerWidth}x${innerHeight}`)).toBe("960x640");
@@ -267,6 +267,7 @@ test("templates persist configuration across relaunch, restore fresh tabs/splits
         overflow: element.scrollWidth - element.clientWidth };
     });
     expect(bounds).toEqual({ fits: true, overflow: 0 });
+    expect(Math.abs(await tools.evaluate(element => innerWidth - element.getBoundingClientRect().right)), "right edge").toBeLessThanOrEqual(0.5);
     expect((await renderedContrast(tools.locator("h2").first())).ratio).toBeGreaterThanOrEqual(4.5);
     expect((await renderedContrast(tools.locator("p.text-muted-foreground").first())).ratio).toBeGreaterThanOrEqual(4.5);
     await page.screenshot({ path: testInfo.outputPath("workspace-tools-960x640-empty.png"), animations: "disabled" });
@@ -414,13 +415,24 @@ test("broadcast captures recipients through delayed decrypt, arms explicitly, se
     await expect(confirm).toContainText(alpha);
     await expect(confirm).toContainText(bravo);
     await expect(confirm).toContainText("PROD");
-    await expect(confirm.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
-    await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
+    // A step inside the same drawer, not a stacked dialog; Esc and Cancel leave it without sending.
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(tools.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(confirm).toHaveCount(0);
+    await expect(tools).toBeVisible();
+    await arm(tools);
+    await tools.getByRole("button", { name: "Run on targets", exact: true }).click();
+    await tools.getByRole("button", { name: "Cancel", exact: true }).click();
     expect((await writes(app)).length).toBe(beforeRun);
     await arm(tools);
     await tools.getByRole("button", { name: "Run on targets", exact: true }).click();
-    await confirm.getByRole("button", { name: "Confirm Run", exact: true }).click();
+    // A double click: the second click lands on the footer Close that replaces Confirm Run and must not abort the send.
+    await tools.getByRole("button", { name: "Confirm Run", exact: true }).dblclick();
     await expect(tools.getByTestId("workspace-tools-feedback")).toContainText("2 of 2 targets accepted bytes");
+    await expect(tools).toBeVisible();
+    await expect(tools.getByLabel("Multi-target input", { exact: true }), "focus returns to a usable control").toBeFocused();
     for (const pane of [a, b]) await expect(pane.locator(".xterm-rows")).toContainText("MULTI-42");
     expect((await writes(app)).length).toBe(beforeRun + 2);
 
@@ -441,7 +453,7 @@ test("broadcast captures recipients through delayed decrypt, arms explicitly, se
     const beforeStale = (await writes(app)).length;
     await arm(tools);
     await tools.getByRole("button", { name: "Run on targets", exact: true }).click();
-    await confirm.getByRole("button", { name: "Confirm Run", exact: true }).click();
+    await tools.getByRole("button", { name: "Confirm Run", exact: true }).click();
     await expect(tools.getByTestId("workspace-tools-feedback")).toContainText("1 of 2 targets accepted bytes");
     await expect(tools.getByTestId("multi-target-results")).toContainText("refused");
     await expect(a.locator(".xterm-rows")).toContainText("STALE-16");

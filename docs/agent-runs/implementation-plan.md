@@ -1412,3 +1412,16 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
     - typecheck, unit 768/769 and build pass.
     - Full E2E 85/86; the one failure is `team.spec:42`, which was already failing before SST-040.
     - `release-gate` --repeat-each 3: 12/12.
+- **SST-040/04 done (2026-10-22):**
+  - **Moved to drawers:**
+    - Snippet Paste/Run drawer. The target is captured when it opens; the PROD confirmation is a step inside the same drawer.
+    - Workspace tools drawer, keyed per open. Close is disabled and the drawer counts as busy while a multi-target send runs.
+    - Close-tab confirmation and paste confirmation, as alert drawers.
+    - Shortcuts drawer.
+  - **Focus:** `focusActivePane` skips while a drawer is open.
+  - **Removed:** Esc first clearing snippet search, and ⇧⌘S refocusing search inside the drawer.
+  - **Review:** APPROVED. Fixed the medium finding (double-clicking Confirm Run aborted a broadcast) and the lows: focus after Run, reopening Workspace tools, the `detail>1` guard on list Run, and docs. LOW 1 (capture at open while Connecting) kept, since it fails safe.
+  - **Checks:**
+    - typecheck, unit 768/769, build pass.
+    - Full E2E 85/86 before the review fixes; the one failure is `team.spec:42`, which was already failing.
+    - After the fixes, focused E2E 19/19.

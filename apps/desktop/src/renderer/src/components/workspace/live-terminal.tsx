@@ -187,6 +187,7 @@ export function LiveTerminal({
   const searchVisible = useRef(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingPaste>();
+  const pasteSerial = useRef(0);
   const [suggestions, setSuggestions] = useState<Suggestions>();
   // A pane that leaves Ready (lock, disconnect, failure) drops its suggestions at once.
   if (!ready && suggestions) setSuggestions(undefined);
@@ -557,7 +558,7 @@ export function LiveTerminal({
     } else if (decision.kind === "refuse") {
       notify("Paste refused: the text is larger than 256 KiB. Nothing was sent.");
     } else if (decision.kind === "confirm") {
-      setPending({ text, lines: decision.lines, removed, bracketed, label, endpoint, production, generation });
+      setPending({ text, lines: decision.lines, removed, bracketed, label, endpoint, production, generation, serial: ++pasteSerial.current });
     } else if (current.paste(text)) {
       notify(`Pasted ${lineCount(decision.lines)} into ${label}`);
     }
@@ -760,13 +761,16 @@ export function LiveTerminal({
         </div>
       </div>
       <PaneStatusBar session={session} />
-      <PasteConfirmDialog
-        pending={pending}
-        canPaste={ready && !inputPaused}
-        returnFocus={() => controls.current?.term.textarea ?? null}
-        onCancel={() => setPending(undefined)}
-        onConfirm={confirmPaste}
-      />
+      {pending ? (
+        <PasteConfirmDialog
+          key={pending.serial}
+          pending={pending}
+          canPaste={ready && !inputPaused}
+          returnFocus={() => controls.current?.term.textarea ?? null}
+          onCancel={() => setPending(undefined)}
+          onConfirm={confirmPaste}
+        />
+      ) : null}
     </section>
   );
 }

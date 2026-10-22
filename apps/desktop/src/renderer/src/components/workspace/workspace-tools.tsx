@@ -1,11 +1,10 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import type { CatalogState, Owner, TerminalSession, WorkspaceTemplateNode, WorkspaceTemplateView } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +15,7 @@ import type { WorkspaceController } from "@/components/workspace/terminal-worksp
 import { captureTargets, dispatchTargets, inspectTargets, type CapturedTarget, type TargetDispatchResult, type TargetInspection } from "@/lib/multi-target-dispatch";
 import type { ConfirmReason, DispatchMode } from "@/lib/snippet-dispatch";
 import { captureWorkspaceTemplate, materializeWorkspaceTemplate } from "@/lib/workspace-templates";
+import { cn } from "@/lib/utils";
 
 const MAX_TARGETS = 8;
 const reasonText: Record<ConfirmReason, string> = {
@@ -33,9 +33,16 @@ function TargetLabel({ target }: { target: CapturedTarget }) {
   return <span className="flex min-w-0 flex-wrap items-center gap-2"><span className="font-medium">{target.label}</span>{target.production ? <Badge variant="production">PROD</Badge> : null}<span className="host-target break-all">{target.endpoint}</span><span className="text-muted-foreground type-caption">Session {target.sessionId.slice(-8)}</span></span>;
 }
 
-/** Explicit composer only: terminal keystrokes continue through each pane's local input. */
-export function WorkspaceTools({ owner, catalog, controller, onClose }: {
-  owner: Owner; catalog: CatalogState; controller: WorkspaceController; onClose(): void;
+/**
+ * Workspace templates and the explicit multi-target composer, as a drawer. Explicit composer only: terminal keystrokes
+ * continue through each pane's local input. Closing cancels a running operation at once (Ready sessions stay open);
+ * a typed template name asks before it is discarded. The Run/Insert confirmation is a step inside this drawer.
+ */
+export function WorkspaceTools({ owner, catalog, controller, returnFocus, onClose }: {
+  owner: Owner; catalog: CatalogState; controller: WorkspaceController;
+  returnFocus(): HTMLElement | null;
+  /** After the exit motion. */
+  onClose(): void;
 }) {
   const inputs = useContext(TerminalInputsContext)!;
   const id = useId();
@@ -63,6 +70,32 @@ export function WorkspaceTools({ owner, catalog, controller, onClose }: {
   const operation = useRef<Operation | null>(null);
   const working = useRef(false);
   const valid = () => active.current && identity === latestIdentity.current;
+  // A send in progress cannot be closed away (closing aborts it and would leave partial delivery unreported).
+  const sending = busy && operation.current?.kind === "send";
+  const close = useDrawerClose({ dirty: () => !!name.trim(), busy: sending });
+  const stepCancel = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  // Where focus returns after the confirmation step; a confirmed send disables it, so wait until the send ends.
+  const resume = useRef<HTMLElement | null>(null);
+  const confirming = !!confirm;
+  useEffect(() => {
+    if (confirming) return stepCancel.current?.focus();
+    const back = resume.current;
+    if (!back || busy) return;
+    resume.current = null;
+    // Only while focus is nowhere useful (the removed step button left it on the page or the drawer itself).
+    const now = document.activeElement;
+    if (now && now !== document.body && !now.matches('[data-slot="drawer"]')) return;
+    const usable = (element: HTMLElement | null): element is HTMLElement =>
+      !!element?.isConnected && element.checkVisibility() && !element.matches(":disabled");
+    (usable(back) ? back : usable(input.current) ? input.current : null)?.focus();
+  }, [confirming, busy]);
+  // Closing ends any operation now, not after the exit motion: late results are discarded.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (close.open) opened.current = true;
+    else if (opened.current) { active.current = false; abortOperation(); }
+  }, [close.open]);
   const readSession = (sessionId: string) => latest.current.controller.sessions.find((session) => session.sessionId === sessionId);
 
   // Main checks the phase atomically: a newly Ready session is retained even if its event is late.
@@ -220,7 +253,10 @@ export function WorkspaceTools({ owner, catalog, controller, onClose }: {
   function requestSend(dispatchMode: DispatchMode) {
     if (!armed || working.current) return;
     const inspection = inspectTargets(options(armed, text, dispatchMode));
-    if (inspection.some((entry) => entry.reasons.length)) return setConfirm({ targets: armed, text, mode: dispatchMode, inspection });
+    if (inspection.some((entry) => entry.reasons.length)) {
+      resume.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      return setConfirm({ targets: armed, text, mode: dispatchMode, inspection });
+    }
     void send(armed, text, dispatchMode);
   }
   function select(value: string, checked: boolean) {
@@ -229,11 +265,22 @@ export function WorkspaceTools({ owner, catalog, controller, onClose }: {
   const lockedSelection = busy || prepared !== null;
   const readySessions = controller.sessions.filter((session) => session.phase === "ready" && !session.local && !!session.hostId && !!session.target);
   const choices = mode === "existing" ? readySessions.map((session) => ({ id: session.sessionId, label: `${session.target?.label ?? "Unknown target"} · Session ${session.sessionId.slice(-8)}` })) : catalog.hosts.map((host) => ({ id: host.id, label: host.label }));
-  return <Dialog open onOpenChange={(open) => { if (!open) { abortOperation(); onClose(); } }}>
-    <DialogContent className="workspace-tools motion-reduce:animate-none" data-testid="workspace-tools"
-      finalFocus={() => document.querySelector<HTMLElement>('.terminal-workspace section[data-active="true"] .xterm-helper-textarea') ?? true}>
-      <DialogHeader><DialogTitle>Workspace tools</DialogTitle><DialogDescription>Save layouts and prepare explicit multi-target input for saved SSH hosts only. Local panes are excluded. Ordinary terminal typing stays in its pane.</DialogDescription></DialogHeader>
-      <div className="workspace-tools-scroll">
+  const cancelConfirm = () => { setConfirm(undefined); setArmed(null); };
+  return <Drawer
+    close={{ ...close, request: () => (confirm ? cancelConfirm() : close.request()) }}
+    onClose={onClose}
+    finalFocus={() => returnFocus() ?? true}
+    data-testid="workspace-tools"
+    title="Workspace tools"
+    description="Save layouts and prepare explicit multi-target input for saved SSH hosts only. Local panes are excluded. Ordinary terminal typing stays in its pane."
+    footer={confirm ? <>
+      <Button ref={stepCancel} variant="outline" onClick={cancelConfirm}>Cancel</Button>
+      <Button variant={confirm.targets.some((target) => target.production) ? "destructive" : "default"} onClick={() => { const current = confirm; setConfirm(undefined); void send(current.targets, current.text, current.mode, new Map(current.inspection.map((entry) => [entry.target.sessionId, entry.reasons]))); }}>Confirm {confirm.mode === "run" ? "Run" : "Insert"}</Button>
+    </> : <Button variant="outline" disabled={sending} onClick={(event) => { if (event.detail <= 1) close.request(); }}>Close</Button>}
+  >
+      {confirm ? <section role="alert" aria-labelledby={`${id}-confirm`} className="grid gap-3" data-testid="multi-target-confirm"><h3 id={`${id}-confirm`} className="font-medium text-foreground">{confirm.mode === "run" ? "Run on captured targets?" : "Insert on captured targets?"}</h3>{confirm.inspection.map((entry) => <div key={entry.target.sessionId} className="grid gap-1"><TargetLabel target={entry.target} /><span>{entry.status === "ready" ? "Ready" : entry.status}</span>{entry.reasons.map((reason) => <span key={reason}>{reasonText[reason]}</span>)}</div>)}<span className="text-muted-foreground">Bytes accepted does not confirm command success.</span></section> : null}
+      {/* Hidden, not unmounted, during the confirmation step: the composer and scroll position stay. */}
+      <div className={cn("workspace-tools-body", confirm && "hidden")}>
         <section className="grid gap-3" aria-label="Workspace templates">
           <h2 className="type-label">Workspace templates</h2>
           <p className="text-sm text-muted-foreground">Templates save SSH panes only and restore fresh sessions using current saved-host settings. Local panes, terminal history and running processes are excluded.</p>
@@ -256,7 +303,7 @@ export function WorkspaceTools({ owner, catalog, controller, onClose }: {
           {prepared ? <div className="grid gap-2"><h3 className="type-label">Captured targets · {prepared.length}</h3><ul aria-label="Captured targets" className="grid gap-2">{prepared.map((target) => <li key={target.sessionId}><TargetLabel target={target} /></li>)}</ul><p className="text-sm text-muted-foreground">Changing terminal focus does not change these targets. Reset targets to choose again.</p></div> : null}
           <Field><FieldLabel htmlFor={`${id}-snippet`}>Snippet to prepare</FieldLabel><Select items={[{ value: "", label: "Choose saved snippet" }, ...catalog.snippets.map((snippet) => ({ value: snippet.id, label: snippet.label }))]} value={snippetId} disabled={busy || !prepared?.length} onValueChange={(value) => { if (typeof value === "string") { setSnippetId(value); setArmed(null); } }}><SelectTrigger id={`${id}-snippet`} className="w-full"><SelectValue /></SelectTrigger><SelectContent alignItemWithTrigger={false}><SelectGroup><SelectItem value="">Choose saved snippet</SelectItem>{catalog.snippets.map((snippet) => <SelectItem key={snippet.id} value={snippet.id}>{snippet.label}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
           <Button size="sm" variant="outline" disabled={busy || !prepared?.length || !snippetId} onClick={() => { const op = start("prepare"); if (op) void loadSnippet(snippetId, op).finally(() => finish(op)); }}>Load snippet to composer</Button>
-          <Field><FieldLabel htmlFor={`${id}-input`}>Multi-target input</FieldLabel><Textarea id={`${id}-input`} className="workspace-tools-input" rows={5} value={text} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} disabled={busy || !prepared?.length} onChange={(event) => { setText(event.target.value); setArmed(null); setConfirm(undefined); }} /></Field>
+          <Field><FieldLabel htmlFor={`${id}-input`}>Multi-target input</FieldLabel><Textarea ref={input} id={`${id}-input`} className="workspace-tools-input" rows={5} value={text} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} disabled={busy || !prepared?.length} onChange={(event) => { setText(event.target.value); setArmed(null); setConfirm(undefined); }} /></Field>
           {armed ? <Alert data-testid="broadcast-armed"><AlertTitle>Broadcast armed</AlertTitle><AlertDescription>Only the captured targets above receive the next explicit Insert or Run.</AlertDescription><Button size="sm" variant="outline" onClick={() => { setArmed(null); setConfirm(undefined); }}>Disarm</Button></Alert> : <p className="text-sm text-muted-foreground">Broadcast disarmed. Preparing or editing text sends nothing.</p>}
           <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy || !prepared?.length || !text || !!armed} onClick={() => { setArmed(prepared?.map((target) => ({ ...target })) ?? null); setResults([]); }}>Arm broadcast</Button><Button size="sm" variant="outline" disabled={busy || !armed} onClick={() => requestSend("insert")}>Insert without Enter</Button><Button size="sm" disabled={busy || !armed} onClick={() => requestSend("run")}>Run on targets</Button></div>
           {busy && operation.current?.kind !== "metadata" ? <Button variant="outline" size="sm" onClick={() => { abortOperation(); setArmed(null); setConfirm(undefined); setText(""); setRows((current) => current.map((row) => row.status === "connecting" ? { ...row, status: "cancelled" } : row)); setNotice("Cancelled. Ready sessions remain open; only newly created connecting sessions are closed. An in-flight write reports its actual result; remaining writes are cancelled."); }}>Cancel operation</Button> : null}
@@ -264,9 +311,5 @@ export function WorkspaceTools({ owner, catalog, controller, onClose }: {
         </section>
         <p role="status" className="break-words text-sm" data-testid="workspace-tools-feedback">{notice}</p>
       </div>
-      <AlertDialog open={!!confirm} onOpenChange={(open) => { if (!open) setConfirm(undefined); }}>
-        {confirm ? <AlertDialogContent className="workspace-tools-confirm motion-reduce:animate-none" data-testid="multi-target-confirm"><AlertDialogHeader><AlertDialogTitle>{confirm.mode === "run" ? "Run on captured targets?" : "Insert on captured targets?"}</AlertDialogTitle><AlertDialogDescription render={<div />} className="grid gap-3">{confirm.inspection.map((entry) => <div key={entry.target.sessionId} className="grid gap-1"><TargetLabel target={entry.target} /><span>{entry.status === "ready" ? "Ready" : entry.status}</span>{entry.reasons.map((reason) => <span key={reason}>{reasonText[reason]}</span>)}</div>)}<span>Bytes accepted does not confirm command success.</span></AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><Button variant="outline" autoFocus onClick={() => { setConfirm(undefined); setArmed(null); }}>Cancel</Button><Button variant={confirm.targets.some((target) => target.production) ? "destructive" : "default"} onClick={() => { const current = confirm; setConfirm(undefined); void send(current.targets, current.text, current.mode, new Map(current.inspection.map((entry) => [entry.target.sessionId, entry.reasons]))); }}>Confirm {confirm.mode === "run" ? "Run" : "Insert"}</Button></AlertDialogFooter></AlertDialogContent> : null}
-      </AlertDialog>
-    </DialogContent>
-  </Dialog>;
+  </Drawer>;
 }

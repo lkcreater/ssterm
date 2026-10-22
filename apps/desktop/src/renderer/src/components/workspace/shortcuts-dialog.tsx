@@ -1,10 +1,5 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
+import { Button } from "@/components/ui/button";
 
 // Mirrors lib/workspace-shortcuts.ts (window), terminal-input.ts (pane) and the app menu.
 const groups: { title: string; rows: [keys: string, action: string][] }[] = [
@@ -59,30 +54,32 @@ const groups: { title: string; rows: [keys: string, action: string][] }[] = [
   },
 ];
 
-export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange(open: boolean): void }) {
+/** Keyed by the caller per open, so a reopen during the exit motion gets a fresh drawer. */
+export function ShortcutsDrawer({ onClose }: { onClose(): void }) {
+  const close = useDrawerClose();
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100%-2rem)] overflow-y-auto sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Keyboard shortcuts</DialogTitle>
-          <DialogDescription>Control and Option combinations without ⌘ always go to the shell.</DialogDescription>
-        </DialogHeader>
-        {groups.map((group) => (
-          <section key={group.title} className="flex flex-col gap-2">
-            <h3 className="type-label">{group.title}</h3>
-            <dl className="shortcut-list">
-              {group.rows.map(([keys, action]) => (
-                <div key={keys}>
-                  <dt>{action}</dt>
-                  <dd>
-                    <kbd>{keys}</kbd>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ))}
-      </DialogContent>
-    </Dialog>
+    <Drawer
+      close={close}
+      onClose={onClose}
+      title="Keyboard shortcuts"
+      description="Control and Option combinations without ⌘ always go to the shell."
+      footer={<Button variant="outline" onClick={close.request}>Close</Button>}
+    >
+      {groups.map((group) => (
+        <section key={group.title} className="flex flex-col gap-2">
+          <h3 className="type-label">{group.title}</h3>
+          <dl className="shortcut-list">
+            {group.rows.map(([keys, action]) => (
+              <div key={keys}>
+                <dt>{action}</dt>
+                <dd>
+                  <kbd>{keys}</kbd>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ))}
+    </Drawer>
   );
 }

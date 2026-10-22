@@ -211,6 +211,15 @@ test("DS05 release sweep: every page at 960×640 and 1280×800 with reduced moti
       await page.waitForTimeout(250);
       const result = await audit(page);
       expect(result.checked, `${name} dialog text was audited`).toBeGreaterThan(3);
+      if (dialog === "shortcuts") {
+        // SST-040/04: a right-edge drawer, full height below the titlebar, with no horizontal overflow.
+        const placement = await page.getByRole("dialog").evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return { right: Math.abs(innerWidth - box.right) <= 0.5, bottom: Math.abs(innerHeight - box.bottom) <= 0.5,
+            overflow: element.scrollWidth - element.clientWidth };
+        });
+        expect(placement, `shortcuts drawer at ${size}`).toEqual({ right: true, bottom: true, overflow: 0 });
+      }
       matrix[`${dialog}-dialog@${size}`] = { checked: result.checked, excepted: result.excepted };
       findings.push(...result.findings.map((finding) => ({ page: `${dialog}-dialog`, size, ...finding })));
       if (dialog === "settings") {

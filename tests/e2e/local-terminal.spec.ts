@@ -240,7 +240,8 @@ test("local terminal uses a native isolated PTY, labels This Mac, resizes and re
     await composer.getByRole("button", { name: "Run", exact: true }).click();
     await expect(sibling.locator(".xterm-rows")).toContainText("LOCAL-SNIP-56");
     await expect(screen).not.toContainText("LOCAL-SNIP-56");
-    await snippets.getByRole("button", { name: "Close snippets", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await expect(snippets).toHaveCount(0);
 
     await page.getByRole("button", { name: "Workspace tools", exact: true }).click();
     const tools = page.getByTestId("workspace-tools");
@@ -250,7 +251,10 @@ test("local terminal uses a native isolated PTY, labels This Mac, resizes and re
     await tools.getByRole("button", { name: "Save workspace template", exact: true }).click();
     await expect(tools.getByTestId("workspace-tools-feedback")).toContainText("saved-host panes");
     await expect(tools.getByRole("list", { name: "Saved workspace templates" }).getByRole("listitem")).toHaveCount(0);
+    // The unsaved template name asks before it is discarded.
     await page.keyboard.press("Escape");
+    await tools.getByRole("button", { name: "Discard", exact: true }).click();
+    await expect(tools).toHaveCount(0);
     expect(desktop.errors).toEqual([]);
     expect(desktop.externalRequests).toEqual([]);
     expect(await h.finish()).toEqual({ fixtureCleaned: true, remainingProcesses: 0 });

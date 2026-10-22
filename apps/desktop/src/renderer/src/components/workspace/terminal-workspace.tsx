@@ -88,8 +88,10 @@ const activeTextarea = () =>
 const focusActivePane = () => {
   const from = document.activeElement;
   setTimeout(() => {
-    // Input outranks timers, so a busy pane can let Cmd+F or a click move focus first; keep that.
+    // Input outranks timers, so a busy pane can let Cmd+F or a click move focus first; keep that. While a drawer is
+    // open the pane can change behind it, but focus never leaves the drawer (it returns focus itself when it closes).
     const now = document.activeElement;
+    if (document.querySelector('[data-slot="drawer"][data-open]')) return;
     if (now === from || !now || now === document.body) activeTextarea()?.focus();
   });
 };
@@ -102,6 +104,7 @@ const focusActivePane = () => {
 export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession[]) {
   const [workspace, dispatch] = useReducer(layoutReducer, emptyWorkspace);
   const [closeRequest, setCloseRequest] = useState<CloseRequest>();
+  const closeSerial = useRef(0);
   // A new session to focus once it is placed and Ready, unless the user has moved on.
   const focusWhenReady = useRef<string>(undefined);
   const focusOrigin = useRef<Element | null>(null);
@@ -223,16 +226,15 @@ export function useWorkspace(owner: Owner | undefined, sessions: TerminalSession
       const affected = sessions.filter((session) => ids.includes(session.sessionId));
       if (affected.length === 0) return;
       if (affected.some((session) => session.phase === "ready"))
-        setCloseRequest({ kind: "tabId" in target ? "tab" : "pane", sessions: affected });
+        setCloseRequest({ kind: "tabId" in target ? "tab" : "pane", sessions: affected, serial: ++closeSerial.current });
       else close(affected);
     },
-    /** The dialog returns focus to the active pane itself once it has closed. */
+    /** Ends the captured sessions; the drawer returns focus to the active pane itself once it has slid out. */
     confirmClose() {
-      if (!closeRequest) return;
-      setCloseRequest(undefined);
-      close(closeRequest.sessions, false);
+      if (closeRequest) close(closeRequest.sessions, false);
     },
-    cancelClose() {
+    /** The confirmation drawer has slid out, after Cancel or Disconnect and close. */
+    dismissClose() {
       setCloseRequest(undefined);
     },
   };
@@ -283,7 +285,7 @@ export function TerminalWorkspace({
   onShowTerminals,
   onOpenSftp,
   catalog,
-  toolsOpen = false,
+  tools = 0,
   onCloseTools,
   header,
   empty,
@@ -293,7 +295,8 @@ export function TerminalWorkspace({
   settings: TerminalSettings;
   /** Snippet labels and the lock epoch; absent while the catalog is unavailable (no snippet panel). */
   catalog?: CatalogState;
-  toolsOpen?: boolean;
+  /** The open Workspace tools drawer's key; 0 when closed. */
+  tools?: number;
   onCloseTools?(): void;
   /** The Terminals page header (title, actions and the tab strip); it hides with the panes, so their size never changes. */
   header?: ReactNode;
@@ -311,14 +314,13 @@ export function TerminalWorkspace({
   useEffect(() => { if (hidden || !catalog) onCloseTools?.(); }, [hidden, !!catalog]);
   const layer = useRef<HTMLDivElement>(null);
   const inputs = useRef<TerminalInputs>(new Map()).current;
-  const [snippetsOpen, setSnippetsOpen] = useState(false);
-  const showSnippets = snippetsOpen && !hidden && !!catalog && sessions.length > 0;
-  // Leaving the terminals (or losing the catalog) closes the panel; returning never reopens it and steals focus.
-  if (snippetsOpen && !showSnippets) setSnippetsOpen(false);
-  const closeSnippets = () => {
-    setSnippetsOpen(false);
-    controller.focusActive();
-  };
+  // The open snippet drawer's key: each open is a fresh instance that captures the active pane again.
+  const [snippets, setSnippets] = useState(0);
+  const snippetSerial = useRef(0);
+  const openSnippets = () => setSnippets(++snippetSerial.current);
+  const showSnippets = snippets > 0 && !hidden && !!catalog && sessions.length > 0;
+  // Leaving the terminals (or losing the catalog) closes the drawer; returning never reopens it and steals focus.
+  if (snippets && !showSnippets) setSnippets(0);
   const reduced = useSyncExternalStore(subscribeMotion, prefersReducedMotion);
   const [savedScrollback, setScrollback] = useState<PaneScrollback>(() => ({
     setting: settings.terminalScrollback,
@@ -379,11 +381,8 @@ export function TerminalWorkspace({
         return true;
       case "snippets":
         if (hidden || !catalog || sessions.length === 0) return false;
-        // Opens the panel, or returns to its search; closing is explicit (Esc or Close) so a draft is never lost to a chord.
-        if (!repeat) {
-          if (snippetsOpen) document.querySelector<HTMLElement>(".snippet-panel input[type=search]")?.focus();
-          else setSnippetsOpen(true);
-        }
+        // An open drawer keeps its own keys (see onKeyDown), so this always opens a fresh one.
+        if (!repeat) openSnippets();
         return true;
       case "focus-pane": {
         if (hidden || !tab) return false;
@@ -419,9 +418,9 @@ export function TerminalWorkspace({
 
   return (
     <TerminalInputsContext.Provider value={inputs}>
-      {toolsOpen && !hidden && catalog ? <WorkspaceTools
-        key={`${owner.windowId}:${owner.generation}:${catalog.lockEpoch}`}
-        owner={owner} catalog={catalog} controller={controller}
+      {tools > 0 && !hidden && catalog ? <WorkspaceTools
+        key={`${owner.windowId}:${owner.generation}:${catalog.lockEpoch}:${tools}`}
+        owner={owner} catalog={catalog} controller={controller} returnFocus={activeTextarea}
         onClose={() => { onCloseTools?.(); controller.focusActive(); }}
       /> : null}
       <div
@@ -483,7 +482,7 @@ export function TerminalWorkspace({
                       session={session}
                       home={entry.tab}
                       onOpenSftp={onOpenSftp}
-                      onSnippets={catalog ? () => setSnippetsOpen(true) : undefined}
+                      onSnippets={catalog ? openSnippets : undefined}
                     />
                   ) : null
                 }
@@ -495,16 +494,27 @@ export function TerminalWorkspace({
                 <Divider key={`${tab.id}:${split.path}`} split={split} tabId={tab.id} layer={layer} dispatch={dispatch} />
               ))
             : null}
-          {showSnippets ? (
-            <SnippetPanel owner={owner} state={catalog} active={controller.activeSession} sessions={sessions} onClose={closeSnippets} />
-          ) : null}
         </div>
-        <CloseConfirm
-          request={controller.closeRequest}
-          onCancel={controller.cancelClose}
-          onConfirm={controller.confirmClose}
-          confirmFocus={activeTextarea}
-        />
+        {showSnippets ? (
+          <SnippetPanel
+            key={snippets}
+            owner={owner}
+            state={catalog}
+            active={controller.activeSession}
+            sessions={sessions}
+            returnFocus={activeTextarea}
+            onClose={() => setSnippets(0)}
+          />
+        ) : null}
+        {controller.closeRequest ? (
+          <CloseConfirm
+            key={controller.closeRequest.serial}
+            request={controller.closeRequest}
+            onConfirm={controller.confirmClose}
+            onClose={controller.dismissClose}
+            confirmFocus={activeTextarea}
+          />
+        ) : null}
       </div>
     </TerminalInputsContext.Provider>
   );

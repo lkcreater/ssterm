@@ -1,13 +1,6 @@
 import { useRef, type RefObject } from "react";
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { Drawer, useDrawerClose } from "@/components/drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,6 +95,8 @@ export interface PendingPaste {
   production: boolean;
   /** The session generation the paste was aimed at; a reconnect makes it stale. */
   generation: number;
+  /** Keys the drawer: a new paste gets a fresh one, asking again about the same paste keeps it. */
+  serial: number;
 }
 
 const PREVIEW_LINES = 200;
@@ -121,7 +116,10 @@ function PreviewLine({ line }: { line: string }) {
   );
 }
 
-/** The target is the one captured when the paste happened, not whatever the pane shows later. */
+/**
+ * A confirmation-only drawer. The target is the one captured when the paste happened, not whatever the pane shows
+ * later. Cancel, Esc and × close it with nothing sent; the caller mounts it per paste (keyed by `serial`).
+ */
 export function PasteConfirmDialog({
   pending,
   canPaste,
@@ -129,79 +127,60 @@ export function PasteConfirmDialog({
   onCancel,
   onConfirm,
 }: {
-  pending?: PendingPaste;
+  pending: PendingPaste;
   canPaste: boolean;
   returnFocus(): HTMLElement | null;
+  /** After the exit motion. */
   onCancel(): void;
   onConfirm(): void;
 }) {
   const cancel = useRef<HTMLButtonElement>(null);
-  const preview = pending ? pasteLines(pending.text) : [];
+  const close = useDrawerClose();
+  const preview = pasteLines(pending.text);
   const more = preview.length - PREVIEW_LINES;
   const notes = [
     more > 0 ? `and ${lineCount(more)} more` : null,
-    pending && /[\r\n]$/.test(pending.text) ? "↵ ends with a newline" : null,
+    /[\r\n]$/.test(pending.text) ? "↵ ends with a newline" : null,
   ].filter(Boolean);
-  const reasons = pending
-    ? [
-        pending.bracketed || !hasNewline(pending.text) ? null : "The shell is not in bracketed paste mode, so each line can run as soon as it arrives.",
-        pending.production ? "This is a production target." : null,
-        pending.removed ? "Control characters were removed from the clipboard text." : null,
-      ].filter(Boolean)
-    : [];
+  const reasons = [
+    pending.bracketed || !hasNewline(pending.text) ? null : "The shell is not in bracketed paste mode, so each line can run as soon as it arrives.",
+    pending.production ? "This is a production target." : null,
+    pending.removed ? "Control characters were removed from the clipboard text." : null,
+  ].filter(Boolean);
   return (
-    <AlertDialog
-      open={!!pending}
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
+    <Drawer
+      close={close}
+      onClose={onCancel}
+      alert
+      initialFocus={cancel}
+      finalFocus={returnFocus}
+      data-testid="paste-confirm-dialog"
+      title={<span className="min-w-0 break-words">Paste {lineCount(pending.lines)} into {pending.label}?</span>}
+      target={
+        <>
+          <span className="min-w-0 font-medium break-all text-foreground">{pending.label}</span>
+          {pending.production ? <Badge variant="production">PROD</Badge> : null}
+          {pending.endpoint ? <span className="min-w-0 font-mono text-sm break-all">{pending.endpoint}</span> : null}
+        </>
+      }
+      description={`${reasons.join(" ")} Nothing is sent until you choose Paste, and no Enter is added.`.trim()}
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" onClick={close.request}>
+            Cancel
+          </Button>
+          <Button disabled={!canPaste || !close.open} onClick={onConfirm}>
+            Paste {lineCount(pending.lines)}
+          </Button>
+        </>
+      }
     >
-      <AlertDialogContent
-        initialFocus={cancel}
-        finalFocus={returnFocus}
-        className="flex max-h-[calc(100dvh-2rem)] flex-col data-[size=default]:sm:max-w-lg motion-reduce:animate-none"
-        data-testid="paste-confirm-dialog"
-      >
-        {pending ? (
-          <>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="min-w-0 break-words">
-                Paste {lineCount(pending.lines)} into {pending.label}?
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {reasons.join(" ")} Nothing is sent until you choose Paste, and no Enter is added.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="-mx-4 grid min-h-0 gap-3 overflow-y-auto px-4">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="min-w-0 font-medium break-all">{pending.label}</span>
-                {pending.production ? <Badge variant="production">PROD</Badge> : null}
-              </div>
-              {pending.endpoint ? (
-                <p className="min-w-0 font-mono text-sm break-all text-muted-foreground">
-                  {pending.endpoint}
-                </p>
-              ) : null}
-              <div className="paste-preview" role="region" aria-label="Paste preview" tabIndex={0}>
-                {preview.slice(0, PREVIEW_LINES).map((line, index) => (
-                  <PreviewLine key={index} line={line} />
-                ))}
-              </div>
-              {notes.length > 0 ? (
-                <p className="type-caption text-muted-foreground">{notes.join(" · ")}</p>
-              ) : null}
-            </div>
-            <AlertDialogFooter>
-              <Button ref={cancel} variant="outline" onClick={onCancel}>
-                Cancel
-              </Button>
-              <Button disabled={!canPaste} onClick={onConfirm}>
-                Paste {lineCount(pending.lines)}
-              </Button>
-            </AlertDialogFooter>
-          </>
-        ) : null}
-      </AlertDialogContent>
-    </AlertDialog>
+      <div className="paste-preview" role="region" aria-label="Paste preview" tabIndex={0}>
+        {preview.slice(0, PREVIEW_LINES).map((line, index) => (
+          <PreviewLine key={index} line={line} />
+        ))}
+      </div>
+      {notes.length > 0 ? <p className="type-caption text-muted-foreground">{notes.join(" · ")}</p> : null}
+    </Drawer>
   );
 }

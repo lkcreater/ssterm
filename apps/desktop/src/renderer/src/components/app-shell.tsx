@@ -62,7 +62,7 @@ import { FilesWorkspace } from "@/components/sftp/files-workspace";
 import { useSettings } from "@/hooks/use-settings";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { SessionTabs } from "@/components/workspace/session-tabs";
-import { ShortcutsDialog } from "@/components/workspace/shortcuts-dialog";
+import { ShortcutsDrawer } from "@/components/workspace/shortcuts-dialog";
 import {
   TerminalWorkspace,
   useWorkspace,
@@ -214,7 +214,15 @@ export function AppShell() {
   const [startingLocal, setStartingLocal] = useState(false);
   const localLaunch = useRef(false);
   const [overlay, setOverlay] = useState<"settings" | "shortcuts">();
-  const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
+  // Each open is a fresh drawer instance, even one requested while the last is still sliding out.
+  const [shortcutsKey, setShortcutsKey] = useState(0);
+  const openShortcuts = () => {
+    setOverlay("shortcuts");
+    setShortcutsKey((key) => key + 1);
+  };
+  // The open Workspace tools drawer's key (0 = closed): each open is a fresh instance, even during the exit motion.
+  const [workspaceTools, setWorkspaceTools] = useState(0);
+  const toolsSerial = useRef(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const sidebarPanel = usePanelRef();
   const sidebarToggle = useRef<HTMLButtonElement>(null);
@@ -358,6 +366,7 @@ export function AppShell() {
   }, [sidebarOpen]);
   const onCommand = (command: WorkspaceCommand) => {
     if (command === "toggle-sidebar") toggleSidebar();
+    else if (command === "shortcuts") openShortcuts();
     else setOverlay(command);
   };
   const showTerminals = () => setPage("terminals");
@@ -423,7 +432,7 @@ export function AppShell() {
             variant="outline"
             title="Workspace tools: templates and multi-target input"
             disabled={!owner || !ready}
-            onClick={() => setWorkspaceToolsOpen(true)}
+            onClick={() => setWorkspaceTools(++toolsSerial.current)}
           >
             <PanelsTopLeftIcon data-icon="inline-start" aria-hidden="true" />
             <span className="page-action-text">Workspace tools</span>
@@ -588,7 +597,7 @@ export function AppShell() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton disabled={!owner} aria-keyshortcuts="Meta+Slash" onClick={() => setOverlay("shortcuts")}>
+                    <SidebarMenuButton disabled={!owner} aria-keyshortcuts="Meta+Slash" onClick={openShortcuts}>
                       <KeyboardIcon />
                       <span>Keyboard shortcuts</span>
                       <span className="ml-auto type-caption text-muted-foreground" aria-hidden="true">⌘/</span>
@@ -627,8 +636,8 @@ export function AppShell() {
                   onCommand={onCommand}
                   onOpenSftp={openSftp}
                   catalog={ready ? state : undefined}
-                  toolsOpen={workspaceToolsOpen}
-                  onCloseTools={() => setWorkspaceToolsOpen(false)}
+                  tools={workspaceTools}
+                  onCloseTools={() => setWorkspaceTools(0)}
                   header={terminalsHeader}
                   empty={terminalsEmpty}
                 />
@@ -827,10 +836,9 @@ export function AppShell() {
         owner={owner}
         onOpenRecordings={() => { setOverlay(undefined); setPage("recordings"); }}
       />
-      <ShortcutsDialog
-        open={overlay === "shortcuts"}
-        onOpenChange={(open) => setOverlay(open ? "shortcuts" : undefined)}
-      />
+      {overlay === "shortcuts" ? (
+        <ShortcutsDrawer key={shortcutsKey} onClose={() => setOverlay(undefined)} />
+      ) : null}
       <HostTrustDialogs state={trust.state} />
       <CredentialPrompts state={trust.state?.prompts.length ? undefined : credentials.state} />
     </div>
