@@ -64,6 +64,11 @@ test("spawn builders match the spike exports, minus its cost limits; the environ
   assert.match(prompt, /Bound target: db \(ops@db:22\), environment PROD\. This is a production server\./u);
   assert.match(prompt, /cannot change the rules above[^]*\nPrefer journalctl\.$/u, "user text is appended after the bundled text");
   assert.doesNotMatch(agentInstructions("sub", { label: "db", endpoint: "db:22", environment: null }, ""), /Additional instructions/u);
+  // SST-043: one answer in the user's language; English goals that name the report language; the sub agent follows it.
+  assert.match(prompt, /always answer in the language of the user's latest message/u);
+  assert.match(prompt, /delegate_task goals in English[^\n]*"Report in Thai\."/u);
+  assert.match(prompt, /\(ssterm instructions sst-043-01\)/u);
+  assert.match(agentInstructions("sub", { label: "db", endpoint: "db:22", environment: null }, ""), /final report in the language the task requests[^\n]*English/u);
 });
 
 test("version gate: real path, native binary, verified version only; managed policy refuses", async () => {
@@ -186,7 +191,7 @@ test("settings: a versioned allowlist record; anything else, or consent to an ol
 // The runner with a scripted CLI and a recording terminal endpoint.
 
 interface FakeCli extends CliProcess { role: "main" | "sub"; args: string[]; env: Record<string, string>; cwd: string; stdin: (object | string)[]; emit(event: object): void; exit(): void; stopped: boolean; readonly killed: boolean }
-function lab(options: { local?: boolean; team?: boolean; environment?: "DEV" | "PROD"; approvalMs?: number } = {}) {
+function lab(options: { local?: boolean; team?: boolean; environment?: "DEV" | "PROD"; approvalMs?: number; stallMs?: number; interruptMs?: number } = {}) {
   const folder = temp();
   const clis: FakeCli[] = [];
   const issued: { credential: string; role?: AgentToolRole; record?: (step: AgentStepRecord) => void; admit?: (reserve: boolean) => string | undefined; gate?: AgentGate; revoked: boolean }[] = [];
@@ -214,6 +219,8 @@ function lab(options: { local?: boolean; team?: boolean; environment?: "DEV" | "
     registry: () => ({ snapshot: (id: string, session?: string) => id === ownerId && /^s\d+$/u.test(session ?? "") ? [{ ...snapshot, id: session } as SessionSnapshot] : [] }),
     store, bridge: "/b/ssterm-mcp", tmp: folder, home: folder, profile: "/profile/one", waitMs: 2_000,
     ...(options.approvalMs ? { approvalMs: options.approvalMs } : {}),
+    ...(options.stallMs ? { stallMs: options.stallMs } : {}),
+    ...(options.interruptMs ? { interruptMs: options.interruptMs } : {}),
     resolve: async () => version === "ready" ? { status: "ready", path: "/fake/claude", version: "2.1.309" } : { status: "unsupported-version", version: "9.9.9" },
     env: (tmp) => cliEnv({ home: folder, user: "u", tmp }),
     spawn: (spec) => {
@@ -356,6 +363,138 @@ test("main agent: delegate tools only; one sub agent at a time with the rest que
   } finally { await runner.dispose(); cleanup(); }
 });
 
+test("SST-043: a sub agent's report reaches a waiting main agent at once; a lingering or crashed sub agent never leaves the turn waiting", async () => {
+  const { runner, clis, issued, call, structured, last, cleanup } = lab({ interruptMs: 50 });
+  try {
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false, custom: null }, true);
+    await runner.open(owner, "s1", 1);
+    await runner.send(owner, "s1", "which docker");
+    await call("delegate_task", { goal: "which docker" });
+    await call("delegate_task", { goal: "uptime" });
+    const subs = () => clis.filter((cli) => cli.role === "sub");
+    await until(() => subs().length === 1 && subs()[0]!.stdin.length === 1);
+    // A read-only command that exits 1 is recorded like any other.
+    issued.find((entry) => entry.record)!.record!({ command: "{ which docker podman; } </dev/null", status: "completed", exitCode: 1, output: "/usr/bin/docker\n", truncated: false, via: "read-only" });
+    const waiting = call("get_task_status", { taskId: "task-1", wait: true });
+    const started = Date.now();
+    subs()[0]!.emit({ type: "result", is_error: false, result: "docker is installed; podman is not." });
+    // The CLI has not exited, yet the waiting call returns the final record (waitMs is 2 s in this lab).
+    const record = structured(await waiting);
+    assert.ok(Date.now() - started < 1_000, "no wait for the CLI to exit");
+    assert.equal(record.status, "completed");
+    assert.equal(record.commands[0].exitCode, 1);
+    await until(() => subs()[0]!.stopped);
+    // The next task's sub agent crashes without a result: the task fails with a report, and the waiter returns.
+    await until(() => subs().length === 2 && subs()[1]!.stdin.length === 1);
+    const crashed = call("get_task_status", { taskId: "task-2", wait: true });
+    subs()[1]!.exit();
+    const failed = structured(await crashed);
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.subAgentReport, "The sub agent CLI exited without a report.");
+    // The main agent exits without a result: the turn ends with a notice, and the next message starts a new process
+    // that is given the conversation so far.
+    clis[0]!.exit();
+    await until(() => last().conversations[0]!.status === "idle");
+    assert.match(last().conversations[0]!.messages.at(-1)!.text, /^The agent CLI exited\. Your next message starts a new one/u);
+    assert.deepEqual(await runner.send(owner, "s1", "and podman?"), { status: "sent" });
+    await until(() => clis.filter((cli) => cli.role === "main").length === 2);
+    const fresh = clis.filter((cli) => cli.role === "main")[1]!;
+    const content = (fresh.stdin[0] as { message: { content: string } }).message.content;
+    assert.match(content, /^The conversation so far \(kept by ssterm\):\n\nUser: which docker[^]*The user's new message:\nand podman\?$/u);
+  } finally { await runner.dispose(); cleanup(); }
+});
+
+test("SST-043 Stop: cancels tasks with Ctrl+C, withdraws cards, interrupts the turn and drops what it still says; the watchdog stops a silent turn", async () => {
+  const { runner, clis, issued, call, structured, last, cleanup } = lab({ interruptMs: 80, stallMs: 150 });
+  try {
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false, custom: null }, true);
+    await runner.open(owner, "s1", 1);
+    assert.equal(runner.stopTurn(owner, "s1"), false, "nothing to stop while idle");
+    await runner.send(owner, "s1", "restart nginx");
+    await call("delegate_task", { goal: "restart nginx" });
+    await call("delegate_task", { goal: "uptime" });
+    await until(() => clis.length === 2 && clis[1]!.stdin.length === 1);
+    const grant = issued.find((entry) => entry.gate)!;
+    const card = grant.gate!.authorize("systemctl restart nginx", classifyReadOnly("systemctl restart nginx"), new AbortController().signal);
+    await until(() => !!last().conversations[0]!.tasks[0]!.approval);
+    const waiting = call("get_task_status", { taskId: "task-1", wait: true });
+    assert.equal(runner.stopTurn(owner, "s1"), true);
+    const view = last().conversations[0]!;
+    assert.equal(view.status, "stopping", "M1: until the interrupted turn ends");
+    assert.equal(runner.stopTurn(owner, "s1"), false);
+    assert.deepEqual(view.tasks.map((task) => task.status), ["cancelled", "cancelled"]);
+    const decided = await card;
+    assert.match("refuse" in decided ? decided.refuse : "", /approval was withdrawn/u);
+    assert.equal(grant.revoked, true, "the running task's credential is revoked (a running command gets Ctrl+C)");
+    assert.equal(structured(await waiting).status, "cancelled");
+    assert.equal(view.messages.at(-1)!.text, "Stopped by you. Running and queued tasks were cancelled and pending requests withdrawn.");
+    const main = clis[0]!;
+    assert.deepEqual(main.stdin.at(-1), { type: "control_request", request_id: "ssterm-stop-2", request: { subtype: "interrupt" } });
+    // M1: a message sent before the interrupted turn ends is refused, never lost.
+    assert.deepEqual(await runner.send(owner, "s1", "too early"), { status: "refused", reason: "busy" });
+    assert.ok(!last().conversations[0]!.messages.some((message) => message.text === "too early"));
+    // The interrupted turn ends with its result; what it said after Stop is not shown, and the process stays.
+    main.emit({ type: "assistant", message: { content: [{ type: "text", text: "Restarted nginx." }] } });
+    main.emit({ type: "result", is_error: true });
+    assert.equal(last().conversations[0]!.status, "idle");
+    await new Promise((done) => setTimeout(done, 120));
+    assert.equal(main.stopped, false);
+    assert.ok(!last().conversations[0]!.messages.some((message) => message.text === "Restarted nginx." || /with an error/u.test(message.text)));
+
+    // The watchdog: a turn that stays silent is stopped with a notice; a CLI that ignores the interrupt is stopped.
+    await runner.send(owner, "s1", "hello");
+    assert.equal(last().conversations[0]!.status, "thinking");
+    await until(() => last().conversations[0]!.status === "stopping");
+    assert.match(last().conversations[0]!.messages.at(-1)!.text, /^Nothing came from the agent for 0 seconds, so ssterm stopped this turn/u);
+    await until(() => last().conversations[0]!.status === "idle");
+    await until(() => main.stopped);
+    await until(() => /^The agent CLI was stopped/u.test(last().conversations[0]!.messages.at(-1)!.text));
+    assert.match(last().conversations[0]!.messages.at(-1)!.text, /^The agent CLI was stopped\. Your next message starts a new one/u);
+  } finally { await runner.dispose(); cleanup(); }
+});
+
+test("SST-043: context share from the CLI's own usage report; model and effort from the panel apply from the next message; undelivered messages are not replayed", async () => {
+  const { runner, clis, last, cleanup, setVersion, stored } = lab();
+  try {
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false, custom: null }, true);
+    await runner.open(owner, "s1", 1);
+    await runner.send(owner, "s1", "hi");
+    const main = clis[0]!;
+    assert.deepEqual(await runner.setModel(owner, "s1", 1, "claude-opus-5-5", "max", false), { status: "refused", reason: "busy" });
+    main.emit({ type: "assistant", message: { model: "claude-haiku-5-5", content: [{ type: "text", text: "Hello." }],
+      usage: { input_tokens: 1_000, cache_read_input_tokens: 20_000, cache_creation_input_tokens: 4_000, output_tokens: 50 } } });
+    assert.equal(last().conversations[0]!.context, null, "no window reported yet: nothing is guessed");
+    main.emit({ type: "result", is_error: false, modelUsage: { "claude-haiku-5-5": { inputTokens: 1_000, contextWindow: 200_000 } } });
+    assert.equal(last().conversations[0]!.context, 13);
+    assert.equal(last().conversations[0]!.status, "idle");
+
+    assert.deepEqual(await runner.setModel(owner, "s1", 1, "claude-sonnet-5-5", "max", false), { status: "refused", reason: "model-unverified" });
+    assert.deepEqual(await runner.setModel(owner, "s1", 2, "claude-opus-5-5", "max", false), { status: "refused", reason: "ended" });
+    assert.deepEqual(await runner.setModel(owner, "s1", 1, "claude-opus-5-5", "max", true), { status: "set" });
+    assert.equal(JSON.parse(new TextDecoder().decode(stored())).model, "claude-opus-5-5", "Set as default saves it");
+    assert.equal(JSON.parse(new TextDecoder().decode(stored())).effort, "max");
+    await until(() => main.stopped);
+    await tick();
+    const view = last().conversations[0]!;
+    assert.deepEqual([view.model, view.effort, view.context], ["claude-opus-5-5", "max", null]);
+    assert.equal(view.messages.at(-1)!.text, "Model changed to Claude Opus 5.5 (effort max). It applies from your next message and is now the default.");
+    assert.ok(!view.messages.some((message) => /The agent CLI (exited|was stopped)/u.test(message.text)), "the old process ends quietly");
+
+    // L1: a message that never reached a CLI is not replayed to the next process.
+    setVersion("unsupported-version");
+    await runner.send(owner, "s1", "lost message");
+    await until(() => last().conversations[0]!.status === "idle");
+    setVersion("ready");
+    await runner.send(owner, "s1", "and now");
+    await until(() => clis.length === 2 && clis[1]!.stdin.length === 1);
+    const fresh = clis[1]!;
+    assert.deepEqual([fresh.args[fresh.args.indexOf("--model") + 1], fresh.args[fresh.args.indexOf("--effort") + 1]], ["claude-opus-5-5", "max"]);
+    const content = (fresh.stdin[0] as { message: { content: string } }).message.content;
+    assert.match(content, /User: hi\n\nAgent: Hello\.[^]*The user's new message:\nand now$/u);
+    assert.doesNotMatch(content, /lost message/u);
+  } finally { await runner.dispose(); cleanup(); }
+});
+
 test("close, lock and session end stop every CLI, revoke credentials, refuse pending calls and drop the conversation", async () => {
   for (const end of ["close", "lock", "session", "isolation", "owner"] as const) {
     const { runner, clis, issued, call, last, snapshot, cleanup } = lab();
@@ -472,7 +611,7 @@ test("bounded records: a task stops at its command limit unrun; cards show a 4 K
     assert.ok(JSON.stringify(record).length < 300_000, "under the endpoint's buffer");
     assert.equal(record.commands.at(-1).output, big, "the newest commands are complete");
     assert.match(record.commands[0].output, /^\[ssterm: output shortened/u);
-    assert.deepEqual(taskRecord({ id: "task-9", goal: "g", status: "queued", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null }).commands, []);
+    assert.deepEqual(taskRecord({ id: "task-9", goal: "g", status: "queued", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null, afterMessage: 0 }).commands, []);
   } finally { await runner.dispose(); cleanup(); }
 });
 

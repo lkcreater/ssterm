@@ -12,14 +12,14 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import {
   AGENT_DISCLOSURE_VERSION, AGENT_EFFORTS, AGENT_MODELS, effectiveDefaultModel, isAgentModelId, isVerifiedAgentModel, MAX_AGENT_INSTRUCTIONS, MAX_AGENT_MESSAGES, MAX_AGENT_STEPS, MAX_AGENT_TASKS, channels, exactObject,
   failure, isAgentConversationRequest, isAgentSettingsRequest, isAgentStateRequest, isCancelAgentTaskRequest,
-  isConfigureAgentRequest, isDecideAgentRequest, isOpenAgentRequest, isSendAgentRequest, isSetAgentModeRequest,
+  isConfigureAgentRequest, isDecideAgentRequest, isOpenAgentRequest, isSendAgentRequest, isSetAgentModeRequest, isSetAgentModelRequest,
   isCheckAgentProviderRequest, isAgentCustomProvider, isAnswerExternalRequest, isExternalClientsRequest, isUpdateExternalClientsRequest,
   type AnswerExternalRequest, type AnswerExternalResponse, type ExternalAgentState, type ExternalBindingView, type ExternalClientsAction,
   type ExternalClientsView, type UpdateExternalClientsResponse,
   type AgentConversation, type AgentCustomProvider, type AgentEffort, type AgentMessage, type AgentMode, type AgentPlan, type AgentProvider, type AgentProviderStatus,
   type AgentProviderView, type AgentSettings, type AgentSettingsView, type AgentState,
   type AgentStep, type AgentTask, type ConfigureAgentResponse, type DecideAgentResponse, type OpenAgentResponse, type Owner, type Result,
-  type SendAgentResponse, type SetAgentModeResponse,
+  type SendAgentResponse, type SetAgentModeResponse, type SetAgentModelResponse,
 } from "@ssterm/contracts";
 import type { ObservedTerminal, TerminalObserver } from "@ssterm/domain";
 import type { SessionRegistry } from "@ssterm/services";
@@ -136,13 +136,39 @@ interface Launcher {
   path: string;
   input: "stream-json" | "one-shot";
   dialect: "claude" | "codex";
+  /** SST-043: the verified claude CLI reads a stream-json `interrupt` control request; other providers are stopped instead. */
+  interrupt: boolean;
   build(run: { config: string; promptFile: string; cwd: string; tmp: string; tools: readonly string[]; systemPrompt: string; model: string; effort: AgentEffort;
     credential: { credential: string; socketPath: string } }): { args: string[]; env: Record<string, string> };
 }
 /** One provider's state for Settings, and its launcher when it can run. `record`: the custom check that applies now. */
 interface ProviderState { status: AgentProviderStatus; version: string | null; reasons: string[]; launcher?: Launcher; record?: CustomCheckRecord }
 /** What one CLI event means, whichever dialect printed it. */
-interface Reading { violation?: string; texts: string[]; result?: { error: boolean; text?: string } }
+/**
+ * `usage` (SST-043): the tokens the latest model request read (input plus cache reads and writes) and its model;
+ * `windows`: each model's context window as the CLI's result reports it (claude 2.1.309 `modelUsage[model].contextWindow`).
+ */
+interface Reading {
+  violation?: string; texts: string[]; result?: { error: boolean; text?: string };
+  usage?: { tokens: number; model?: string }; windows?: Record<string, number>;
+}
+const count = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+function usageOf(message: { usage?: unknown; model?: unknown } | undefined): Reading["usage"] {
+  const usage = message?.usage as Record<string, unknown> | undefined;
+  const input = count(usage?.input_tokens);
+  if (input === undefined) return undefined;
+  const tokens = input + (count(usage!.cache_read_input_tokens) ?? 0) + (count(usage!.cache_creation_input_tokens) ?? 0);
+  return { tokens, ...(typeof message!.model === "string" ? { model: message!.model } : {}) };
+}
+function windowsOf(modelUsage: unknown): Reading["windows"] {
+  if (!modelUsage || typeof modelUsage !== "object") return undefined;
+  const windows: Record<string, number> = {};
+  for (const [model, entry] of Object.entries(modelUsage as Record<string, unknown>).slice(0, 16)) {
+    const window = count((entry as { contextWindow?: unknown } | null)?.contextWindow);
+    if (window) windows[model] = window;
+  }
+  return Object.keys(windows).length ? windows : undefined;
+}
 function read(dialect: Launcher["dialect"], event: Record<string, unknown>, allowed: readonly string[]): Reading {
   if (dialect === "codex") {
     const item = event.item as { type?: unknown; text?: unknown } | undefined;
@@ -152,9 +178,12 @@ function read(dialect: Launcher["dialect"], event: Record<string, unknown>, allo
       ...(event.type === "turn.completed" ? { result: { error: false } } : event.type === "turn.failed" || event.type === "error" ? { result: { error: true } } : {}),
     };
   }
-  const message = event.message as { content?: unknown } | undefined;
+  const message = event.message as { content?: unknown; usage?: unknown; model?: unknown } | undefined;
   const content = event.type === "assistant" && Array.isArray(message?.content) ? message.content : [];
+  const usage = event.type === "assistant" ? usageOf(message) : undefined;
+  const windows = event.type === "result" ? windowsOf(event.modelUsage) : undefined;
   return {
+    ...(usage ? { usage } : {}), ...(windows ? { windows } : {}),
     violation: isolationViolation(event, allowed),
     texts: content.flatMap((block) => block && typeof block === "object" && (block as { type?: unknown }).type === "text" &&
       typeof (block as { text?: unknown }).text === "string" && (block as { text: string }).text.trim() ? [(block as { text: string }).text] : []),
@@ -178,7 +207,18 @@ function oneShotPrompt(history: readonly AgentMessage[], latest: string): string
 /** The target shown to a custom provider during its isolation check: nothing is bound. */
 const CHECK_TARGET: AgentTarget = { label: "isolation check", endpoint: "check@localhost:22", environment: null };
 
-interface Run { process: CliProcess; credential: string; root: string; allowed: readonly string[]; input: Launcher["input"]; dialect: Launcher["dialect"]; answered: boolean }
+/**
+ * `interrupted` (SST-043): the user (or the watchdog) stopped this run's turn; what it still prints until that turn's
+ * result is dropped. `stopTimer`: the process is stopped if the turn does not end in time.
+ */
+interface Run {
+  process: CliProcess; credential: string; root: string; allowed: readonly string[]; input: Launcher["input"]; dialect: Launcher["dialect"]; answered: boolean;
+  interrupted?: boolean; stopTimer?: ReturnType<typeof setTimeout>;
+  /** SST-043: from the launcher. */
+  interrupt: boolean;
+  /** SST-043: the latest request's usage and the reported windows, for the context share. */
+  usage?: NonNullable<Reading["usage"]>; windows?: Record<string, number>;
+}
 interface Conversation {
   ownerId: string;
   /** How long a card waits: 5 minutes, or less when the CLI's client stops waiting for a tool call sooner (custom). */
@@ -206,9 +246,20 @@ interface Conversation {
   main?: Run;
   /** The main CLI is being started; one start at a time. */
   starting?: Promise<boolean>;
-  sub?: { task: AgentTask; run?: Run };
+  /** `reserved`: admitted terminal calls still in flight (authorizing, waiting for a card, or running). */
+  sub?: { task: AgentTask; run?: Run; reserved: number };
   waiters: Set<() => void>;
   closed: boolean;
+  /** SST-043: raised by every message sent and every Stop, so a turn stopped while its CLI starts is never written. */
+  turn: number;
+  /** SST-043: no infinite spinner (see `touch`). */
+  watchdog?: ReturnType<typeof setTimeout>;
+  /** SST-043: the main CLI stopped or exited; the next one gets the conversation's text so far (memory only). */
+  fresh: boolean;
+  /** SST-043: user messages that never reached a CLI (not replayed to a new process). */
+  undelivered: Set<number>;
+  /** SST-043: see AgentConversation.context. */
+  context: number | null;
 }
 const finished = (task: AgentTask) => task.status !== "queued" && task.status !== "running";
 const clip = (value: string, max = MAX_TEXT) => value.length > max ? `${value.slice(0, max - 1)}…` : value;
@@ -278,10 +329,16 @@ export function createAgentRunner(options: {
   graceMs?: number;
   /** How long a plan or command card waits for the user (default 5 minutes). */
   approvalMs?: number;
+  /** SST-043: a busy turn with no CLI event, step or decision for this long is stopped (default 8 minutes). */
+  stallMs?: number;
+  /** SST-043: how long a stopped turn (or a sub agent that already reported) may take to end before its process is stopped. */
+  interruptMs?: number;
 }) {
   const spawn = options.spawn ?? spawnCli;
   const waitMs = options.waitMs ?? 60_000;
   const approvalMs = options.approvalMs ?? APPROVAL_WAIT_MS;
+  const stallMs = options.stallMs ?? 8 * 60_000;
+  const interruptMs = options.interruptMs ?? 10_000;
   const conversations = new Map<string, Conversation>();
   const owners = new Map<string, { owner: Owner; send(state: AgentState): void; sequence: number }>();
   const exits = new Set<Promise<void>>();
@@ -310,21 +367,21 @@ export function createAgentRunner(options: {
   // ------------------------------------------------------------------ providers (ticket 06)
 
   const claudeLauncher = (path: string): Launcher => ({
-    path, input: "stream-json", dialect: "claude",
+    path, input: "stream-json", dialect: "claude", interrupt: true,
     build: (run) => ({
       args: claudeArgs({ mcpConfig: run.config, tools: run.tools, model: run.model, effort: run.effort, systemPrompt: run.systemPrompt }),
       env: { ...options.env(run.tmp), ...CLAUDE_ENV },
     }),
   });
   const codexLauncher = (path: string): Launcher => ({
-    path, input: "one-shot", dialect: "codex",
+    path, input: "one-shot", dialect: "codex", interrupt: false,
     build: (run) => ({
       args: codexArgs({ cwd: run.cwd, bridge: options.bridge, tools: run.tools, model: run.model, effort: run.effort, systemPrompt: run.systemPrompt }),
       env: { ...options.env(run.tmp), SSTERM_MCP_SOCKET: run.credential.socketPath, SSTERM_MCP_CREDENTIAL: run.credential.credential },
     }),
   });
   const customLauncher = (definition: AgentCustomProvider, path: string, claude: boolean): Launcher => ({
-    path, input: definition.input, dialect: "claude",
+    path, input: definition.input, dialect: "claude", interrupt: false,
     build: (run) => ({
       args: customArgs(definition, { mcpConfigPath: run.config, systemPromptFile: run.promptFile, tools: run.tools }),
       env: customEnv(definition, options.env(run.tmp), claude),
@@ -395,7 +452,7 @@ export function createAgentRunner(options: {
   const view = (conversation: Conversation): AgentConversation => ({
     sessionId: conversation.sessionId, generation: conversation.generation, target: { ...conversation.target }, provider: conversation.provider,
     model: conversation.model, effort: conversation.effort, mode: conversation.mode, fullAllowAvailable: fullAllowAvailable(conversation),
-    status: conversation.status, messages: conversation.messages.map((message) => ({ ...message })),
+    status: conversation.status, messages: conversation.messages.map((message) => ({ ...message })), context: conversation.context,
     tasks: conversation.tasks.map((task) => ({
       ...task, steps: task.steps.map((step) => tail(step, VIEW_OUTPUT, VIEW_NOTE)),
       plan: task.plan && { ...task.plan, commands: task.plan.commands.map((entry) => ({ ...entry })) }, approval: task.approval && { ...task.approval },
@@ -436,6 +493,23 @@ export function createAgentRunner(options: {
   const say = (conversation: Conversation, role: AgentMessage["role"], value: string) => {
     conversation.messages.push({ id: conversation.nextMessage++, role, text: clip(value) });
     if (conversation.messages.length > MAX_AGENT_MESSAGES) conversation.messages.splice(0, conversation.messages.length - MAX_AGENT_MESSAGES);
+  };
+  /**
+   * SST-043: re-arms the turn watchdog on every sign of progress (a CLI event, a recorded step, a decision). While a card
+   * waits for the user or a terminal call is in flight (a command has its own timeout) it only waits; otherwise a busy
+   * turn that stays silent for `stallMs` is stopped with a notice, instead of a spinner that never ends.
+   */
+  const touch = (conversation: Conversation) => {
+    clearTimeout(conversation.watchdog);
+    // While stopping, the stop timer bounds the wait.
+    if (conversation.closed || conversation.status === "idle" || conversation.status === "stopping") return;
+    conversation.watchdog = setTimeout(() => {
+      if (conversation.closed || conversation.status === "idle" || conversation.status === "stopping") return;
+      if (conversation.decisions.size || (conversation.sub?.reserved ?? 0) > 0) return touch(conversation);
+      const span = stallMs >= 120_000 ? `${Math.round(stallMs / 60_000)} minutes` : `${Math.round(stallMs / 1_000)} seconds`;
+      stopConversationTurn(conversation, `Nothing came from the agent for ${span}, so ssterm stopped this turn. Send a message to continue.`);
+    }, stallMs);
+    conversation.watchdog.unref?.();
   };
 
   /** The exact owner's live, Ready SSH terminal (not local, not Team-managed). */
@@ -482,10 +556,11 @@ export function createAgentRunner(options: {
         },
         ...(options.graceMs ? { graceMs: options.graceMs } : {}),
       });
-      run = { process, credential: credential.credential, root, allowed, input: launcher.input, dialect: launcher.dialect, answered: false };
+      run = { process, credential: credential.credential, root, allowed, input: launcher.input, dialect: launcher.dialect, answered: false, interrupt: launcher.interrupt };
       const finishedRun = run;
       const launched = Date.now();
       const exit = process.exited.then(async () => {
+        clearTimeout(finishedRun.stopTimer);
         options.terminals.revoke(finishedRun.credential);
         await removeRunResidue({ home: options.home, root, pid: process.pid }).catch(() => undefined);
         // Review M1: a transcript or history entry naming this run is removed and reported.
@@ -529,13 +604,35 @@ export function createAgentRunner(options: {
         void close(conversation);
         return;
       }
-      if (conversation.main !== current || (!reading.texts.length && !reading.result)) return;
+      if (conversation.main !== current) return;
+      if (reading.usage || reading.windows) {
+        current.usage = reading.usage ?? current.usage;
+        current.windows = reading.windows ?? current.windows;
+        const windows = Object.values(current.windows ?? {});
+        // The window of the model that made the request, or the only one reported; never a guess.
+        const window = current.windows && current.usage
+          ? (current.usage.model !== undefined ? current.windows[current.usage.model] : undefined) ?? (windows.length === 1 ? windows[0] : undefined) : undefined;
+        if (window && current.usage) conversation.context = Math.min(100, Math.round((current.usage.tokens / window) * 100));
+      }
+      touch(conversation);
+      if (current.interrupted) {
+        // The stopped turn's own end; what it printed after Stop is dropped.
+        if (reading.result) {
+          current.interrupted = false;
+          clearTimeout(current.stopTimer);
+          if (conversation.status === "stopping") conversation.status = "idle";
+          publish(conversation.ownerId);
+        }
+        return;
+      }
+      if (!reading.texts.length && !reading.result) { if (reading.usage || reading.windows) publish(conversation.ownerId); return; }
       for (const value of reading.texts) say(conversation, "assistant", value);
       if (reading.result) {
         current.answered = true;
         // A one-shot turn ends when its process exits.
         if (current.input === "stream-json") conversation.status = "idle";
         if (reading.result.error) say(conversation, "notice", "The agent ended this turn with an error.");
+        touch(conversation);
       }
       publish(conversation.ownerId);
     }, (current) => {
@@ -543,14 +640,18 @@ export function createAgentRunner(options: {
       conversation.main = undefined;
       if (conversation.closed) return;
       conversation.status = "idle";
+      // A new process starts with its own context.
+      conversation.context = null;
+      touch(conversation);
       if (current.input === "one-shot") {
         // Tasks outlive a one-shot turn: the next turn's process asks about them.
-        if (!current.answered) say(conversation, "notice", "The agent CLI ended this turn without finishing it.");
+        if (!current.answered && !current.interrupted) say(conversation, "notice", "The agent CLI ended this turn without finishing it.");
         publish(conversation.ownerId);
         return;
       }
-      say(conversation, "notice", "The agent CLI stopped. Close the panel and open it again to start a new conversation.");
-      // Without session persistence a new process would not remember this conversation.
+      // Without session persistence a new process would not remember this conversation: the next one is given its text.
+      conversation.fresh = true;
+      say(conversation, "notice", `${current.interrupted ? "The agent CLI was stopped." : "The agent CLI exited."} Your next message starts a new one, given this conversation's messages so far (not the earlier command records).`);
       endTasks(conversation);
       publish(conversation.ownerId);
     });
@@ -569,7 +670,8 @@ export function createAgentRunner(options: {
           return text("delegate_task takes exactly one string argument, `goal` (1–4000 characters).", true);
         if (conversation.tasks.filter((candidate) => !finished(candidate)).length >= MAX_OPEN_TASKS)
           return text(`At most ${MAX_OPEN_TASKS} tasks can wait at once. Wait for a task to finish or cancel one.`, true);
-        const created: AgentTask = { id: `task-${++conversation.nextTask}`, goal: args.goal.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, " ").trim(), status: "queued", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null };
+        const created: AgentTask = { id: `task-${++conversation.nextTask}`, goal: args.goal.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, " ").trim(), status: "queued", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null,
+          afterMessage: conversation.messages.at(-1)?.id ?? 0 };
         conversation.tasks.push(created);
         // Finished tasks are dropped oldest first; queued and running ones always stay.
         while (conversation.tasks.length > MAX_AGENT_TASKS) {
@@ -616,6 +718,7 @@ export function createAgentRunner(options: {
         if (!conversation.decisions.delete(id)) return;
         clearTimeout(timer);
         signal.removeEventListener("abort", aborted);
+        touch(conversation);
         resolve(outcome);
       };
       const timer = setTimeout(() => finish("expired"), conversation.approvalMs);
@@ -696,9 +799,8 @@ export function createAgentRunner(options: {
     const next = conversation.tasks.find((candidate) => candidate.status === "queued");
     if (!next) return;
     next.status = "running";
-    const sub: NonNullable<Conversation["sub"]> = { task: next };
-    /** Step slots taken by admitted calls whose record has not arrived yet. */
-    let reserved = 0;
+    /** `reserved`: step slots taken by admitted calls whose record has not arrived yet. */
+    const sub: NonNullable<Conversation["sub"]> = { task: next, reserved: 0 };
     conversation.sub = sub;
     const settle = (status: AgentTask["status"]) => {
       if (conversation.sub !== sub) return;
@@ -719,7 +821,8 @@ export function createAgentRunner(options: {
       const issued = await options.terminals.issue(conversation.ownerId, conversation.sessionId, {
         // Every admitted call records exactly once into its slot, also after the task ended (an interrupted command).
         record: (step) => {
-          reserved = Math.max(0, reserved - 1);
+          sub.reserved = Math.max(0, sub.reserved - 1);
+          touch(conversation);
           if (next.steps.length < MAX_AGENT_STEPS) next.steps.push({ ...step } satisfies AgentStep);
           else next.limitReached = true;
           if (!conversation.closed) publish(conversation.ownerId);
@@ -729,7 +832,7 @@ export function createAgentRunner(options: {
         admit: (reserve) => {
           if (conversation.sub !== sub || finished(next)) return "This task has ended; nothing was sent to the terminal.";
           if (!reserve) return undefined;
-          if (next.steps.length + reserved < MAX_AGENT_STEPS) { reserved += 1; return undefined; }
+          if (next.steps.length + sub.reserved < MAX_AGENT_STEPS) { sub.reserved += 1; return undefined; }
           if (!next.limitReached) { next.limitReached = true; publish(conversation.ownerId); }
           return `This task reached its limit of ${MAX_AGENT_STEPS} commands; nothing more was sent to the terminal. Finish with your report.`;
         },
@@ -740,6 +843,7 @@ export function createAgentRunner(options: {
       /** codex reports its final message as an item, not in the result. */
       let lastText: string | undefined;
       const run = await launch(conversation, "sub", issued, provider.launcher, (reading, current) => {
+        if (!conversation.closed) touch(conversation);
         if (reading.violation) {
           next.subAgentReport = `ssterm stopped the sub agent: the CLI reported ${reading.violation}, outside ssterm's isolation rules.`;
           next.status = "failed";
@@ -752,8 +856,15 @@ export function createAgentRunner(options: {
         if (report !== undefined) next.subAgentReport = clip(report);
         next.status = reading.result.error ? "failed" : "completed";
         current.process.endInput();
+        // SST-043: the record is final now; a main agent waiting in get_task_status gets it without waiting for the
+        // CLI to exit, and a CLI that lingers after its report is stopped.
+        wake(conversation);
+        current.stopTimer = setTimeout(() => void current.process.stop(), interruptMs);
         publish(conversation.ownerId);
-      }, () => settle("failed"));
+      }, () => {
+        if (!finished(next) && next.subAgentReport === null) next.subAgentReport = "The sub agent CLI exited without a report.";
+        settle("failed");
+      });
       if (!run) { next.subAgentReport = "The sub agent could not be started."; return settle("failed"); }
       // The credential goes before the process: no call can start in between.
       if (gone()) { options.terminals.revoke(run.credential); void run.process.stop(); return; }
@@ -782,6 +893,33 @@ export function createAgentRunner(options: {
   function endTasks(conversation: Conversation) {
     for (const task of conversation.tasks) if (!finished(task)) cancel(conversation, task);
   }
+  /**
+   * SST-043: Stop (or the watchdog). Queued and running tasks are cancelled (a running command gets Ctrl+C through its
+   * revoked credential), pending cards are withdrawn, and the main agent's turn is interrupted: claude reads a stream-json
+   * `interrupt` control request; anything else, or a turn that does not end within `interruptMs`, has its process stopped
+   * (the next message then starts a new one). The conversation stays open.
+   */
+  function stopConversationTurn(conversation: Conversation, notice: string): boolean {
+    if (conversation.closed || conversation.status === "idle" || conversation.status === "stopping") return false;
+    conversation.turn += 1;
+    conversation.status = "idle";
+    clearTimeout(conversation.watchdog);
+    endTasks(conversation);
+    withdraw(conversation);
+    say(conversation, "notice", notice);
+    const main = conversation.main;
+    if (main && !main.interrupted) {
+      main.interrupted = true;
+      // M1: nothing can be sent until the interrupted turn ends (its result) or its process is gone (exit).
+      conversation.status = "stopping";
+      const sent = main.interrupt && main.input === "stream-json" &&
+        main.process.write({ type: "control_request", request_id: `ssterm-stop-${conversation.turn}`, request: { subtype: "interrupt" } });
+      if (!sent) void main.process.stop();
+      else main.stopTimer = setTimeout(() => { if (main.interrupted) void main.process.stop(); }, interruptMs);
+    }
+    publish(conversation.ownerId);
+    return true;
+  }
 
   // ------------------------------------------------------------------ lifecycle (A11)
 
@@ -789,6 +927,7 @@ export function createAgentRunner(options: {
   function close(conversation: Conversation): Promise<void> {
     if (conversation.closed) return Promise.resolve();
     conversation.closed = true;
+    clearTimeout(conversation.watchdog);
     if (conversations.get(key(conversation.ownerId, conversation.sessionId)) === conversation)
       conversations.delete(key(conversation.ownerId, conversation.sessionId));
     const runs = [conversation.main, conversation.sub?.run].filter((run): run is Run => !!run);
@@ -874,13 +1013,13 @@ export function createAgentRunner(options: {
     if (!snapshot?.target || boundSession(ownerId, sessionId) || agentSession(ownerId, sessionId)) return { refuse: "The chosen session is no longer available. Nothing was sent." };
     const { label, address, port, username, environment } = snapshot.target;
     const conversation: Conversation = {
-      ownerId, sessionId, generation, status: "idle", messages: [], tasks: [], nextMessage: 1, nextTask: 0, waiters: new Set(), closed: false,
+      ownerId, sessionId, generation, status: "idle", messages: [], tasks: [], nextMessage: 1, nextTask: 0, waiters: new Set(), closed: false, turn: 0, fresh: false, undelivered: new Set(), context: null,
       target: { label, environment, endpoint: `${username ? `${username}@` : ""}${address}:${port}` },
       approvalMs: waitMs, provider: settings.provider, model: settings.model, effort: settings.effort,
       // Every new binding starts in Auto (A2).
       mode: "auto", decisions: new Map(), nextApproval: 0, nonce: randomBytes(4).toString("hex"),
     };
-    const task: AgentTask = { id: "task-1", goal: `Requests from ${client.name}`, status: "running", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null };
+    const task: AgentTask = { id: "task-1", goal: `Requests from ${client.name}`, status: "running", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null, afterMessage: 0 };
     const ended = "This binding has ended; nothing was sent to the terminal.";
     const issued = await options.terminals.issue(ownerId, sessionId, {
       // A long-lived record keeps its newest steps.
@@ -1033,7 +1172,7 @@ export function createAgentRunner(options: {
         if (settings.provider !== provider || settings.custom !== definition) return { status: "refused", reason: "provider" };
         const { label, address, port, username, environment } = snapshot.target;
         conversations.set(slot, {
-          ownerId, sessionId, generation, status: "idle", messages: [], tasks: [], nextMessage: 1, nextTask: 0, waiters: new Set(), closed: false,
+          ownerId, sessionId, generation, status: "idle", messages: [], tasks: [], nextMessage: 1, nextTask: 0, waiters: new Set(), closed: false, turn: 0, fresh: false, undelivered: new Set(), context: null,
           target: { label, environment, endpoint: `${username ? `${username}@` : ""}${address}:${port}` },
           approvalMs: provider === "custom" && definition ? Math.min(approvalMs, (definition.toolTimeoutSec - 5) * 1_000) : approvalMs,
           provider, model: provider === "custom" && definition ? definition.model : settings.model,
@@ -1053,23 +1192,36 @@ export function createAgentRunner(options: {
       if (!conversation || conversation.closed) return { status: "refused", reason: "ended" };
       if (conversation.status !== "idle") return { status: "refused", reason: "busy" };
       say(conversation, "user", message);
+      const sent = conversation.messages.at(-1)!.id;
+      const turn = ++conversation.turn;
       conversation.status = conversation.main ? "thinking" : "starting";
+      touch(conversation);
       publish(conversation.ownerId);
       if (!conversation.main) {
         const started = await (conversation.starting ??= startMain(conversation).finally(() => { conversation.starting = undefined; }));
+        // Stopped while the CLI started: nothing is written.
+        if (conversation.turn !== turn && !conversation.closed) { conversation.undelivered.add(sent); return { status: "sent" }; }
         if (!started || conversation.closed) {
-          if (!conversation.closed) { conversation.status = "idle"; publish(conversation.ownerId); }
+          conversation.undelivered.add(sent);
+          if (!conversation.closed) { conversation.status = "idle"; touch(conversation); publish(conversation.ownerId); }
           return { status: "sent" };
         }
         conversation.status = "thinking";
         publish(conversation.ownerId);
       }
       const main = conversation.main;
+      // SST-043: a new stream-json process after a stop or exit is given the conversation's text so far (memory only).
+      // L1: messages that never reached a CLI are not replayed.
+      const history = conversation.messages.slice(0, -1).filter((entry) => !conversation.undelivered.has(entry.id));
+      const content = conversation.fresh && history.some((entry) => entry.role !== "notice") ? oneShotPrompt(history, message) : message;
+      conversation.fresh = false;
       const written = main?.input === "one-shot"
-        ? main.process.write(oneShotPrompt(conversation.messages.slice(0, -1), message)) && (main.process.endInput(), true)
-        : main?.process.write({ type: "user", message: { role: "user", content: message } });
+        ? main.process.write(oneShotPrompt(history, message)) && (main.process.endInput(), true)
+        : main?.process.write({ type: "user", message: { role: "user", content } });
       if (!written) {
+        conversation.undelivered.add(sent);
         conversation.status = "idle";
+        touch(conversation);
         publish(conversation.ownerId);
       }
       return { status: "sent" };
@@ -1101,6 +1253,48 @@ export function createAgentRunner(options: {
       if (decision === "approve" && production(conversation) && !confirmedProduction) return { status: "refused", reason: "production" };
       pending.finish(decision === "approve" ? "approved" : "rejected");
       return { status: "applied" };
+    },
+    /**
+     * SST-043: the panel's model and effort. Verified built-in models only (a custom provider's are set in its definition).
+     * An idle main process is ended quietly, so the next message starts a new one with the new choice (and the
+     * conversation's text); new tasks use it too. `setDefault` also saves it in Settings.
+     */
+    async setModel(owner: Owner, sessionId: string, generation: number, model: string, effort: AgentEffort, setDefault: boolean): Promise<SetAgentModelResponse> {
+      await ready;
+      const conversation = conversations.get(key(sessionOwnerId(owner), sessionId));
+      if (!conversation || conversation.closed || conversation.generation !== generation) return { status: "refused", reason: "ended" };
+      const busy = () => conversation.status !== "idle" || !!conversation.starting || conversation.tasks.some((task) => !finished(task));
+      if (busy()) return { status: "refused", reason: "busy" };
+      if (conversation.provider !== "claude" || !isVerifiedAgentModel("claude", model)) return { status: "refused", reason: "model-unverified" };
+      if (setDefault) {
+        const stored: StoredAgentSettings = { ...settings, model, effort };
+        if (await options.store.write(serializeAgentSettings(stored)) !== "confirmed") return { status: "refused", reason: "failed" };
+        settings = stored;
+      }
+      if (conversation.closed) return { status: "refused", reason: "ended" };
+      if (busy()) return { status: "refused", reason: "busy" };
+      if (conversation.model !== model || conversation.effort !== effort) {
+        conversation.model = model;
+        conversation.effort = effort;
+        const main = conversation.main;
+        if (main) {
+          // Detached first: its exit is not reported as a stop.
+          conversation.main = undefined;
+          conversation.fresh = true;
+          conversation.context = null;
+          options.terminals.revoke(main.credential);
+          void main.process.stop();
+        }
+        const label = AGENT_MODELS.claude.models.find((entry) => entry.id === model || entry.alias === model)?.label ?? model;
+        say(conversation, "notice", `Model changed to ${label} (effort ${effort}). It applies from your next message${setDefault ? " and is now the default" : ""}.`);
+      }
+      publish(conversation.ownerId);
+      return { status: "set" };
+    },
+    /** SST-043: the panel's Stop. */
+    stopTurn(owner: Owner, sessionId: string): boolean {
+      const conversation = conversations.get(key(sessionOwnerId(owner), sessionId));
+      return !!conversation && stopConversationTurn(conversation, "Stopped by you. Running and queued tasks were cancelled and pending requests withdrawn.");
     },
     cancelTask(owner: Owner, sessionId: string, taskId: string): boolean {
       const conversation = conversations.get(key(sessionOwnerId(owner), sessionId));
@@ -1212,7 +1406,7 @@ export type AgentRunner = ReturnType<typeof createAgentRunner>;
 
 export const agentChannels = Object.freeze([
   channels.agentSettings, channels.configureAgent, channels.checkAgentProvider, channels.agentState, channels.openAgent, channels.closeAgent,
-  channels.sendAgent, channels.cancelAgentTask, channels.setAgentMode, channels.decideAgent,
+  channels.sendAgent, channels.cancelAgentTask, channels.stopAgentTurn, channels.setAgentMode, channels.setAgentModel, channels.decideAgent,
   channels.externalClients, channels.updateExternalClients, channels.answerExternalRequest, channels.setExternalMode, channels.stopExternalBinding,
 ]);
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
@@ -1247,6 +1441,12 @@ export function registerAgentHandlers(options: {
   handle(channels.sendAgent, isSendAgentRequest, async (runner, request, owner) => ok(await runner.send(owner, request.sessionId, request.text)));
   handle(channels.cancelAgentTask, isCancelAgentTaskRequest, async (runner, request, owner) =>
     ok({ cancelled: runner.cancelTask(owner, request.sessionId, request.taskId) }));
+  handle(channels.stopAgentTurn, isAgentConversationRequest, async (runner, request, owner) => {
+    runner.stopTurn(owner, request.sessionId);
+    return ok({ accepted: true as const });
+  });
+  handle(channels.setAgentModel, isSetAgentModelRequest, async (runner, request, owner) =>
+    ok(await runner.setModel(owner, request.sessionId, request.generation, request.model, request.effort, request.setDefault)));
   handle(channels.setAgentMode, isSetAgentModeRequest, async (runner, request, owner) =>
     ok(runner.setMode(owner, request.sessionId, request.generation, request.mode, request.acknowledged)));
   handle(channels.decideAgent, isDecideAgentRequest, async (runner, request, owner) =>

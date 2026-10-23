@@ -173,8 +173,37 @@ test("DS05 release sweep: every page and drawer at 960×640 and 1280×800 with r
           await open.getByRole("tab", { name: tab }).click();
           if (tab === "Recording")
             await expect(page.getByTestId("recording-settings").getByRole("switch", { name: "Record session output" })).not.toBeChecked();
-          if (tab === "AI Agent")
+          if (tab === "AI Agent") {
             await expect(page.getByTestId("agent-settings").getByRole("switch", { name: "Use the AI agent" })).not.toBeChecked();
+            // SST-043 bug fix: provider labels keep their width (no letter-by-letter wrap) and codex's reasons are a
+            // left-aligned list under its status.
+            await expect(page.getByTestId("agent-provider-reasons").locator("li").first()).toBeVisible();
+            const layout = await page.getByTestId("agent-providers").evaluate((list) => ({
+              labels: [...list.querySelectorAll("dt")].map((label) => ({ text: label.textContent, width: label.getBoundingClientRect().width, lines: Math.round(label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight)) })),
+              values: [...list.querySelectorAll("dd")].map((value) => ({ align: getComputedStyle(value).textAlign, left: value.getBoundingClientRect().left, label: value.previousElementSibling!.getBoundingClientRect().left })),
+              reasons: [...list.querySelectorAll("[data-testid='agent-provider-reasons']")].map((reasons) => ({
+                offset: reasons.getBoundingClientRect().left - reasons.closest("dd")!.getBoundingClientRect().left,
+                items: [...reasons.querySelectorAll("li")].map((item) => ({ align: getComputedStyle(item).textAlign, left: item.getBoundingClientRect().left - reasons.getBoundingClientRect().left })),
+              })),
+            }));
+            const at = `settings-ai-agent@${size}`;
+            expect(layout.labels.map((label) => label.text), at).toEqual(["claude (Anthropic)", "codex (OpenAI)", "Custom CLI provider"]);
+            for (const label of layout.labels) {
+              expect(label.width, `${at}: ${label.text} width`).toBeGreaterThan(80);
+              expect(label.lines, `${at}: ${label.text} on one line`).toBe(1);
+            }
+            for (const value of layout.values) {
+              expect(["left", "start"], at).toContain(value.align);
+              expect(Math.abs(value.left - value.label), `${at}: status under its label`).toBeLessThanOrEqual(1);
+            }
+            expect(layout.reasons.length, at).toBe(1);
+            expect(layout.reasons[0]!.offset, `${at}: reasons start at the status's left edge`).toBeLessThanOrEqual(1);
+            for (const item of layout.reasons[0]!.items) {
+              expect(["left", "start"], at).toContain(item.align);
+              expect(item.left, `${at}: list indentation`).toBeGreaterThan(8);
+              expect(item.left, `${at}: list indentation`).toBeLessThan(32);
+            }
+          }
           const audited = await audit(page);
           matrix[`settings-${tab.toLowerCase().replace(" ", "-")}@${size}`] = { checked: audited.checked, excepted: audited.excepted };
           findings.push(...audited.findings.map((finding) => ({ page: `settings-${tab.toLowerCase().replace(" ", "-")}`, size, ...finding })));

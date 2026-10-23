@@ -20,7 +20,7 @@ As built in SST-041 tickets 01–07.
   - **PROD:** approving a plan or command needs the extra in-card PROD step. Full allow on PROD needs the Settings option "Allow Full allow on PROD" (off by default) and then its own warning.
   - **Read-only classification is best effort,** and the UI says so. Redirects, chaining, pipes into non-allowlisted programs, substitutions, subshells, `..`/device paths and writing options count as not read-only.
 - **Data and consent (A3, A11):**
-  - Off by default. Enabling needs the versioned disclosure acknowledged. It names the provider and lists what is sent, including what the CLI adds itself (temporary working-folder path, macOS version, platform, shell, model, date, CLI version, signed-in account email). A banner is shown in every agent panel.
+  - Off by default. Enabling needs the versioned disclosure acknowledged. It names the provider and lists what is sent, including what the CLI adds itself (temporary working-folder path, macOS version, platform, shell, model, date, CLI version, signed-in account email). The disclosure is always visible in every agent panel: a banner until SST-043, then an amber icon after the title whose full text shows on hover and on keyboard focus.
   - Sent: chat messages, the agent's commands, their output (64 KiB tail per command, truncation marked), the bound target's label, `user@host:port` and environment, and the user's additional instructions.
   - Never sent by ssterm: earlier scrollback, user-typed terminal input, other sessions, the catalog, snippet bodies, credentials and keys.
   - No redaction claim.
@@ -69,6 +69,7 @@ As built in SST-041 tickets 01–07.
   - **Best-effort zeroing:** password entry buffers are zeroed on a best-effort basis; JavaScript strings and the kernel/PTY path cannot be wiped.
   - **Read-only classifier:** best effort; an allowlisted program could still do more than it appears to.
   - **Provider and CLI:** provider-side retention is outside ssterm's control. Managed/MDM policy cannot be overridden (ssterm refuses to run under it).
+- **Re-send to a new process (SST-043):** after a main CLI exits, is stopped (Stop, the 8-minute watchdog or a model change), the next process of the same provider is given the conversation's messages again from memory (not the command records). Nothing goes to another provider, and the disclosure already covers chat messages and replies.
 - **CLI dependence:** behaviour depends on CLI flags that can change between versions, so support is gated per verified CLI version. Any CLI update requires re-running the isolation check before that version is enabled.
 
 ## Spike findings (SST-041/01, 2026-10-23)

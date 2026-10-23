@@ -175,22 +175,29 @@ export function AgentSettings({ owner }: { owner: Owner }) {
               </FieldDescription>
             </FieldContent>
           </Field>
-          <dl className="settings-facts" data-testid="agent-providers">
-            <dt>claude (Anthropic)</dt>
-            <dd data-status={claude?.status}>
-              {claude?.version ? `${claude.version} · ` : ""}{claude ? providerNotes[claude.status] : ""}
-              {claude?.status !== "ready" && view.verified.length ? ` Verified: ${view.verified.join(", ")}.` : ""}
-            </dd>
-            <dt>codex (OpenAI)</dt>
-            <dd data-status={codex?.status} data-testid="agent-codex-status">
-              {codex?.version ? `${codex.version} · ` : ""}{codex?.status === "ready" ? "Verified" : "Disabled: its isolation check failed."}
-              {codex?.status === "missing" ? " (Not found on this Mac.)" : ""}
-              {codex?.status !== "ready" && codex?.reasons.length ? <Reasons reasons={codex.reasons} /> : null}
-            </dd>
-            <dt>Custom CLI provider</dt>
-            <dd data-status={customView?.status}>
-              {view.settings.custom ? `${view.settings.custom.label} · ` : ""}{customView ? customNotes[customView.status] ?? providerNotes[customView.status] : ""}
-            </dd>
+          {/* SST-043: stacked rows (label, then a left-aligned status and reasons); the two-column facts grid collapsed the label. */}
+          <dl className="grid gap-3 text-sm" data-testid="agent-providers">
+            <div className="grid gap-0.5">
+              <dt className="text-muted-foreground">claude (Anthropic)</dt>
+              <dd className="m-0" data-status={claude?.status}>
+                {claude?.version ? `${claude.version} · ` : ""}{claude ? providerNotes[claude.status] : ""}
+                {claude?.status !== "ready" && view.verified.length ? ` Verified: ${view.verified.join(", ")}.` : ""}
+              </dd>
+            </div>
+            <div className="grid gap-0.5">
+              <dt className="text-muted-foreground">codex (OpenAI)</dt>
+              <dd className="m-0" data-status={codex?.status} data-testid="agent-codex-status">
+                {codex?.version ? `${codex.version} · ` : ""}{codex?.status === "ready" ? "Verified" : "Disabled: its isolation check failed."}
+                {codex?.status === "missing" ? " (Not found on this Mac.)" : ""}
+                {codex?.status !== "ready" && codex?.reasons.length ? <Reasons reasons={codex.reasons} /> : null}
+              </dd>
+            </div>
+            <div className="grid gap-0.5">
+              <dt className="text-muted-foreground">Custom CLI provider</dt>
+              <dd className="m-0" data-status={customView?.status}>
+                {view.settings.custom ? `${view.settings.custom.label} · ` : ""}{customView ? customNotes[customView.status] ?? providerNotes[customView.status] : ""}
+              </dd>
+            </div>
           </dl>
           <Field data-disabled={busy || undefined}>
             <FieldLabel id={`${id}-provider`}>Provider</FieldLabel>
@@ -329,7 +336,7 @@ function ModelSettings({ id, view, busy, custom, onCustom, onSave }: {
 }
 
 function Reasons({ reasons }: { reasons: string[] }) {
-  return <ul className="mt-1 list-disc pl-5" data-testid="agent-provider-reasons">{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>;
+  return <ul className="mt-1 list-disc pl-5 text-left" data-testid="agent-provider-reasons">{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>;
 }
 
 const EMPTY_CUSTOM: AgentCustomProvider = { label: "", path: "", args: [], input: "stream-json", model: "default", effort: "medium", env: [], endpointEnv: null, toolTimeoutSec: 60 };

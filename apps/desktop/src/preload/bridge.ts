@@ -59,11 +59,11 @@ import {
   type RevokeKnownHostRequest,
   isAgentSettingsRequest, isAgentSettingsView, isConfigureAgentRequest, isCheckAgentProviderRequest, isConfigureAgentResponse, isAgentStateRequest, isAgentState,
   isOpenAgentRequest, isOpenAgentResponse, isAgentConversationRequest, isSendAgentRequest, isSendAgentResponse,
-  isCancelAgentTaskRequest, isCancelAgentTaskResponse, isSetAgentModeRequest, isSetAgentModeResponse, isDecideAgentRequest, isDecideAgentResponse,
+  isCancelAgentTaskRequest, isCancelAgentTaskResponse, isSetAgentModeRequest, isSetAgentModeResponse, isSetAgentModelRequest, isSetAgentModelResponse, isDecideAgentRequest, isDecideAgentResponse,
   isExternalClientsRequest, isExternalClientsView, isUpdateExternalClientsRequest, isUpdateExternalClientsResponse, isAnswerExternalRequest, isAnswerExternalResponse,
   type ExternalClientsRequest, type UpdateExternalClientsRequest, type AnswerExternalRequest,
   type AgentSettingsRequest, type ConfigureAgentRequest, type CheckAgentProviderRequest, type AgentStateRequest, type AgentState, type OpenAgentRequest,
-  type AgentConversationRequest, type SendAgentRequest, type CancelAgentTaskRequest, type SetAgentModeRequest, type DecideAgentRequest,
+  type AgentConversationRequest, type SendAgentRequest, type CancelAgentTaskRequest, type SetAgentModeRequest, type SetAgentModelRequest, type DecideAgentRequest,
   failure,
   isBootstrapData,
   isPingRequest,
@@ -793,6 +793,15 @@ export function createDesktopBridge(transport: BridgeTransport): {
     cancelAgentTask(request: CancelAgentTaskRequest) {
       if (!isCancelAgentTaskRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.cancelAgentTask, [{ owner: { ...request.owner }, sessionId: request.sessionId, taskId: request.taskId }], isCancelAgentTaskResponse);
+    },
+    stopAgentTurn(request: AgentConversationRequest) {
+      if (!isAgentConversationRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.stopAgentTurn, [{ owner: { ...request.owner }, sessionId: request.sessionId }], isTerminalActionResponse);
+    },
+    setAgentModel(request: SetAgentModelRequest) {
+      if (!isSetAgentModelRequest(request)) return Promise.resolve(failure("invalid-request"));
+      const { sessionId, generation, model, effort, setDefault } = request;
+      return invoke(channels.setAgentModel, [{ owner: { ...request.owner }, sessionId, generation, model, effort, setDefault }], isSetAgentModelResponse);
     },
     setAgentMode(request: SetAgentModeRequest) {
       if (!isSetAgentModeRequest(request)) return Promise.resolve(failure("invalid-request"));

@@ -5,6 +5,8 @@ import { AppLockGate } from "@/components/app-lock/app-lock-gate";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
 import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
+import { ErrorBoundary } from "@/components/error-boundary";
 import "@/styles/globals.css";
 
 // Vite removes the import and fixture catalog from production bundles.
@@ -28,9 +30,18 @@ createRoot(root).render(
             <Showcase />
           </Suspense>
         ) : (
-          <AppLockGate>
-            <AppShell />
-          </AppLockGate>
+          // SST-043 review H1: no single render error leaves an empty window.
+          <ErrorBoundary fallback={(reset) => (
+            <div role="alert" className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" data-testid="app-error">
+              <p className="type-label">Something went wrong while showing this window.</p>
+              <p className="max-w-md type-caption text-muted-foreground">Try showing it again.</p>
+              <Button size="sm" onClick={reset}>Try again</Button>
+            </div>
+          )}>
+            <AppLockGate>
+              <AppShell />
+            </AppLockGate>
+          </ErrorBoundary>
         )}
       </Toaster>
     </TooltipProvider>

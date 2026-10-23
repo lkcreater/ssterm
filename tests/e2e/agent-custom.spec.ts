@@ -203,7 +203,8 @@ test("AI Agent providers: codex disabled with reasons; a custom provider's isola
     await expect(approval).toHaveCount(0, { timeout: 15_000 });
     const card = panel.locator('[data-testid="agent-task"][data-task-id="task-1"]');
     await expect(card).toHaveAttribute("data-status", "completed", { timeout: 30_000 });
-    await card.getByRole("button", { name: /^Record \(1 command\)/u }).click();
+    await expect(card.getByTestId("agent-task-summary")).toContainText("1 command");
+    await card.getByRole("button", { name: "Expand", exact: true }).click();
     const step = card.getByTestId("agent-task-record").locator("li").first();
     await expect(step).toHaveAttribute("data-step-status", "refused");
     await expect(step).toContainText("The approval was withdrawn");

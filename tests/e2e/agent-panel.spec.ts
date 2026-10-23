@@ -192,14 +192,88 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     expect(await runFile("docker", ["exec", lab.container, "sh", "-c", "ls /tmp/agent-canary 2>/dev/null || echo absent"]).then((out) => out.stdout)).toBe("absent\n");
     const card = panel.locator('[data-testid="agent-task"][data-task-id="task-1"]');
     await expect(card).toHaveAttribute("data-status", "completed");
-    await card.getByRole("button", { name: /^Record \(2 commands\)/u }).click();
+    // SST-043: the card sits in the AI bubble of its turn, under the AI icon, as one summary line until expanded.
+    const taskOne = page.locator('[data-testid="agent-task"][data-task-id="task-1"]');
+    const bubble = messages.getByTestId("agent-ai-bubble").filter({ has: taskOne });
+    await expect(bubble).toHaveCount(1);
+    await expect(bubble).toContainText("Delegated task-1.");
+    await expect(bubble).toContainText("Summary task-1 (completed)");
+    const aiLabel = messages.locator("li[data-role=assistant]").filter({ has: taskOne }).getByTestId("agent-ai-label");
+    await expect(aiLabel.locator("svg[aria-hidden=true]")).toHaveCount(1);
+    await expect(aiLabel.locator(".sr-only")).toHaveText("Assistant");
+    expect((await aiLabel.boundingBox())!.y + (await aiLabel.boundingBox())!.height, "the AI icon is above the bubble").toBeLessThanOrEqual((await bubble.boundingBox())!.y + 1);
+    const summary = card.getByTestId("agent-task-summary");
+    await expect(summary).toContainText("Finished");
+    await expect(summary).toContainText("2 commands");
+    expect((await summary.boundingBox())!.height, "one line").toBeLessThan(36);
+    expect((await card.boundingBox())!.height, "nothing below the summary").toBeLessThan(48);
+    await expect(card.getByTestId("agent-task-details")).toHaveCount(0);
+    const expand = card.getByRole("button", { name: "Expand", exact: true });
+    await expect(expand).toHaveAttribute("aria-expanded", "false");
+    await expand.click();
+    await expect(expand).toHaveAttribute("aria-expanded", "true");
     const record = card.getByTestId("agent-task-record");
     await expect(record.locator("li").nth(0)).toContainText("cat /home/fixture/agent/note.txt");
     await expect(record.locator("li").nth(0)).toContainText("Exit 0");
     await expect(record.locator("li").nth(0)).toContainText("AGENT-NOTE-42");
     await expect(record.locator("li").nth(0).locator("[data-via]")).toHaveAttribute("data-via", "read-only");
     await expect(record.locator("li").nth(1)).toContainText("Refused, not run");
-    await expect(card).toContainText("Sub agent report (unverified): Ran 2 command(s).");
+    const report = card.getByTestId("agent-task-report");
+    await expect(report).not.toContainText("Ran 2 command(s).");
+    await report.getByRole("button", { name: "Sub agent report (unverified)" }).click();
+    await expect(report).toContainText("Ran 2 command(s).");
+
+    // SST-043: safe Markdown. A real table, bold and code; links are text with no href; no image, script or raw HTML.
+    await composer.fill("markdown");
+    await composer.press("Enter");
+    const rich = messages.getByTestId("agent-ai-bubble").filter({ hasText: "Disk report with" });
+    await expect(rich).toHaveCount(1, { timeout: 20_000 });
+    const table = rich.locator("table");
+    await expect(table).toHaveCount(1);
+    await expect(table.locator("th")).toHaveText(["Mount", "Used", "Note"]);
+    await expect(table.locator("tbody tr")).toHaveCount(2);
+    await expect(table.locator("tbody tr").nth(1).locator("td")).toHaveText(["/var", "87%", "high"]);
+    await expect(table.locator("td code")).toHaveText("ext4");
+    expect(await table.locator("th").first().evaluate((cell) => getComputedStyle(cell).borderTopColor)).toBe("rgb(56, 56, 56)");
+    await expect(rich.locator("strong").first()).toHaveText("bold text");
+    await expect(rich.locator("p code")).toHaveText("inline-code");
+    await expect(rich.locator("pre code")).toHaveText("df -h /var");
+    await expect(rich).toContainText("See the runbook (https://example.invalid/runbook) or https://example.invalid/plain.");
+    await expect(rich.locator("a, [href], [src], img, script, iframe, style, input")).toHaveCount(0);
+    await expect(rich).toContainText("☑ backup done");
+    await expect(rich).toContainText("☐ restart pending");
+    await expect(rich.getByRole("region", { name: "Table: Mount, Used, Note" })).toHaveCount(1);
+    await expect(rich).not.toContainText("__agentInjected");
+    expect(await page.evaluate(() => (window as unknown as { __agentInjected?: string }).__agentInjected)).toBeUndefined();
+    await expect(messages.locator("img, script, a")).toHaveCount(0);
+    // Selectable text: a click on a link's text does nothing and the text can be selected.
+    await rich.getByText("the runbook").click();
+    expect(page.url()).not.toContain("example.invalid");
+    expect(await rich.evaluate((element) => { getSelection()!.selectAllChildren(element); return getSelection()!.toString(); })).toContain("Disk report with");
+    await page.evaluate(() => getSelection()!.removeAllRanges());
+    expect((await audit(page)).findings, "Markdown bubble and expanded card").toEqual([]);
+    await rich.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath("agent-panel-markdown.png") });
+
+    // SST-043: a Thai message gets a Thai answer; the bundled rules ask for the user's language and a report in it.
+    await composer.fill("สวัสดี ช่วยตรวจดิสก์หน่อย");
+    await composer.press("Enter");
+    await expect(messages).toContainText("ตอบเป็นภาษาไทย: - Language: always answer in the language of the user's latest message", { timeout: 20_000 });
+    await expect(messages).toContainText('Write delegate_task goals in English, and end each goal by naming the language of the user\'s latest message for the sub agent\'s final report, for example "Report in Thai."');
+    await expect(messages.locator("li[data-role=user]").last()).toHaveText("You: สวัสดี ช่วยตรวจดิสก์หน่อย");
+
+    // SST-043: the composer is a 3-row textarea; Shift+Enter adds a line and Enter sends the message intact.
+    await expect(composer).toHaveAttribute("rows", "3");
+    expect((await composer.boundingBox())!.height, "three rows tall").toBeGreaterThanOrEqual(70);
+    await composer.fill("");
+    await composer.pressSequentially("line one");
+    await composer.press("Shift+Enter");
+    await composer.pressSequentially("line two");
+    await expect(composer).toHaveValue("line one\nline two");
+    await composer.press("Enter");
+    await expect(composer).toHaveValue("");
+    await expect.poll(() => messages.locator("li[data-role=user]").last().evaluate((element) => element.textContent)).toBe("You: line one\nline two");
+    await expect(messages).toContainText("Echo: line one line two", { timeout: 20_000 });
     // Rendered contrast, names and overflow with the panel, a finished card and its record open.
     const rendered = await audit(page);
     expect(rendered.findings).toEqual([]);
@@ -213,6 +287,8 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     expect(main).toMatchObject({ role: "main", problems: [], servers: ["ssterm"], server: "ssterm", instructions: true, model: "claude-opus-5-5", effort: "xhigh", bridge,
       tools: ["mcp__ssterm__delegate_task", "mcp__ssterm__get_task_status", "mcp__ssterm__cancel_task"] });
     expect(main.extra).toContain("Prefer journalctl over log files.");
+    expect(main.language.join("\n")).toMatch(/always answer in the language of the user's latest message[^]*delegate_task goals in English[^]*"Report in Thai\."/u);
+    expect(sub.language.join("\n")).toMatch(/final report in the language the task requests[^]*English/u);
     expect(sub).toMatchObject({ role: "sub", problems: [], servers: ["ssterm"], instructions: true, model: "claude-opus-5-5", effort: "xhigh", bridge,
       tools: ["mcp__ssterm__propose_plan", "mcp__ssterm__run_command", "mcp__ssterm__read_output", "mcp__ssterm__cancel"] });
     await expect.poll(() => readdirSync(join(home, ".claude/sessions")).filter((name) => name.startsWith(`${sub.pid}.`)).length, { message: "the finished sub agent's residue" }).toBe(0);
@@ -271,21 +347,39 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     await page.keyboard.type("exit");
     await page.keyboard.press("Enter");
     await expect(pane).not.toHaveAttribute("data-phase", "ready");
-    await expect(panel.getByTestId("agent-ended")).toBeVisible();
-    await expect(messages).not.toContainText("Echo: hello");
+    // SST-043: the panel closes with its session, with a toast.
+    const toasts = page.locator("[data-slot=toast-viewport]");
+    await expect(panel).toHaveCount(0);
+    await expect(toasts).toContainText("Agent conversation ended with the session");
     await expectCleaned("session end");
-    await panel.getByRole("button", { name: "Close AI Agent" }).click();
 
-    // 10. Lock: a running conversation on the reconnected session stops; the button goes with the Ready state.
+    // 9b. A reconnect does not bring the old conversation back; Disconnect on the pane closes a new one the same way.
     await pane.getByRole("button", { name: "Reconnect", exact: true }).click();
     await expect(pane).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+    await expect(panel).toHaveCount(0);
+    await agentButton.click();
+    await expect(panel).toBeVisible();
+    await expect(messages).not.toContainText("Echo: hello");
+    await composer.fill("hello again");
+    await composer.press("Enter");
+    await expect(messages).toContainText("Echo: hello again", { timeout: 20_000 });
+    await pane.getByRole("button", { name: "Disconnect", exact: true }).click();
+    await expect(page.locator(`section[data-session-id="${sessionId}"]`)).toHaveCount(0);
+    await expect(panel).toHaveCount(0);
+    await expect(toasts).toContainText("Agent conversation ended with the session");
+    await expectCleaned("disconnect");
+    // The other session's pane (step 7) is the first SSH pane now; it was never bound and is still Ready.
+    await expect(pane).toHaveAttribute("data-phase", "ready");
+
+    // 10. Lock: a running conversation stops; the button goes with the Ready state.
+    await showPane(page, pane);
     await agentButton.click();
     await composer.fill("start:run:sleep 31");
     await composer.press("Enter");
     await expect(pane.getByTestId("agent-banner")).toContainText("Agent running: sleep 31", { timeout: 20_000 });
     await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("lock-screen"); });
     await expect(pane).not.toHaveAttribute("data-phase", "ready");
-    await expect(panel.getByTestId("agent-ended")).toBeVisible();
+    await expect(panel).toHaveCount(0);
     await expect(pane.getByRole("button", { name: "AI Agent" })).toHaveCount(0);
     await expect.poll(() => remote("sleep 31")).toBe(0);
     await expectCleaned("lock");
@@ -296,7 +390,6 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     expect(desktop.errors).toEqual([]);
 
     // 12. Quit while a task runs: every CLI group stops and its residue is removed before the app exits.
-    await panel.getByRole("button", { name: "Close AI Agent" }).click();
     await pane.getByRole("button", { name: "Reconnect", exact: true }).click();
     await expect(pane).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
     await agentButton.click();
@@ -379,12 +472,21 @@ test("AI Agent modes: Auto plan and per-command approvals on the fixture, Full a
     expect(await exists("/tmp/agent-plan-a")).toBe("absent");
     await expect(rows).not.toContainText("agent-plan-a");
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    // SST-043: a card waiting for a decision shows on the collapsed one-line task.
+    const card = panel.locator('[data-testid="agent-task"][data-task-id="task-1"]');
+    await expect(card).toHaveAttribute("data-expanded", "false");
     await plan.getByRole("button", { name: "Approve plan" }).click();
+    // A decided plan moves into the expanded details.
+    await expect(plan).toHaveCount(0);
+    await card.getByRole("button", { name: "Expand", exact: true }).click();
     await expect(plan).toHaveAttribute("data-status", "approved");
 
     // 2. The in-plan command runs; an out-of-plan one asks: Run runs it, Reject returns a refusal and sends nothing.
     const approval = panel.getByTestId("agent-approval");
     await expect(approval).toContainText("touch /tmp/agent-out-a", { timeout: 30_000 });
+    await card.getByRole("button", { name: "Expand", exact: true }).click();
+    await expect(card).toHaveAttribute("data-expanded", "false");
+    await expect(approval, "a pending approval is never hidden").toBeVisible();
     expect(await exists("/tmp/agent-plan-a")).toBe("present");
     expect(await exists("/tmp/agent-out-a")).toBe("absent");
     await approval.getByRole("button", { name: "Run", exact: true }).click();
@@ -396,9 +498,10 @@ test("AI Agent modes: Auto plan and per-command approvals on the fixture, Full a
     await expect(messages).toContainText("touch /tmp/agent-out-a -> exit 0");
     expect(await exists("/tmp/agent-out-b")).toBe("absent");
     await expect(rows).not.toContainText("agent-out-b");
-    const card = panel.locator('[data-testid="agent-task"][data-task-id="task-1"]');
-    await card.getByRole("button", { name: /^Record \(3 commands\)/u }).click();
-    await expect(card).toContainText("Sub agent report (unverified): Plan approved. Ran 3 command(s).");
+    await card.getByRole("button", { name: "Expand", exact: true }).click();
+    await expect(card.getByTestId("agent-task-summary")).toContainText("3 commands");
+    await card.getByRole("button", { name: "Sub agent report (unverified)" }).click();
+    await expect(card.getByTestId("agent-task-report")).toContainText("Plan approved. Ran 3 command(s).");
     const record = card.getByTestId("agent-task-record").locator("li");
     await expect(record.nth(0).locator("[data-via]")).toHaveAttribute("data-via", "plan");
     await expect(record.nth(1).locator("[data-via]")).toHaveAttribute("data-via", "approval");
@@ -424,7 +527,7 @@ test("AI Agent modes: Auto plan and per-command approvals on the fixture, Full a
     await expect(approval).toHaveCount(0);
     expect(await exists("/tmp/agent-full")).toBe("present");
     const fullCard = panel.locator('[data-testid="agent-task"][data-task-id="task-2"]');
-    await fullCard.getByRole("button", { name: /^Record/u }).click();
+    await fullCard.getByRole("button", { name: "Expand", exact: true }).click();
     await expect(fullCard.getByTestId("agent-task-record").locator("[data-via]")).toHaveAttribute("data-via", "full-allow");
     await panel.getByRole("button", { name: "Close AI Agent" }).click();
     await pane.getByRole("button", { name: "AI Agent" }).click();
@@ -463,6 +566,8 @@ test("AI Agent modes: Auto plan and per-command approvals on the fixture, Full a
     await expect(plan).toHaveAttribute("data-status", "pending");
     expect(await exists("/tmp/agent-prod-a")).toBe("absent");
     await confirm.getByRole("button", { name: "Approve plan on PROD" }).click();
+    await expect(plan).toHaveCount(0);
+    await panel.locator('[data-testid="agent-task"][data-task-id="task-1"]').getByRole("button", { name: "Expand", exact: true }).click();
     await expect(plan).toHaveAttribute("data-status", "approved");
     await expect(approval).toContainText("touch /tmp/agent-prod-b", { timeout: 30_000 });
     expect(await exists("/tmp/agent-prod-a")).toBe("present");
@@ -494,7 +599,7 @@ test("AI Agent modes: Auto plan and per-command approvals on the fixture, Full a
     await composer.press("Enter");
     await expect(approval).toContainText("touch /tmp/agent-lock", { timeout: 30_000 });
     await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("lock-screen"); });
-    await expect(panel.getByTestId("agent-ended")).toBeVisible();
+    await expect(panel).toHaveCount(0);
     await expect(approval).toHaveCount(0);
     await expect.poll(() => pgrep("fake-claude.mjs")).toBe(0);
     expect(await exists("/tmp/agent-lock")).toBe("absent");
@@ -639,7 +744,8 @@ test("AI Agent password handoff: listed programs only, card and banner with the 
     await expect(banner).toHaveCount(0);
     await expect(rows).toContainText("AGENT-NOTE-42");
     const task = panel.locator('[data-testid="agent-task"][data-task-id="task-1"]');
-    await task.getByRole("button", { name: /^Record \(1 command\)/u }).click();
+    await expect(task.getByTestId("agent-task-summary")).toContainText("1 command");
+    await task.getByRole("button", { name: "Expand", exact: true }).click();
     await expect(task.getByTestId("agent-task-record")).toContainText("AGENT-NOTE-42");
     await expect(task.getByTestId("agent-task-record")).toContainText("Exit 0");
     expect(runResult("sudo cat /home/fixture/agent/note.txt")).toEqual({ status: "completed", command: "sudo cat /home/fixture/agent/note.txt", exitCode: 0,
@@ -692,7 +798,7 @@ test("AI Agent password handoff: listed programs only, card and banner with the 
     expect(runResult("ssterm-echo").note).toContain("starting with a known prompting program (sudo, su, ssh, scp, sftp, ssh-keygen, ssh-add, passwd, git, docker login)");
     await expect(rows).not.toContainText("you typed");
     const record = panel.locator('[data-testid="agent-task"][data-task-id="task-4"]');
-    await record.getByRole("button", { name: /^Record/u }).click();
+    await record.getByRole("button", { name: "Expand", exact: true }).click();
     await expect(record.getByTestId("agent-task-record").locator("li").first()).toContainText("Stopped: password prompt");
 
     // 7. A prompt left waiting by the user's own command: the agent's probe is refused, nothing is typed into it, and
@@ -734,6 +840,221 @@ test("AI Agent password handoff: listed programs only, card and banner with the 
     expect(desktop.externalRequests).toEqual([]);
     expect(desktop.errors).toEqual([]);
     testInfo.annotations.push({ type: "evidence", description: `Docker OpenSSH ${lab.container.slice(0, 12)}; sudo stand-in installed in the owned container (no sudo in the image); no screenshots after entry` });
+  } finally {
+    await desktop?.close();
+    await lab.dispose();
+    await rm(profile, { recursive: true, force: true });
+  }
+});
+
+test("AI Agent turn control (SST-043): an exit-1 command still gets its reply; Stop ends a stalled turn and a running task; a crash leaves a notice, not a spinner; waiting cards are pinned above the composer", async ({}, testInfo) => {
+  test.setTimeout(300_000);
+  const profile = await mkdtemp(join(tmpdir(), "ssterm-e2e-agent-turn-"));
+  const home = join(profile, "agent-home");
+  await mkdir(home);
+  const cli = join(profile, "claude");
+  await writeFile(cli, `#!/bin/sh\nexec '${process.execPath}' '${resolve("tests/fixtures/agent/fake-claude.mjs")}' "$@"\n`, { mode: 0o755 });
+  const lab = await startFixture();
+  const remote = async (pattern: string) => {
+    try { return Number((await runFile("docker", ["exec", lab.container, "pgrep", "-c", "-f", pattern])).stdout.trim()); }
+    catch (error) { if ((error as { code?: number }).code === 1) return 0; throw error; }
+  };
+  const exists = async (path: string) => (await runFile("docker", ["exec", lab.container, "sh", "-c", `test -e ${path} && echo present || echo absent`])).stdout.trim();
+  const launches = () => readFileSync(join(home, "fake-claude.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  let desktop: Desktop | undefined;
+  try {
+    desktop = await launchDesktop(profile, { env: { SSTERM_TEST_AGENT_CLI: cli, SSTERM_TEST_AGENT_HOME: home } });
+    const { app, page } = desktop;
+    const secret = join(lab.directory, "password");
+    await writeFile(secret, lab.password, { mode: 0o600 });
+    const [identityId] = await changeCatalog(app, [
+      { type: "create-identity", data: { label: "Agent turn lab", username: lab.username, method: "password" } },
+      { type: "create-host", data: { label: server, address: lab.host, environment: "DEV", port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId: "$0" } } },
+    ]);
+    await page.reload();
+    await expect(page.getByTestId("hosts-page")).toContainText(server);
+    expect(await app.evaluate(async ({ BrowserWindow }, { file, identityId }) => {
+      const value = process.getBuiltinModule("node:fs").readFileSync(file, "utf8");
+      return BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScript(`(async () => {
+        const boot = await window.ssterm.bootstrap();
+        const saved = await window.ssterm.setIdentityPassword({ owner: boot.value.owner, identityId: ${JSON.stringify(identityId)},
+          expectedRevision: 1, value: new TextEncoder().encode(${JSON.stringify(value)}) });
+        return saved.ok ? saved.value.status : saved.error.code; })()`);
+    }, { file: secret, identityId })).toBe("saved");
+    const owner = await page.evaluate(async () => { const boot = await window.ssterm.bootstrap(); if (!boot.ok) throw new Error("bootstrap"); return boot.value.owner; });
+    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "low" as const, instructions: "", allowFullAllowOnProd: false, custom: null };
+    expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: true, settings })).ok, { owner, settings })).toBe(true);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(960, 640));
+
+    await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${server}`, exact: true }).click();
+    await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
+    const pane = page.locator("section[data-terminal-kind=ssh]").first();
+    await expect(pane).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+    await expect(pane.locator(".xterm-rows")).toContainText("fixture@", { timeout: 20_000 });
+    await pane.getByRole("button", { name: "AI Agent" }).click();
+    const panel = page.getByTestId("agent-panel");
+    const composer = panel.getByLabel("Message to the agent");
+    const messages = panel.getByTestId("agent-messages");
+    const progress = panel.getByTestId("agent-progress");
+    const stop = panel.getByRole("button", { name: "Stop the agent" });
+    const tray = panel.getByTestId("agent-tray");
+    await expect(panel.getByTestId("agent-mode")).toHaveAttribute("data-mode", "auto");
+
+    // 0. Scope 6: the disclosure and the mode help are icons; their text shows on hover and on keyboard focus.
+    const tooltip = page.locator("[data-slot=tooltip-content]");
+    const disclosureIcon = panel.getByRole("button", { name: "What is sent, and to whom" });
+    await expect(disclosureIcon).toHaveAccessibleDescription(/sent to Anthropic through your claude CLI/u);
+    await disclosureIcon.hover();
+    await expect(tooltip).toContainText("Your messages, the agent's commands and their full output are sent to Anthropic through your claude CLI");
+    await page.mouse.move(1, 1);
+    await expect(tooltip).toHaveCount(0);
+    const modeHelp = panel.getByRole("button", { name: "About Auto mode" });
+    await panel.getByTestId("agent-mode").getByRole("button", { name: "Full allow", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    await expect(modeHelp).toBeFocused();
+    await expect(tooltip).toContainText("Read-only commands run. Anything else runs only from a plan you approve");
+    await expect(modeHelp).toHaveAccessibleDescription(/Read-only classification is best effort/u);
+    await composer.focus();
+    await expect(tooltip).toHaveCount(0);
+    // No context share before the CLI reports one.
+    await expect(panel.getByTestId("agent-context")).toHaveCount(0);
+
+    // 1. A read-only command that exits 1 (`which` with a missing name, as on the reported server) still gets its reply.
+    await composer.fill("delegate:run:which sh no-such-tool");
+    await composer.press("Enter");
+    await expect(messages).toContainText("Summary task-1 (completed): which sh no-such-tool -> exit 1", { timeout: 30_000 });
+    // Scope 6: (1200 + 30000 + 800) of a 200000-token window, as the fake CLI reports it.
+    await expect(panel.getByTestId("agent-context")).toHaveText("· 16% context");
+    await expect(progress).toHaveCount(0);
+    await expect(stop).toHaveCount(0);
+
+    // 2. A turn that never ends: progress says what it waits for; Stop interrupts it (stream-json interrupt) and the same
+    //    process answers the next message.
+    await composer.fill("stall");
+    await composer.press("Enter");
+    await expect(progress).toContainText("Thinking…", { timeout: 20_000 });
+    await stop.click();
+    await expect(messages).toContainText("Stopped by you.");
+    await expect(progress).toHaveCount(0);
+    await expect.poll(() => launches().filter((entry) => entry.interrupt).length).toBe(1);
+    await composer.fill("after stop");
+    await composer.press("Enter");
+    await expect(messages).toContainText("Echo: after stop", { timeout: 20_000 });
+    expect(launches().filter((entry) => entry.role === "main" && entry.cwd).length, "the same main process").toBe(1);
+
+    // 3. Waiting cards are pinned above the composer: visible and actionable with the conversation scrolled to the top.
+    await composer.fill("delegate:run:touch /tmp/agent-tray-a");
+    await composer.press("Enter");
+    const pending = tray.getByTestId("agent-pending");
+    await expect(pending).toHaveCount(1, { timeout: 30_000 });
+    await expect(pending).toContainText("Task 2");
+    await expect(pending.getByTestId("agent-approval")).toContainText("touch /tmp/agent-tray-a");
+    await expect(pending).toContainText(`${lab.username}@${lab.host}:${lab.port}`);
+    await expect(pending).toContainText("DEV");
+    await expect(pending.getByRole("button", { name: "Reject" }), "a new card takes focus on its safe action").toBeFocused();
+    await expect(progress).toContainText("Task 2 is waiting for your decision");
+    const card = panel.locator('[data-testid="agent-task"][data-task-id="task-2"]');
+    await expect(card.getByTestId("agent-task-waiting")).toHaveText("Waiting for you ↓");
+    await expect(card.getByTestId("agent-approval")).toHaveCount(0);
+    await expect(tray.getByTestId("agent-tray-count")).toHaveText("1 waiting for you");
+    // No scrolling needed: with the conversation scrolled to the top the card's buttons are on screen.
+    await messages.evaluate((element) => { element.scrollTop = 0; });
+    await expect(pending.getByRole("button", { name: "Run", exact: true })).toBeInViewport();
+    await expect(pending.getByRole("button", { name: "Reject", exact: true })).toBeInViewport();
+    // Two waiting cards stack, oldest first, with a count; the tray never covers the composer.
+    await panel.getByTestId("agent-mode").getByRole("button", { name: "Full allow", exact: true }).click();
+    await expect(tray.getByTestId("agent-tray-count")).toHaveText("2 waiting for you");
+    await expect(tray.locator("[data-testid=agent-pending], [data-testid=agent-full-allow-step]")).toHaveCount(2);
+    expect(await tray.locator("[data-testid=agent-pending], [data-testid=agent-full-allow-step]").evaluateAll((cards) => cards.map((element) => element.getAttribute("data-testid"))))
+      .toEqual(["agent-pending", "agent-full-allow-step"]);
+    const trayBox = (await tray.boundingBox())!;
+    expect(trayBox.y + trayBox.height, "the tray ends above the composer").toBeLessThanOrEqual((await composer.boundingBox())!.y);
+    await expect(composer, "the composer stays on screen").toBeInViewport({ ratio: 1 });
+    await expect(panel.getByRole("button", { name: "Send" })).toBeInViewport({ ratio: 1 });
+    // Rendered contrast, names and overflow with the tray at 960×640.
+    expect((await audit(page)).findings).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath("agent-tray-960x640.png") });
+    await tray.getByTestId("agent-full-allow-step").getByRole("button", { name: "Cancel" }).click();
+    await expect(tray.getByTestId("agent-tray-count")).toHaveText("1 waiting for you");
+    await pending.getByRole("button", { name: "Run", exact: true }).click();
+    await expect(pending).toHaveCount(0);
+    await expect(tray).toHaveCount(0);
+    await expect(messages).toContainText("touch /tmp/agent-tray-a -> exit 0", { timeout: 30_000 });
+    expect(await exists("/tmp/agent-tray-a")).toBe("present");
+    await card.getByRole("button", { name: "Expand", exact: true }).click();
+    await expect(card.getByTestId("agent-task-record").locator("[data-via]")).toHaveAttribute("data-via", "approval");
+
+    // 4. Stop while a task runs: Ctrl+C reaches the command, the task is cancelled and the turn ends.
+    await composer.fill("delegate:run:sleep 30");
+    await composer.press("Enter");
+    await expect(pane.getByTestId("agent-banner")).toContainText("Agent running: sleep 30", { timeout: 20_000 });
+    await expect.poll(() => remote("sleep 30")).toBe(1);
+    await expect(progress).toContainText("Waiting for task 3: run:sleep 30");
+    await stop.click();
+    await expect.poll(() => remote("sleep 30")).toBe(0);
+    await expect(panel.locator('[data-testid="agent-task"][data-task-id="task-3"]')).toHaveAttribute("data-status", "cancelled");
+    await expect(progress).toHaveCount(0);
+    await expect(pane.getByTestId("agent-banner")).toHaveCount(0);
+
+    // 5. A sub agent that crashes: the task fails with ssterm's note and the reply still comes.
+    await composer.fill("delegate:crash");
+    await composer.press("Enter");
+    await expect(messages).toContainText("Summary task-4 (failed): no commands", { timeout: 30_000 });
+    const crashed = panel.locator('[data-testid="agent-task"][data-task-id="task-4"]');
+    await crashed.getByRole("button", { name: "Expand", exact: true }).click();
+    await crashed.getByRole("button", { name: "Sub agent report (unverified)" }).click();
+    await expect(crashed.getByTestId("agent-task-report")).toContainText("The sub agent CLI exited without a report.");
+
+    // 6. The main CLI crashes without a result: a notice, no spinner; the next message starts a new process that is
+    //    given the conversation so far.
+    await composer.fill("crash");
+    await composer.press("Enter");
+    await expect(messages).toContainText("The agent CLI exited. Your next message starts a new one", { timeout: 20_000 });
+    await expect(progress).toHaveCount(0);
+    await composer.fill("after crash");
+    await composer.press("Enter");
+    await expect(messages).toContainText("Echo: The conversation so far (kept by ssterm):", { timeout: 20_000 });
+    await expect(messages).toContainText("The user's new message: after crash");
+    expect(launches().filter((entry) => entry.role === "main" && entry.cwd).length).toBe(2);
+
+    // 7. Review H1: deeply nested replies show as plain text; the window, the panel and the terminal stay.
+    for (const [message, sample] of [["deep-quote", ">>>>>>>>"], ["deep-emphasis", "********"]] as const) {
+      await composer.fill(message);
+      await composer.press("Enter");
+      await expect(messages.locator("[data-plain]").filter({ hasText: sample })).toHaveCount(1, { timeout: 20_000 });
+    }
+    await expect(page.getByTestId("app-error")).toHaveCount(0);
+    await expect(page.getByTestId("agent-panel-error")).toHaveCount(0);
+    await expect(pane).toBeVisible();
+    await expect(pane.locator(".xterm-rows")).toContainText("fixture@");
+
+    // 8. Scope 6: model and effort from the panel apply from the next message (a new main process); "Also set as
+    //    default" saves them once.
+    const menu = panel.getByRole("button", { name: "Change model and effort" });
+    const closeMenu = async () => { if (await page.getByRole("menu").isVisible()) await page.keyboard.press("Escape"); await expect(page.getByRole("menu")).toHaveCount(0); };
+    await menu.click();
+    await expect(page.getByRole("menuitemradio")).toHaveText(["Claude Opus 5.5", "Claude Haiku 5.5", "low", "medium", "high", "xhigh", "max"]);
+    await page.getByRole("menuitemcheckbox", { name: "Also set as default" }).click();
+    await page.getByRole("menuitemradio", { name: "Claude Opus 5.5" }).click();
+    await closeMenu();
+    await expect(messages).toContainText("Model changed to Claude Opus 5.5 (effort low). It applies from your next message and is now the default.");
+    await expect(panel.getByTestId("agent-model")).toHaveText("Claude Opus 5.5 · effort low");
+    await expect(panel.getByTestId("agent-context")).toHaveCount(0);
+    const stored = () => JSON.parse(readFileSync(join(profile, "agent-settings.json"), "utf8"));
+    expect(stored()).toMatchObject({ model: "claude-opus-5-5", effort: "low" });
+    await menu.click();
+    await page.getByRole("menuitemradio", { name: "max", exact: true }).click();
+    await closeMenu();
+    await expect(messages).toContainText("Model changed to Claude Opus 5.5 (effort max). It applies from your next message.");
+    expect(stored().effort, "the default is saved only when asked").toBe("low");
+    await composer.fill("after model change");
+    await composer.press("Enter");
+    await expect(messages).toContainText("The user's new message: after model change", { timeout: 20_000 });
+    expect(launches().filter((entry) => entry.role === "main" && entry.cwd).at(-1)).toMatchObject({ model: "claude-opus-5-5", effort: "max" });
+    await expect(panel.getByTestId("agent-context")).toHaveText("· 16% context");
+    expect(desktop.externalRequests).toEqual([]);
+    expect(desktop.errors).toEqual([]);
+    testInfo.annotations.push({ type: "evidence", description: `Docker OpenSSH ${lab.container.slice(0, 12)}; window 960×640` });
   } finally {
     await desktop?.close();
     await lab.dispose();

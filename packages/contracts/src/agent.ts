@@ -197,14 +197,16 @@ export interface AgentPlan { id: string; goal: string; status: AgentPlanStatus; 
 export interface AgentApproval { id: string; command: string }
 /**
  * `subAgentReport` is the sub agent's own, unverified text; the steps are ssterm's record. `limitReached`: the task hit
- * the per-task command limit and later commands were refused unrun.
+ * the per-task command limit and later commands were refused unrun. `afterMessage` (SST-043): the id of the newest
+ * conversation message when the task was delegated (0: none), so the panel shows it in that turn's AI bubble.
  */
 export interface AgentTask {
   id: string; goal: string; status: AgentTaskStatus; subAgentReport: string | null; limitReached: boolean; steps: AgentStep[];
-  plan: AgentPlan | null; approval: AgentApproval | null;
+  plan: AgentPlan | null; approval: AgentApproval | null; afterMessage: number;
 }
 export interface AgentMessage { id: number; role: "user" | "assistant" | "notice"; text: string }
-export type AgentConversationStatus = "idle" | "starting" | "thinking";
+/** `stopping` (SST-043): Stop was pressed and the interrupted turn has not ended yet; nothing can be sent meanwhile. */
+export type AgentConversationStatus = "idle" | "starting" | "thinking" | "stopping";
 export interface AgentConversation {
   sessionId: string;
   generation: number;
@@ -219,6 +221,11 @@ export interface AgentConversation {
   status: AgentConversationStatus;
   messages: AgentMessage[];
   tasks: AgentTask[];
+  /**
+   * SST-043: the share of the model's context window the main agent's latest request used (0–100), from the CLI's own
+   * usage report; null when the CLI did not report both the usage and the window (never estimated).
+   */
+  context: number | null;
 }
 /** `external` (ticket 07): pending pair/bind requests (every window) and this window's external bindings. */
 export interface AgentState { owner: Owner; sequence: number; enabled: boolean; provider: AgentProvider; conversations: AgentConversation[]; external: ExternalAgentState }
@@ -231,6 +238,12 @@ export interface SendAgentRequest { owner: Owner; sessionId: string; text: strin
 export type SendAgentResponse = { status: "sent" } | { status: "refused"; reason: "busy" | "ended" };
 export interface CancelAgentTaskRequest { owner: Owner; sessionId: string; taskId: string }
 export interface CancelAgentTaskResponse { cancelled: boolean }
+/**
+ * SST-043: the conversation's model and effort from the panel. Verified models only; it applies from the next message
+ * (a new main process given the conversation's text) and to new tasks. `setDefault` also saves them in Settings.
+ */
+export interface SetAgentModelRequest { owner: Owner; sessionId: string; generation: number; model: string; effort: AgentEffort; setDefault: boolean }
+export type SetAgentModelResponse = { status: "set" } | { status: "refused"; reason: "ended" | "busy" | "model-unverified" | "failed" };
 /** `acknowledged`: the panel's Full allow warning step was confirmed (required for Full allow). */
 export interface SetAgentModeRequest { owner: Owner; sessionId: string; generation: number; mode: AgentMode; acknowledged: boolean }
 export type SetAgentModeResponse = { status: "set" } | { status: "refused"; reason: "ended" | "acknowledge" | "production" };
@@ -290,7 +303,8 @@ function isPlan(v: unknown): v is AgentPlan {
     v.commands.every((entry) => exactObject(entry, ["command", "ran"]) && prose(entry.command, 4_096) && typeof entry.ran === "boolean");
 }
 function isTask(v: unknown): v is AgentTask {
-  return exactObject(v, ["id", "goal", "status", "subAgentReport", "limitReached", "steps", "plan", "approval"]) && typeof v.id === "string" && TASK_ID.test(v.id) &&
+  return exactObject(v, ["id", "goal", "status", "subAgentReport", "limitReached", "steps", "plan", "approval", "afterMessage"]) && typeof v.id === "string" && TASK_ID.test(v.id) &&
+    isCounter(v.afterMessage) &&
     prose(v.goal, 4_000) && TASK_STATUS.includes(v.status) && (v.subAgentReport === null || bounded(v.subAgentReport, 16_384)) &&
     typeof v.limitReached === "boolean" && (v.plan === null || isPlan(v.plan)) &&
     (v.approval === null || (exactObject(v.approval, ["id", "command"]) && typeof v.approval.id === "string" && APPROVAL_ID.test(v.approval.id) &&
@@ -302,11 +316,12 @@ function isMessage(v: unknown): v is AgentMessage {
     bounded(v.text, 16_384);
 }
 export function isAgentConversation(v: unknown): v is AgentConversation {
-  return exactObject(v, ["sessionId", "generation", "target", "provider", "model", "effort", "mode", "fullAllowAvailable", "status", "messages", "tasks"]) && identifier(v.sessionId) &&
+  return exactObject(v, ["sessionId", "generation", "target", "provider", "model", "effort", "mode", "fullAllowAvailable", "status", "messages", "tasks", "context"]) && identifier(v.sessionId) &&
+    (v.context === null || (isCounter(v.context) && v.context <= 100)) &&
     isAgentModelId(v.model) && isEffort(v.effort) && isMode(v.mode) && typeof v.fullAllowAvailable === "boolean" &&
     isCounter(v.generation) && v.generation > 0 && exactObject(v.target, ["label", "endpoint", "environment"]) &&
     prose(v.target.label, 400) && prose(v.target.endpoint, 1_300) && ENVIRONMENTS.includes(v.target.environment) &&
-    PROVIDERS.includes(v.provider) && ["idle", "starting", "thinking"].includes(v.status as string) &&
+    PROVIDERS.includes(v.provider) && ["idle", "starting", "thinking", "stopping"].includes(v.status as string) &&
     Array.isArray(v.messages) && v.messages.length <= MAX_AGENT_MESSAGES && v.messages.every(isMessage) &&
     Array.isArray(v.tasks) && v.tasks.length <= MAX_AGENT_TASKS && v.tasks.every(isTask);
 }
@@ -344,6 +359,14 @@ export function isCancelAgentTaskResponse(v: unknown): v is CancelAgentTaskRespo
 export function isSetAgentModeRequest(v: unknown): v is SetAgentModeRequest {
   return exactObject(v, ["owner", "sessionId", "generation", "mode", "acknowledged"]) && isOwner(v.owner) && identifier(v.sessionId) &&
     isCounter(v.generation) && v.generation > 0 && isMode(v.mode) && typeof v.acknowledged === "boolean";
+}
+export function isSetAgentModelRequest(v: unknown): v is SetAgentModelRequest {
+  return exactObject(v, ["owner", "sessionId", "generation", "model", "effort", "setDefault"]) && isOwner(v.owner) && identifier(v.sessionId) &&
+    isCounter(v.generation) && v.generation > 0 && isAgentModelId(v.model) && isEffort(v.effort) && typeof v.setDefault === "boolean";
+}
+export function isSetAgentModelResponse(v: unknown): v is SetAgentModelResponse {
+  if (exactObject(v, ["status", "reason"])) return v.status === "refused" && ["ended", "busy", "model-unverified", "failed"].includes(v.reason as string);
+  return exactObject(v, ["status"]) && v.status === "set";
 }
 export function isSetAgentModeResponse(v: unknown): v is SetAgentModeResponse {
   if (exactObject(v, ["status", "reason"])) return v.status === "refused" && ["ended", "acknowledge", "production"].includes(v.reason as string);

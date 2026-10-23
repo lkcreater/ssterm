@@ -48,7 +48,7 @@ export * from './recording.ts';
 import type {
   AgentSettingsRequest, AgentSettingsView, ConfigureAgentRequest, ConfigureAgentResponse, CheckAgentProviderRequest, AgentStateRequest, AgentState,
   OpenAgentRequest, OpenAgentResponse, AgentConversationRequest, SendAgentRequest, SendAgentResponse, CancelAgentTaskRequest,
-  CancelAgentTaskResponse, SetAgentModeRequest, SetAgentModeResponse, DecideAgentRequest, DecideAgentResponse,
+  CancelAgentTaskResponse, SetAgentModeRequest, SetAgentModeResponse, SetAgentModelRequest, SetAgentModelResponse, DecideAgentRequest, DecideAgentResponse,
   ExternalClientsRequest, ExternalClientsView, UpdateExternalClientsRequest, UpdateExternalClientsResponse, AnswerExternalRequest, AnswerExternalResponse,
 } from "./agent.ts";
 export * from "./agent.ts";
@@ -209,8 +209,15 @@ export interface DesktopAPI {
   closeAgent(request: AgentConversationRequest): Promise<Result<TerminalActionResponse>>;
   sendAgent(request: SendAgentRequest): Promise<Result<SendAgentResponse>>;
   cancelAgentTask(request: CancelAgentTaskRequest): Promise<Result<CancelAgentTaskResponse>>;
+  /**
+   * SST-043: Stop. Interrupts the main agent's current turn (or stops its process), cancels queued and running tasks
+   * (a running command gets Ctrl+C) and withdraws pending cards. The conversation stays usable.
+   */
+  stopAgentTurn(request: AgentConversationRequest): Promise<Result<TerminalActionResponse>>;
   /** Ticket 04: the conversation's mode (Full allow needs the warning step; on PROD also the Settings option). */
   setAgentMode(request: SetAgentModeRequest): Promise<Result<SetAgentModeResponse>>;
+  /** SST-043: the conversation's model and effort (verified models only), optionally saved as the default. */
+  setAgentModel(request: SetAgentModelRequest): Promise<Result<SetAgentModelResponse>>;
   /** Ticket 04: Approve or Reject one pending plan or command card of this exact conversation generation. */
   decideAgent(request: DecideAgentRequest): Promise<Result<DecideAgentResponse>>;
   /** Ticket 07: Settings › AI Agent › External MCP clients. */
@@ -333,7 +340,9 @@ export const channels = Object.freeze({
   closeAgent: "ssterm:close-agent",
   sendAgent: "ssterm:send-agent",
   cancelAgentTask: "ssterm:cancel-agent-task",
+  stopAgentTurn: "ssterm:stop-agent-turn",
   setAgentMode: "ssterm:set-agent-mode",
+  setAgentModel: "ssterm:set-agent-model",
   decideAgent: "ssterm:decide-agent",
   externalClients: "ssterm:external-clients",
   updateExternalClients: "ssterm:update-external-clients",

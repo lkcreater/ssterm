@@ -43,6 +43,7 @@ import {
 import { toast } from "@/components/ui/toast";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AgentPanel } from "@/components/agent/agent-panel";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { bindableSession, ExternalAgentPanel, ExternalBanner, ExternalBindingSection, ExternalRequestDrawer } from "@/components/agent/external-clients";
 import { useAgentState } from "@/hooks/use-agent";
 import { CloseConfirm, type CloseRequest } from "@/components/workspace/close-confirm";
@@ -352,6 +353,8 @@ export function TerminalWorkspace({
   // SST-041: one AI Agent panel per window, bound to the session it was opened from (never to the active tab).
   const agent = useAgentState(owner);
   const [agentSession, setAgentSession] = useState<string>();
+  /** The session generation the panel was opened for (SST-043: a reconnect is a new session). */
+  const [agentGeneration, setAgentGeneration] = useState<number>();
   useEffect(() => setAgentSession(undefined), [owner.windowId, owner.generation]);
   const agentEligible = (session: TerminalSession) =>
     !!agent?.enabled && session.phase === "ready" && !session.local && session.target?.source !== "team";
@@ -363,7 +366,7 @@ export function TerminalWorkspace({
     if (agentSession) void bridge.closeAgent({ owner, sessionId: agentSession }).catch(() => undefined);
     setAgentSession(undefined);
     const result = await bridge.openAgent({ owner, sessionId: session.sessionId, generation: session.generation }).catch(() => undefined);
-    if (result?.ok && result.value.status === "opened") return setAgentSession(session.sessionId);
+    if (result?.ok && result.value.status === "opened") { setAgentGeneration(session.generation); return setAgentSession(session.sessionId); }
     const reason = result?.ok && result.value.status === "refused" ? result.value.reason : undefined;
     toast.add({
       title: "AI Agent could not open",
@@ -399,6 +402,17 @@ export function TerminalWorkspace({
     `${binding.clientId}:${binding.generation}:${binding.task.plan?.status === "pending" ? binding.task.plan.id : ""}:${binding.task.approval?.id ?? ""}`).join("|");
   const [dismissedExternal, setDismissedExternal] = useState<string>();
   const showExternal = panelBindings.length > 0 && externalSignature !== dismissedExternal;
+  // SST-043: the panel closes with its session (Disconnect, close, remote exit, failure, lock or a reconnect); main has
+  // already ended the conversation. Panels of other sessions are unaffected.
+  const boundSession = sessions.find((session) => session.sessionId === agentSession);
+  const sessionEnded = !!agentSession && (!boundSession || boundSession.phase !== "ready" || boundSession.generation !== agentGeneration);
+  useEffect(() => {
+    if (!sessionEnded) return;
+    if (agentSession) void window.ssterm?.closeAgent({ owner, sessionId: agentSession }).catch(() => undefined);
+    setAgentSession(undefined);
+    toast.add({ title: "Agent conversation ended with the session", type: "info" });
+    controller.focusActive();
+  }, [sessionEnded]);
   const closeAgentPanel = () => {
     const sessionId = agentSession;
     setAgentSession(undefined);
@@ -582,15 +596,23 @@ export function TerminalWorkspace({
           <>
             <ResizableHandle aria-label="Resize AI Agent panel" />
             <ResizablePanel id="agent-panel-area" defaultSize={380} minSize={300} maxSize="60" groupResizeBehavior="preserve-pixel-size">
-              <AgentPanel
-                key={agentSession}
-                owner={owner}
-                sessionId={agentSession}
-                conversation={agent?.conversations.find((conversation) => conversation.sessionId === agentSession)}
-                password={passwordPrompt}
-                external={embeddedBinding ? <ExternalBindingSection owner={owner} binding={embeddedBinding} /> : undefined}
-                onClose={closeAgentPanel}
-              />
+              {/* SST-043 review H1: a render error in the panel never takes the terminals with it. */}
+              <ErrorBoundary key={agentSession} fallback={() => (
+                <aside role="alert" className="flex h-full flex-col items-start gap-2 border-l border-border bg-card p-3" aria-label="AI Agent" data-testid="agent-panel-error">
+                  <p className="type-label">The AI Agent panel could not be shown.</p>
+                  <Button size="sm" variant="outline" onClick={closeAgentPanel}>Close AI Agent</Button>
+                </aside>
+              )}>
+                <AgentPanel
+                  owner={owner}
+                  sessionId={agentSession}
+                  conversation={agent?.conversations.find((conversation) => conversation.sessionId === agentSession)}
+                  password={passwordPrompt}
+                  external={embeddedBinding ? <ExternalBindingSection owner={owner} binding={embeddedBinding} /> : undefined}
+                  externalWaiting={embeddedBinding ? (embeddedBinding.task.plan?.status === "pending" ? 1 : 0) + (embeddedBinding.task.approval ? 1 : 0) : 0}
+                  onClose={closeAgentPanel}
+                />
+              </ErrorBoundary>
             </ResizablePanel>
           </>
         ) : null}

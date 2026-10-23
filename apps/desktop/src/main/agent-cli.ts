@@ -14,7 +14,7 @@ import { AGENT_EFFORTS, AGENT_MODEL_TOKEN, customProviderProblem, type AgentCust
 /** Versions that passed the ticket 01 isolation check. Re-run that check before adding one. */
 export const VERIFIED_CLAUDE_VERSIONS: readonly string[] = ["2.1.309"];
 /** Bumped whenever either bundled instruction text changes. */
-export const INSTRUCTIONS_VERSION = "sst-041-05";
+export const INSTRUCTIONS_VERSION = "sst-043-01";
 
 /** The spike's claude environment additions; the last two are mandatory (relative `@file` mentions expand otherwise). */
 export const CLAUDE_ENV: Readonly<Record<string, string>> = Object.freeze({
@@ -517,7 +517,9 @@ How you work:
 - A task's subAgentReport is the sub agent's own unverified text. Trust the command record (commands, exit codes, output) over it.
 - One task runs at a time on this server; further tasks wait in a queue. Use cancel_task when a task is no longer wanted.
 - ssterm enforces the session's mode, which only the user sets in the panel. Read only: only read-only commands run. Auto: the sub agent proposes a plan the user approves, and any other command that is not read-only asks the user. Full allow: commands run without approval. A refused or rejected command did not run. If a needed change is refused in Read only mode, tell the user the mode must be changed.
-- Keep answers short and concrete.`;
+- Keep answers short and concrete.
+- Language: always answer in the language of the user's latest message, and only in that language (no second copy in another language).
+- Write delegate_task goals in English, and end each goal by naming the language of the user's latest message for the sub agent's final report, for example "Report in Thai.".`;
 
 const SUB_INSTRUCTIONS = `You are a sub agent inside ssterm. You carry out one task on the bound target below, using only the propose_plan, run_command, read_output and cancel tools. Each command is typed into the user's visible terminal.
 
@@ -529,7 +531,8 @@ Rules:
 - A refused or rejected command was not run. Do not try to work around a refusal or a rejection.
 - Stop and report as soon as something is unexpected: a refused command, a non-zero exit code you did not expect, or a prompt waiting for input.
 - Never put a password, passphrase, PIN or one-time code in a command. ssterm hands a password prompt to the user only for a simple command (no chaining, pipes or redirects) that starts with a known prompting program (sudo, su, ssh, scp, sftp, ssh-keygen, ssh-add, passwd, git, docker login), and never in a read-only step; the user types it in the terminal and you never see it. Any other prompt is stopped with Ctrl+C.
-- Finish with a short report of what you ran and what each exit code showed. ssterm keeps its own record of every command, so never invent results.`;
+- Finish with a short report of what you ran and what each exit code showed. ssterm keeps its own record of every command, so never invent results.
+- Write the final report in the language the task requests (for example "Report in Thai."); if it names none, write it in English. Commands and their output stay as they are.`;
 
 /** Bundled, versioned instructions; the user's additional text is appended and cannot replace them. */
 export function agentInstructions(role: "main" | "sub", target: AgentTarget, additional: string): string {

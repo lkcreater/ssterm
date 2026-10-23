@@ -1856,3 +1856,53 @@ Scope:
     - Full E2E 98/99: one app-lock failure from a foreign keystroke, which passed 4/4 alone.
     - Package build pass; full packaged suite 97/97.
     - Capture-mode isolation: claude pass, codex fail as before.
+- **SST-043 scope update 4.** User: “card task อยู่ด้านบน เมื่อมี task ที่ต้องให้กด approve ต้องเลื่อนขึ้นไปข้างบนตลอด — ปรับให้แสดง card task ที่ต้องการให้กด run | approve | อื่นๆ ให้อยู่ตำแหน่ง float textarea chatbot จะได้เห็นชัด”.
+  - **Pinned area:** every card that needs the user to act floats in a pinned area directly above the composer, outside the scrolling message list. This covers plan approval, per-command Run/Reject, the PROD confirmation step, the Full allow warning, the password-handoff notice, and external-client requests in this panel.
+  - **Pinned card content:** each card names its task and target/PROD.
+  - **Ordering:** cards are ordered oldest first. Several pending cards stack, with a count, and stay reachable without scrolling the conversation.
+  - **After a decision:** the card leaves the pinned area. Its outcome stays in the task's record in the bubble.
+  - **Focus:** focus moves to the pinned card's primary safe action (Reject/Cancel) when a new card appears, unless the user is typing in the composer.
+- **SST-043 scope update 5.** User: “ตอนนี้เวลากด disconnect terminal ระบบไม่ปิด panel agent ต้องการให้ปิดไปพร้อมกัน”.
+  - **Close the panel with its session:** when the bound session is disconnected, closed or ends for any reason (Disconnect, tab close, remote exit, failure, reconnect to a new generation), the agent panel closes with it. The conversation already ends in main.
+  - **Notice:** a short toast says the agent conversation ended with the session.
+  - **Focus:** returns to the pane or tab.
+  - **External bindings:** a bound external client's banner and binding close too (existing behaviour).
+- **SST-043 scope update 6** (user, with a panel screenshot):
+  - **Disclosure:** the "Your messages, the agent's commands and their full output are sent to …" banner becomes an icon right after the "AI Agent" title, with the text in a tooltip on hover.
+    - This amends A3's "persistent banner": the amber shield icon stays always visible.
+    - The tooltip must also open on keyboard focus.
+    - The enable-time consent in Settings is unchanged.
+  - **Mode help:** the description under the Read only / Auto / Full allow selector becomes a (?) icon with a hover/focus tooltip.
+  - **Model and effort:** a dropdown icon button after the model and effort in the panel header changes them from the chat.
+    - Only verified models can be chosen.
+    - The choice applies from the next message, by starting a fresh main process with the in-memory history through the existing continuation path. New sub-agent tasks use it.
+    - It is disabled while the agent is busy.
+    - It updates the stored default only if the user picks "Set as default".
+  - **Context window:** show the percentage of the context window used by the main agent conversation, from the CLI's own usage reporting (input plus cache tokens against the model's context window as the CLI reports it). If the CLI does not report a window, nothing is shown; the percentage is never guessed.
+- **SST-043 done (2026-10-23).**
+  - **Language:** instructions bumped to `sst-043-01`. The main agent answers in the user's language; delegation goals are written in English, with the report language stated.
+  - **Panel layout:**
+    - AI bubbles with a Sparkles icon above.
+    - One-line task cards with Expand.
+    - A pinned tray above the 3-row composer (Enter sends, Shift+Enter adds a newline) for action-required cards. It shows a count, and focus moves to Reject only when focus is in the panel or nowhere.
+  - **Safe Markdown:** `react-markdown` 10.1.0 and `remark-gfm` 4.0.1, both pinned in ADR 0001. It renders no HTML, no images, no links and no inputs.
+  - **Crash protection:**
+    - A pre-check falls back to plain text, with line splitting that handles CR, CRLF and LF.
+    - Error boundaries sit at the message, the panel and the app root.
+  - **Turn control:**
+    - Stop, using the claude interrupt with a 10 s fallback, and a `stopping` state that refuses sends.
+    - An 8-minute watchdog and a progress line.
+    - A sub agent's result now wakes the main agent immediately, and a sub agent that lingers after its result is stopped 10 s later.
+    - "Exited without a report" is shown when a sub CLI ends without one.
+    - After a stop or crash, the conversation continues in a fresh process with the in-memory history, excluding undelivered messages.
+  - **Header:** a disclosure icon with a tooltip (amends the A3 banner) and a mode (?) tooltip.
+  - **Model/effort menu:** `setAgentModel` IPC; applies from the next message, with an optional default.
+  - **Context %:** from the CLI's usage and `contextWindow`, never guessed.
+  - **Auto-close:** the panel closes when its session ends or reconnects, with a toast.
+  - **Fixed:** the Settings provider-row layout.
+  - **Review:** first BLOCKED on H1 (deep Markdown blanked the window). H1, M1 (a send during Stop was lost), M2 and L1–L8 fixed; the re-review APPROVED. Its follow-up low (bare-CR split) was fixed by the orchestrator.
+  - **Checks:**
+    - unit 866/867 (1 known skip), build pass.
+    - Full E2E 100/100 (implementer).
+    - Full packaged suite 98/98, run by the orchestrator after the final fix.
+  - **Not verified against the real claude CLI:** the stream-json interrupt and the usage/`contextWindow` field names, which were read from the binary's strings.

@@ -4,8 +4,14 @@
 // ssterm tools from scripted chat messages:
 //   main agent:  "delegate:<goal>||<goal>"  delegate each goal, wait for each record, summarize from it
 //                "start:<goal>"              delegate without waiting
+//                "stall"                    never ends the turn (until a stream-json interrupt control request, SST-043)
+//                "crash"                    exits at once without a result (SST-043)
+//                "deep-quote" / "deep-emphasis"  4000 ">" / 5000 "*" (SST-043 review H1)
+//                "markdown"                 a fixed reply with a GFM table, bold, code, links, an image and raw HTML (SST-043)
+//                Thai text                  answers with the bundled language rules it received (SST-043)
 //                anything else              echoed
-//   sub agent:   goal "run:<command>;;<command>" runs each command with run_command; with a "plan:<command>;;<command>##"
+//   sub agent:   goal "crash" exits without a result (SST-043);
+//                goal "run:<command>;;<command>" runs each command with run_command; with a "plan:<command>;;<command>##"
 //                prefix it first calls propose_plan with those commands (ticket 04) and runs the rest whatever the answer
 // Every launch appends one JSON line to $HOME/fake-claude.log, and every tool call one to $HOME/fake-claude-calls.log.
 //
@@ -57,6 +63,8 @@ const allowed = (value("--allowedTools") ?? "").split(",");
 const role = allowed.includes("mcp__ssterm__delegate_task") ? "main" : "sub";
 const prompt = value("--system-prompt") ?? (value("--system-prompt-file") ? readFileSync(value("--system-prompt-file"), "utf8") : "");
 const extraTool = argv.includes("--fake-extra-tool");
+// SST-043: the bundled lines about the answer and report language.
+const languageRules = prompt.split("\n").filter((line) => /language/u.test(line) && !line.startsWith("Additional"));
 const toolTimeout = Number(value("--fake-tool-timeout-ms") ?? 0);
 
 // Residue the real CLI leaves; ssterm must remove it after the run.
@@ -99,36 +107,77 @@ const call = async (name, args) => {
 const init = await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fake-claude", version: "2.1.309" } });
 child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
 const tools = [...(await request("tools/list", {})).result.tools.map((tool) => `mcp__ssterm__${tool.name}`), ...(extraTool ? ["Bash", "Read", "Write"] : [])];
-log({ role, cwd, problems, allowed, tools, servers, server: init.result?.serverInfo?.name, instructions: prompt.includes("ssterm instructions sst-041"),
-  model: value("--model"), effort: value("--effort"), bridge: server.args[0],
+log({ role, cwd, problems, allowed, tools, servers, server: init.result?.serverInfo?.name, instructions: prompt.includes("ssterm instructions sst-043-01"),
+  model: value("--model"), effort: value("--effort"), bridge: server.args[0], language: languageRules,
   extra: prompt.includes("Additional instructions from the user") ? prompt.slice(prompt.indexOf("Additional instructions")) : null });
 const emit = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
 // What the verified claude 2.1.309 reports: built-in plugins and agent definitions, no skills or slash commands.
 emit({ type: "system", subtype: "init", tools, mcp_servers: servers.map((name) => ({ name, status: "connected" })),
   plugins: [{ name: "cc-plugin-agents-md", path: "builtin" }], skills: [], slash_commands: [], agents: ["claude", "Explore", "general-purpose", "Plan", "statusline-setup"] });
-const say = (text) => emit({ type: "assistant", message: { content: [{ type: "text", text }] } });
+// SST-043: usage as claude 2.1.309 reports it (assistant `message.usage`, result `modelUsage[model].contextWindow`).
+const say = (text) => emit({ type: "assistant", message: { model: value("--model"), content: [{ type: "text", text }],
+  usage: { input_tokens: 1_200, cache_read_input_tokens: 30_000, cache_creation_input_tokens: 800, output_tokens: 40 } } });
 if (problems.length) { say(`FAKE PROBLEMS: ${problems.join("; ")}`); emit({ type: "result", subtype: "error", is_error: true }); }
 
+/** SST-043: the turn in progress; an interrupt control request ends it like claude does (nothing more is said). */
+let current;
 async function main(text) {
+  const state = current = { stopped: false };
+  if (text === "stall") { await new Promise((resolve) => { state.release = resolve; }); return; }
+  if (text === "crash") { say("Crashing now."); process.exit(3); }
   if (text.startsWith("delegate:")) {
     const ids = [];
     for (const goal of text.slice(9).split("||")) ids.push((await call("delegate_task", { goal })).structuredContent.taskId);
+    if (state.stopped) return;
     say(`Delegated ${ids.join(", ")}.`);
     for (const taskId of ids) {
       let record;
       // Approvals can keep a task running past one wait.
       do record = (await call("get_task_status", { taskId, wait: true })).structuredContent;
-      while (record.status === "queued" || record.status === "running");
+      while (!state.stopped && (record.status === "queued" || record.status === "running"));
+      if (state.stopped) return;
       const lines = record.commands.map((step) => `${step.command} -> ${step.status === "completed" ? `exit ${step.exitCode}` : step.status}: ${step.output.split("\n")[0]}`);
       say(`Summary ${taskId} (${record.status}): ${lines.join(" | ") || "no commands"}`);
     }
   } else if (text.startsWith("start:")) {
     say(`Started ${(await call("delegate_task", { goal: text.slice(6) })).structuredContent.taskId}.`);
+  } else if (text === "deep-quote") {
+    say(`x\n${">".repeat(4_000)} deep`);
+  } else if (text === "deep-emphasis") {
+    say("*".repeat(5_000));
+  } else if (text === "markdown") {
+    say([
+      "Disk report with **bold text** and `inline-code`.",
+      "",
+      "| Mount | Used | Note |",
+      "|---|---:|---|",
+      "| / | 41% | `ext4` |",
+      "| /var | 87% | **high** |",
+      "",
+      "```sh",
+      "df -h /var",
+      "```",
+      "",
+      "See [the runbook](https://example.invalid/runbook) or https://example.invalid/plain.",
+      "",
+      "- [x] backup done",
+      "- [ ] restart pending",
+      "",
+      "![chart](https://example.invalid/chart.png)",
+      "",
+      "<script>window.__agentInjected = 'script'</script>",
+      "",
+      '<img src="https://example.invalid/pixel.png" onerror="window.__agentInjected = \'img\'">',
+    ].join("\n"));
+  } else if (/[\u0e00-\u0e7f]/u.test(text)) {
+    say(`ตอบเป็นภาษาไทย: ${languageRules.join(" ")}`);
   } else say(`Echo: ${text}`);
-  emit({ type: "result", subtype: "success", is_error: false, result: "done" });
+  if (!state.stopped) emit({ type: "result", subtype: "success", is_error: false, result: "done",
+    modelUsage: { [value("--model")]: { inputTokens: 1_200, cacheReadInputTokens: 30_000, cacheCreationInputTokens: 800, contextWindow: 200_000 } } });
 }
 async function sub(text) {
   let goal = text.replace(/^Task task-\d+: /u, "");
+  if (goal === "crash") process.exit(4);
   let plan = "";
   if (goal.startsWith("plan:")) {
     const at = goal.indexOf("##");
@@ -188,6 +237,16 @@ if (value("--input-format") !== "stream-json") {
 const input = createInterface({ input: process.stdin });
 input.on("line", (line) => {
   const message = JSON.parse(line);
+  if (message.type === "control_request" && message.request?.subtype === "interrupt") {
+    log({ role, interrupt: message.request_id });
+    emit({ type: "control_response", response: { subtype: "success", request_id: message.request_id } });
+    if (current && !current.stopped) {
+      current.stopped = true;
+      current.release?.();
+      emit({ type: "result", subtype: "error_during_execution", is_error: true });
+    }
+    return;
+  }
   const text = typeof message.message?.content === "string" ? message.message.content : "";
   chain = chain.then(() => turn(text));
 });
