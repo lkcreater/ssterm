@@ -1761,3 +1761,17 @@ Rules:
   - **Checks:**
     - typecheck pass, unit 849/850 (1 known skip), build pass, full E2E 97/97.
     - An earlier run had one `remote-edit:192` timing race, in a spec SST-041 does not touch; it passed on rerun.
+
+**SST-042 authorization: Google sign-in callback page (2026-10-23).** User: “เพิ่มงานนอก ticket 1 ticket คือ หน้า callback หลังจาก login success เพิ่มปุ่ม ปิด window นั้น / หน้า callback ปรับ ui ให้เข้ากับ app เพิ่ม logo ด้วย”.
+- **Scope:** the loopback OAuth callback page that `packages/adapters/src/oauth-loopback.ts` serves in the system browser after Google sign-in.
+  - Restyle it to match UI v2 Charcoal, with the icon v2 logo embedded as a small inline image (no external requests).
+  - Add a "Close this window" button. Browsers only let a page close tabs that a script opened, so when the close is blocked the page falls back to visible "close this tab (⌘W)" guidance.
+  - Add a strict CSP. Never echo parameters.
+- **Order:** runs alongside SST-041/07, touching only the adapter and its tests. E2E runs after 07 finishes, because the fake Google port 55411 is shared.
+- **Loop:** same as before; local commit, no push.
+- **SST-042 implemented (2026-10-23):**
+  - **Page:** the callback page uses the Charcoal v2 card with the inline icon v2 (128 px PNG data URI, about 15 KB) and an SVG status icon. "Close this window" uses `window.close()`, with ⌘W guidance when the browser keeps the tab open, and a no-JS hint.
+  - **Hardening:** strict hash-based CSP, `nosniff` and `no-referrer` on every response. Shutdown stops listening and resolves at once, then drops connections after the page is sent (1 s hard bound).
+  - **Pre-existing bug fixed:** `new URL()` threw on a malformed request line during the window; it now uses `URL.parse` and answers 404.
+  - **Review:** APPROVED, and its lows are fixed.
+  - **Checks:** unit 19/19 for the loopback and app-lock files, typecheck pass. The app-lock Google E2E is pending until SST-041/07 finishes (port 55411 is shared).

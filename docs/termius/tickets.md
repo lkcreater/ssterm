@@ -490,6 +490,14 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 - Policy, marker, auth and IPC unit tests.
 - E2E with a fake agent CLI on the Docker OpenSSH fixture, run in development and packaged builds.
 
+### SST-042 — Google sign-in callback page v2
+
+**Status:** `READY` (authorized 2026-10-23).
+
+**Acceptance:** the loopback OAuth callback page (success, not completed, not found) uses UI v2 Charcoal styling with the icon v2 logo embedded inline. A "Close this window" button attempts to close the window and, when the browser blocks that, shows "close this tab" guidance. The page has a strict CSP and makes no external requests. It never echoes query parameters. The Host, state and single-use behaviour are unchanged.
+
+**Validation:** unit tests on the served HTML/headers (CSP, no parameter echo, logo present, button present) plus the existing app-lock Google E2E with the fake provider.
+
 ## Definition of done ร่วม
 
 เมื่อ ticket เริ่มหลัง confirm: acceptance criteria ผ่าน, error/cancel paths ที่เกี่ยวข้องตรวจแล้ว, evidence/ADR/spec references อัปเดต, tests ที่ตรวจพฤติกรรมจริงผ่าน, ไม่มี secret ใน committed artifacts/logs และ reviewable diff พร้อม known limitations ห้ามปิด ticket เพียงเพราะมี mock UI หรือ adapter stub
