@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import type { Page } from "@playwright/test";
 import { test, expect, changeCatalog, launchDesktop, type Desktop } from "./fixtures";
 import { pane } from "./support/transfer-fixture";
+import { audit } from "./support/audit";
 
 // Passwords and recovery codes are owned fixture values; keep traces off anyway.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -35,11 +36,54 @@ async function gated(page: Page) {
 async function saveRecoveryCode(page: Page): Promise<string> {
   const view = page.getByTestId("recovery-code");
   await expect(view).toBeVisible();
+  // Shown only once: no × that could drop it (the native close still works).
+  await expect(screen(page).getByRole("button", { name: "Close window" })).toHaveCount(0);
   const code = (await view.getByLabel("Recovery code", { exact: true }).textContent())!.trim();
   await expect(view.getByRole("button", { name: "Continue" })).toBeDisabled();
   await view.getByRole("checkbox", { name: "I saved the recovery code" }).click();
   await view.getByRole("button", { name: "Continue" }).click();
   return code;
+}
+
+/** Closes the window with the gate's ×, then reopens one (Dock click); its page and console errors are collected. */
+async function closeAndReopen(desktop: Desktop, page: Page) {
+  const closed = page.waitForEvent("close");
+  await screen(page).getByRole("button", { name: "Close window" }).click();
+  await closed;
+  expect(await desktop.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(0);
+  const reopened = desktop.app.waitForEvent("window");
+  await desktop.app.evaluate(({ app }) => { app.emit("activate"); });
+  const next = await reopened;
+  const errors: string[] = [];
+  next.on("pageerror", (error) => errors.push(error.message));
+  next.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  return { next, errors };
+}
+
+/**
+ * SST-040/14: the gate is the whole window — no workspace landmark or catalog data — with the form panel flush right
+ * below the titlebar, at 960×640 and 1280×800 under reduced motion, passing the release-gate audit (contrast, names, overflow).
+ */
+async function gateOnly(desktop: Desktop, page: Page, hidden: string[] = []) {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(screen(page)).toBeVisible();
+  await expect(page.locator(".app-workspace, [data-testid='hosts-page']")).toHaveCount(0);
+  await expect(page.getByRole("navigation")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Servers" })).toHaveCount(0);
+  for (const text of hidden) await expect(page.locator("body")).not.toContainText(text);
+  for (const [width, height] of [[960, 640], [1280, 800]] as const) {
+    await desktop.app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]!.setContentSize(size[0], size[1]), [width, height] as const);
+    await expect.poll(() => page.evaluate(() => [innerWidth, innerHeight])).toEqual([width, height]);
+    const size = `${width}×${height}`;
+    const titlebar = (await page.locator(".app-lock-titlebar").boundingBox())!;
+    const panel = (await page.locator(".app-lock-panel").boundingBox())!;
+    expect(Math.abs(panel.x + panel.width - width), `${size}: panel flush right`).toBeLessThanOrEqual(1);
+    expect(Math.abs(panel.y - (titlebar.y + titlebar.height)), `${size}: panel below the titlebar`).toBeLessThanOrEqual(1);
+    expect(Math.abs(panel.y + panel.height - height), `${size}: panel full height`).toBeLessThanOrEqual(1);
+    expect(panel.x, `${size}: brand side on the left`).toBeGreaterThan(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), `${size}: no horizontal scroll`).toBeLessThanOrEqual(0);
+    expect((await audit(page)).findings, `${size}: audit`).toEqual([]);
+  }
 }
 
 test("password lock: zod-validated first setup, recovery code, locked relaunch with backoff, Settings and recovery", async ({}, testInfo) => {
@@ -53,6 +97,13 @@ test("password lock: zod-validated first setup, recovery code, locked relaunch w
     let page = desktop.page;
     await expect(screen(page).getByRole("heading", { name: "Set up sign-in" })).toBeVisible();
     expect(await gated(page), "feature IPC is closed before setup").toBe("unauthorized");
+    // Focus enters at the first field; Tab walks the form in order.
+    await expect(page.getByLabel("User name", { exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Password", { exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByLabel("Confirm password")).toBeFocused();
+    await gateOnly(desktop, page);
     await page.getByLabel("User name", { exact: true }).fill("al");
     await page.getByLabel("Password", { exact: true }).fill("short");
     await page.getByLabel("Confirm password").fill("other");
@@ -78,6 +129,7 @@ test("password lock: zod-validated first setup, recovery code, locked relaunch w
     expect(await gated(page)).toBe("unauthorized");
     await expect(page.getByLabel("User name", { exact: true })).toHaveValue("alice");
     await expect(page.getByLabel("Password", { exact: true })).toBeFocused();
+    await gateOnly(desktop, page);
     await page.getByLabel("Password", { exact: true }).fill("wrong password");
     await page.getByRole("button", { name: "Unlock" }).click();
     await expect(page.getByText("The user name or password is incorrect.")).toBeVisible();
@@ -85,7 +137,8 @@ test("password lock: zod-validated first setup, recovery code, locked relaunch w
     await page.screenshot({ path: testInfo.outputPath("unlock-wrong.png") });
     await expect(page.getByText(/Try again in \d+ s\./u)).toHaveCount(0, { timeout: 5_000 });
     await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
-    await page.getByRole("button", { name: "Unlock" }).click();
+    // Enter submits.
+    await page.getByLabel("Password", { exact: true }).press("Enter");
     await expect(page.getByTestId("hosts-page")).toBeVisible();
 
     // Settings: confirm, then issue a new recovery code (the old one stops working).
@@ -107,6 +160,12 @@ test("password lock: zod-validated first setup, recovery code, locked relaunch w
     desktop = await launchDesktop(profile, { secretNamespace: namespace, env: LOCK });
     page = desktop.page;
     await page.getByRole("button", { name: "Forgot? Use a recovery code" }).click();
+    await expect(page.getByLabel("Recovery code")).toBeFocused();
+    // Back returns focus to the password field, not the page body.
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(page.getByLabel("Password", { exact: true })).toBeFocused();
+    await page.getByRole("button", { name: "Forgot? Use a recovery code" }).click();
+    await expect(page.getByLabel("Recovery code")).toBeFocused();
     await page.getByLabel("Recovery code").fill(firstCode);
     await page.getByRole("button", { name: "Use recovery code" }).click();
     await expect(page.getByText("That recovery code is not correct.")).toBeVisible();
@@ -115,6 +174,7 @@ test("password lock: zod-validated first setup, recovery code, locked relaunch w
     await page.getByRole("button", { name: "Use recovery code" }).click();
     await expect(screen(page).getByRole("heading", { name: "Set up sign-in again" })).toBeVisible();
     expect(await gated(page), "a recovery code alone does not open the app").toBe("unauthorized");
+    await expect(page.getByLabel("User name", { exact: true })).toBeFocused();
     await page.getByLabel("User name", { exact: true }).fill("alice");
     await page.getByLabel("Password", { exact: true }).fill(NEXT_PASSWORD);
     await page.getByLabel("Confirm password").fill(NEXT_PASSWORD);
@@ -143,6 +203,11 @@ test("Lock workspace: nothing live → every window shows the gate, feature IPC 
     await saveRecoveryCode(page);
     await expect(page.getByTestId("hosts-page")).toBeVisible();
     expect(await gated(page)).toBe("open");
+    // Catalog data that must not render behind the gate.
+    const hidden = "ฐานข้อมูล หลังล็อก";
+    await changeCatalog(desktop.app, [{ type: "create-host", data: { label: hidden, address: "192.0.2.10" } }]);
+    await page.reload();
+    await expect(page.getByTestId("hosts-page")).toContainText(hidden);
 
     const lockWorkspace = page.getByRole("button", { name: "Lock workspace" });
     await expect(lockWorkspace).toBeVisible();
@@ -161,13 +226,23 @@ test("Lock workspace: nothing live → every window shows the gate, feature IPC 
       return boot.ok ? window.ssterm.lockNow({ owner: boot.value.owner }) : boot;
     })).toEqual({ ok: true, value: { status: "locked" } });
     await expect(page.getByLabel("User name", { exact: true })).toHaveValue("alice");
-
-    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
-    await page.getByRole("button", { name: "Unlock" }).click();
-    await expect(page.getByTestId("hosts-page")).toBeVisible();
-    expect(await gated(page)).toBe("open");
-    await expect(lockWorkspace).toBeVisible();
+    await gateOnly(desktop, page, [hidden]);
     expect(desktop.errors).toEqual([]);
+
+    // The gate's × closes the window (main's close path); a new window still shows the gate, never the workspace.
+    const { next, errors } = await closeAndReopen(desktop, page);
+    await expect(screen(next).getByRole("heading", { name: "Unlock ssterm" })).toBeVisible();
+    await expect(next.getByTestId("hosts-page")).toHaveCount(0);
+    await expect(next.locator("body")).not.toContainText(hidden);
+    expect(await gated(next)).toBe("unauthorized");
+
+    await next.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await next.getByRole("button", { name: "Unlock" }).click();
+    await expect(next.getByTestId("hosts-page")).toBeVisible();
+    expect(await gated(next)).toBe("open");
+    await expect(next.getByRole("button", { name: "Lock workspace" })).toBeVisible();
+    await expect(next.getByTestId("hosts-page")).toContainText(hidden);
+    expect(errors).toEqual([]);
     await desktop.close();
 
     // App lock off (test profile default): no action, and main refuses the command.
@@ -349,6 +424,8 @@ test("Lock workspace with live work: SSH and local terminals, a tunnel and a tra
     await ask();
     await confirm.click();
     await expect(screen(page).getByRole("heading", { name: "Unlock ssterm" })).toBeVisible();
+    await expect(page.locator("body"), "no catalog data behind the gate").not.toContainText(server);
+    await expect(page.getByRole("navigation")).toHaveCount(0);
     expect(await gated(page)).toBe("unauthorized");
     expect(await liveWork(page), "not answered behind the gate").toBe("unauthorized");
     await expect.poll(() => portIsOpen(port), { message: "the tunnel listener closed", timeout: 15_000 }).toBe(false);
@@ -453,11 +530,26 @@ test("Google lock: system-browser sign-in through 127.0.0.1:55411, bound account
   let desktop: Desktop | undefined;
   try {
     desktop = await launchDesktop(profile, { secretNamespace: namespace, env: google.env });
+    // SST-040/14: × while Google waits ends that sign-in; finishing it in the browser afterwards configures nothing.
+    await desktop.app.evaluate(({ shell }) => {
+      shell.openExternal = async (url: string) => { (globalThis as { __pending?: string }).__pending = url; };
+    });
+    await desktop.page.getByRole("button", { name: "Sign in with Google" }).click();
+    await expect(screen(desktop.page).getByText("Waiting for Google in your browser…")).toBeVisible();
+    const { next, errors } = await closeAndReopen(desktop, desktop.page);
+    const late = await desktop.app.evaluate(async () => {
+      const response = await fetch((globalThis as { __pending?: string }).__pending!, { redirect: "manual" });
+      return fetch(response.headers.get("location")!).then(() => "answered", () => "closed");
+    });
+    expect(late, "the loopback listener closed with the window").toBe("closed");
+    await expect(screen(next).getByRole("heading", { name: "Set up sign-in" })).toBeVisible();
+    expect(await gated(next)).toBe("unauthorized");
     await browserFollowsRedirect(desktop);
-    let page = desktop.page;
+    let page = next;
     await page.getByRole("button", { name: "Sign in with Google" }).click();
     await saveRecoveryCode(page);
     await expect(page.getByTestId("hosts-page")).toBeVisible();
+    expect(errors).toEqual([]);
     await desktop.close({ keepSecrets: true });
 
     desktop = await launchDesktop(profile, { secretNamespace: namespace, env: google.env });

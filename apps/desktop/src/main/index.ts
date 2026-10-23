@@ -249,6 +249,8 @@ const boundary = new WindowBoundary(
   },
   () => storageHealth,
   (owner) => {
+    // A Google sign-in started by this window ends with it (SST-040/14).
+    appLock?.revokeOwner(owner);
     teamClient?.lock(); teamGuard?.lock(); teamHandlers?.purge();
     syncClient?.lock();
     syncHandlers?.purge();

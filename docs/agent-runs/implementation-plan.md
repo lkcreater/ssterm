@@ -1517,3 +1517,15 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
     - Passing: typecheck, unit 775/776 (1 known skip), build.
     - Full E2E 90/91 before the fixes. `workspace.spec:580` failed once and passed alone; no excerpt was kept.
     - After the fixes: app-lock, desktop and local-terminal 11/11.
+- **SST-040/14 done (2026-10-23):**
+  - **Gate layout:** the app-lock gate is full-window, with a drag-only titlebar, a brand side (icon v2) and a right form panel. No workspace mounts behind it. The × closes the window through main's close guard. The recovery-code screen has no × because its code is shown once.
+  - **Shared audit:** `audit()` moved to `tests/e2e/support/audit.ts`.
+  - **Review:** APPROVED with one medium fixed. A Google sign-in in flight was not tied to its window, so closing the window could let setup/unlock finish unseen. Main now aborts the sign-in when the owning window is destroyed or its owner rotates, checking after the token exchange; unit and E2E tests added. All 6 lows fixed.
+  - **Remaining narrow limits:**
+    - A close during the final Keychain write still completes that write.
+    - `cancelGoogle` is not scoped to the owner, as before.
+  - **Checks:**
+    - typecheck, unit 776/777 (1 known skip), build pass.
+    - Development app-lock/release-gate/desktop 12/12; packaged trial build of the same 12/12.
+    - Full E2E 90/91 before the fixes; `transfers.spec:12` failed (sshd teardown count) and passed alone.
+  - **`transfers.spec` intermittents:** diagnosed as a test timing assumption, not a leak. ssh2 runs in main, so its sockets close when the process exits. The server-side sshd exit then waits on the Docker Desktop port proxy under load, and the fixture has no `ClientAliveInterval`. Harden in ticket 15.

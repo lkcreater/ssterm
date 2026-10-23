@@ -693,3 +693,58 @@ test("Lock workspace live-work IPC: owner-checked, strict payload, answered only
   const off = createAppLockController({ service: undefined, google: undefined, openExternal: async () => {} });
   assert.deepEqual(off.liveWork(), { ok: true, value: { terminals: [], tunnels: [], transfers: 0, remoteEdits: 0 } }, "lock off: nothing to gate");
 });
+
+test("SST-040/14: a Google sign-in ends with the window that started it — closed or reloaded before or during the token exchange, nothing is configured or unlocked", async () => {
+  const google = fakeGoogle();
+  const endpoints = { authorization: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://t/token", jwks: "https://t/certs", issuers: ["https://accounts.google.com"] };
+  const owner: Owner = { windowId: 1, generation: 4 };
+
+  // 1. Waiting for the browser: another window's revocation is ignored; this window's closes the listener.
+  const port = await freePort();
+  const lock = await service(new MemoryStore());
+  let opened!: () => void;
+  const browser = new Promise<void>((done) => { opened = done; });
+  const waiting = createAppLockController({
+    service: lock, google: { client: { clientId: google.clientId, clientSecret: "s" }, endpoints }, port,
+    fetch: google.fetcher as typeof fetch, openExternal: async (url) => { google.authorize(url); opened(); },
+  });
+  const pending = waiting.google("setup", owner);
+  await browser;
+  waiting.revokeOwner({ windowId: 1, generation: 3 });
+  waiting.revokeOwner({ windowId: 2, generation: 4 });
+  waiting.revokeOwner(owner);
+  const ended = await pending;
+  assert.ok(ended.ok && ended.value.status === "failed" && ended.value.code === "cancelled", JSON.stringify(ended));
+  assert.equal(lock.status().phase, "setup", "nothing configured for a closed window");
+  // The next window can start its own sign-in at once (no 5-minute not-allowed).
+  const again = createAppLockController({
+    service: lock, google: { client: { clientId: google.clientId, clientSecret: "s" }, endpoints }, port,
+    fetch: google.fetcher as typeof fetch,
+    openExternal: async (url) => { const state = google.authorize(url); void fetch(`http://127.0.0.1:${port}/oauth/callback?state=${state}&code=abc`); },
+  });
+  const configured = await again.google("setup", { windowId: 1, generation: 5 });
+  assert.ok(configured.ok && configured.value.status === "configured", JSON.stringify(configured));
+
+  // 2. Revoked during the token exchange (after the callback): the verified sign-in is not used to unlock.
+  lock.lock();
+  const exchangePort = await freePort();
+  let exchanging!: () => void;
+  const exchange = new Promise<void>((done) => { exchanging = done; });
+  let resume!: () => void;
+  const held = new Promise<void>((done) => { resume = done; });
+  const unlocking = createAppLockController({
+    service: lock, google: { client: { clientId: google.clientId, clientSecret: "s" }, endpoints }, port: exchangePort,
+    fetch: (async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/token")) { exchanging(); await held; }
+      return google.fetcher(url, init);
+    }) as typeof fetch,
+    openExternal: async (url) => { const state = google.authorize(url); void fetch(`http://127.0.0.1:${exchangePort}/oauth/callback?state=${state}&code=abc`); },
+  });
+  const signingIn = unlocking.google("unlock", owner);
+  await exchange;
+  unlocking.revokeOwner(owner);
+  resume();
+  const result = await signingIn;
+  assert.ok(result.ok && result.value.status === "failed" && result.value.code === "cancelled", JSON.stringify(result));
+  assert.equal(lock.unlocked, false, "a reloaded or closed window's sign-in never unlocks the app");
+});

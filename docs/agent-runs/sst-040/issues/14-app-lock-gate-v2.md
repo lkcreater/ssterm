@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Charcoal tokens, terminal palette and icon v2
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Gate is full-window with icon v2 and a right-side form panel; no catalog or workspace data is rendered behind it
 - [ ] Password, Google, offline and recovery flows behave as before

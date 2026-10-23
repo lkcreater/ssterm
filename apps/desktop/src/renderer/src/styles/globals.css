@@ -1051,27 +1051,52 @@
 .live-terminal-pane:is([data-phase="closed"], [data-phase="failed"]) .live-terminal {
   opacity: 0.72;
 }
-/* App lock (SST-039): one centered card on the app background; nothing else renders until unlock. */
+/* App lock (SST-039, v2 SST-040/14): nothing else renders until unlock. Titlebar strip, brand side, and the form panel flush right below the titlebar (drawer surface). */
 .app-lock-screen {
   display: grid;
-  min-height: 100vh;
-  place-items: center;
-  padding: 32px 16px;
-  overflow: auto;
+  grid-template: var(--titlebar-height) minmax(0, 1fr) / minmax(0, 1fr) min(520px, 100%);
+  /* 100%, not 100vh: vh can lag a window resize in Electron. */
+  height: 100%;
+  overflow: hidden;
   background: var(--background);
 }
-.app-lock-card {
+.app-lock-titlebar {
+  grid-column: 1 / -1;
+}
+.app-lock-brand {
   display: grid;
-  width: min(420px, 100%);
-  gap: 16px;
-  padding: 28px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
+  min-width: 0;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 32px;
+  text-align: center;
+  user-select: none;
 }
 .app-lock-logo {
-  width: 56px;
-  height: 56px;
+  width: 96px;
+  height: 96px;
+  margin-bottom: 12px;
+}
+.app-lock-panel {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--card);
+  color: var(--card-foreground);
+}
+.app-lock-panel-body {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  align-content: safe center;
+  gap: 16px;
+  padding: 48px 40px 32px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
 }
 .app-lock-divider {
   display: grid;

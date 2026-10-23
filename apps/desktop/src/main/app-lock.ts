@@ -59,7 +59,9 @@ export function createAppLockController(options: {
   port?: number;
   fetch?: typeof fetch;
 }) {
+  /** The sign-in in flight and the window owner that started it (SST-040/14: it ends with that owner). */
   let signIn: AbortController | undefined;
+  let signInOwner: Owner | undefined;
   const service = options.service;
   const status = (): AppLockStatus => (service ? service.status() : UNLOCKED);
   const failed = (code: Extract<GoogleSignInResponse, { status: "failed" }>["code"], purpose: GooglePurpose): Result<GoogleSignInResponse> =>
@@ -100,14 +102,18 @@ export function createAppLockController(options: {
       if (await googleReachable(options.google.endpoints, options.fetch)) return ok({ status: "failed", code: "online" });
       return ok(service.unlockOffline(locks));
     },
-    /** System browser + loopback redirect; one sign-in at a time. Resolves when it completes, fails or is cancelled. */
-    async google(purpose: GooglePurpose): Promise<Result<GoogleSignInResponse>> {
+    /**
+     * System browser + loopback redirect; one sign-in at a time. Resolves when it completes, fails or is cancelled.
+     * Bound to `owner`: closing or reloading that window aborts it, so no sign-in completes for a window that is gone.
+     */
+    async google(purpose: GooglePurpose, owner?: Owner): Promise<Result<GoogleSignInResponse>> {
       const google = options.google;
       if (!service || !google) return failed("unavailable", purpose);
       if (!service.googleAllowed(purpose)) return failed("not-allowed", purpose);
       if (signIn) return failed("not-allowed", purpose);
       const controller = new AbortController();
       signIn = controller;
+      signInOwner = owner && { ...owner };
       const locks = service.lockEpoch;
       try {
         const hint = status().googleEmail ?? undefined;
@@ -134,12 +140,14 @@ export function createAppLockController(options: {
         } catch (error) {
           return failed(error instanceof OAuthError ? error.code : "invalid-response", purpose);
         }
+        // Its window closed or reloaded during the token exchange: nothing is configured or unlocked for it.
+        if (controller.signal.aborted) return failed("cancelled", purpose);
         const result = await service.completeGoogle(purpose, identity, locks);
         if (result.status === "configured") return ok({ status: "configured", recoveryCode: result.recoveryCode });
         if (result.status === "unlocked" || result.status === "confirmed") return ok({ status: result.status });
         return failed(result.status === "wrong-account" ? "wrong-account" : result.status === "not-allowed" ? "not-allowed" : "unavailable", purpose);
       } finally {
-        if (signIn === controller) signIn = undefined;
+        if (signIn === controller) signIn = signInOwner = undefined;
       }
     },
     /**
@@ -167,6 +175,10 @@ export function createAppLockController(options: {
     cancelGoogle(): Result<{ status: "cancelled" }> {
       signIn?.abort();
       return ok({ status: "cancelled" });
+    },
+    /** A window closed, reloaded or navigated (its owner rotated): end the sign-in it started. */
+    revokeOwner(owner: Owner): void {
+      if (signInOwner?.windowId === owner.windowId && signInOwner.generation === owner.generation) signIn?.abort();
     },
     dispose(): void { signIn?.abort(); },
   };
@@ -228,7 +240,7 @@ export function registerAppLockHandlers(options: {
   handle(channels.setupAppLockPassword, g.setupPassword, (c, r) => c.setupPassword({ username: r.username, password: r.password, confirmPassword: r.confirmPassword }));
   handle(channels.unlockAppLock, g.unlockPassword, (c, r) => c.unlockPassword(r.username, r.password));
   handle(channels.confirmAppLockPassword, g.confirmPassword, (c, r) => c.confirmPassword(r.password));
-  handle(channels.googleSignIn, g.google, (c, r) => c.google(r.purpose));
+  handle(channels.googleSignIn, g.google, (c, r) => c.google(r.purpose, r.owner));
   handle(channels.cancelGoogleSignIn, g.cancelGoogle, (c) => c.cancelGoogle());
   handle(channels.unlockAppLockOffline, g.unlockOffline, (c) => c.unlockOffline());
   handle(channels.recoverAppLock, g.recover, (c, r) => c.recover(r.code));

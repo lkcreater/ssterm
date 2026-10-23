@@ -1,5 +1,5 @@
 import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckIcon, CopyIcon, KeyRoundIcon, LockKeyholeIcon, TriangleAlertIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, KeyRoundIcon, LockKeyholeIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import {
   passwordSetupErrors, recoveryCodeSchema,
   type AppLockFieldErrors, type AppLockStatus, type AttemptResponse, type GoogleFailure, type Owner,
@@ -32,16 +32,51 @@ const attemptText = (result: AttemptResponse | undefined, fallback: string): str
   return undefined;
 };
 
-function Screen({ title, description, children }: { title: string; description: ReactNode; children: ReactNode }) {
+/**
+ * SST-040/14: a full-window gate, not a drawer over the app: a drag-only titlebar, a brand side with no workspace data and
+ * the form panel flush right. Its × closes the window through main's normal close path; it never reveals the workspace.
+ */
+function Gate({ children, owner, label, closable = true, ...props }: {
+  children: ReactNode; owner?: Owner; label?: string; closable?: boolean; "data-testid"?: string;
+}) {
+  // Stop a Google sign-in this window started before it closes (main also ends it when the window goes away).
+  const close = () => {
+    if (owner) void call((bridge) => bridge.cancelGoogleSignIn({ owner }));
+    window.close();
+  };
   return (
-    <main className="app-lock-screen" data-testid="app-lock">
-      <section className="app-lock-card" aria-labelledby="app-lock-title">
+    <main className="app-lock-screen" {...props}>
+      <header className="app-titlebar app-lock-titlebar">
+        <div className="titlebar-safe-area" aria-hidden="true" />
+      </header>
+      <div className="app-lock-brand">
         <img src={iconLogo} alt="" className="app-lock-logo" />
-        <h1 id="app-lock-title" className="type-title">{title}</h1>
-        <p className="text-sm text-muted-foreground">{description}</p>
-        {children}
+        <p className="text-2xl font-semibold">ssterm</p>
+        <p className="text-sm text-muted-foreground">Local SSH workspace</p>
+      </div>
+      <section className="app-lock-panel" {...(label ? { "aria-label": label } : { "aria-labelledby": "app-lock-title" })}>
+        <div className="app-lock-panel-body">{children}</div>
+        {/* Last in tab order, so focus enters at the first field. */}
+        {closable ? (
+          <Button variant="ghost" size="icon-sm" className="absolute top-3.5 right-3" aria-label="Close window" onClick={close}>
+            <XIcon />
+          </Button>
+        ) : null}
       </section>
     </main>
+  );
+}
+function Screen({ title, description, owner, closable, children }: {
+  title: string; description: ReactNode; owner?: Owner; closable?: boolean; children: ReactNode;
+}) {
+  return (
+    <Gate data-testid="app-lock" owner={owner} closable={closable}>
+      <div className="grid gap-2">
+        <h1 id="app-lock-title" className="type-title">{title}</h1>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      {children}
+    </Gate>
   );
 }
 function Problem({ text }: { text?: string }) {
@@ -97,9 +132,10 @@ export function GoogleButton({ owner, purpose, label, disabled, onDone }: {
 }
 
 /** Username, password and confirmation, validated with the shared zod schema before main checks it again. */
-export function PasswordSetupForm({ owner, initialUsername = "", submitLabel, onConfigured }: {
+export function PasswordSetupForm({ owner, initialUsername = "", submitLabel, autoFocus, onConfigured }: {
   owner: Owner;
   initialUsername?: string;
+  autoFocus?: boolean;
   submitLabel: string;
   onConfigured(recoveryCode: string): void;
 }) {
@@ -143,7 +179,7 @@ export function PasswordSetupForm({ owner, initialUsername = "", submitLabel, on
       <Problem text={problem} />
       <Field data-invalid={errors.username ? true : undefined}>
         <FieldLabel htmlFor="app-lock-username">User name</FieldLabel>
-        <Input ref={first} autoComplete="username" spellCheck={false} autoCapitalize="none" {...field("username")} />
+        <Input ref={first} autoFocus={autoFocus} autoComplete="username" spellCheck={false} autoCapitalize="none" {...field("username")} />
         {errors.username ? <FieldError>{errors.username}</FieldError> : null}
       </Field>
       <Field data-invalid={errors.password ? true : undefined}>
@@ -209,7 +245,8 @@ export function AppLockGate({ children }: { children: ReactNode }) {
 
   if (recoveryCode)
     return (
-      <Screen title="Save your recovery code" description="Use it if you forget your password or lose access to your Google account. It is shown only now.">
+      // No × here: the code is shown only once, so continuing requires acknowledging it (the native close still works).
+      <Screen title="Save your recovery code" closable={false} description="Use it if you forget your password or lose access to your Google account. It is shown only now.">
         <RecoveryCodeView code={recoveryCode} onContinue={() => { setRecoveryCode(undefined); if (owner) void refresh(owner); }} />
       </Screen>
     );
@@ -222,7 +259,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
     );
   if (!owner || !status)
     return (
-      <main className="app-lock-screen"><span className="flex items-center gap-2"><Spinner /> Opening ssterm</span></main>
+      <Gate label="Opening ssterm"><span className="flex items-center gap-2" role="status"><Spinner /> Opening ssterm</span></Gate>
     );
   if (status.phase === "setup") return <SetupScreen owner={owner} status={status} onConfigured={setRecoveryCode} onDone={() => void refresh(owner)} />;
   return <UnlockScreen owner={owner} status={status} onChange={() => void refresh(owner)} />;
@@ -232,12 +269,13 @@ function SetupScreen({ owner, status, onConfigured, onDone }: { owner: Owner; st
   const [problem, setProblem] = useState<string>();
   return (
     <Screen
+      owner={owner}
       title={status.recovering ? "Set up sign-in again" : "Set up sign-in"}
       description={status.recovering
         ? "Your recovery code was accepted. Choose how to unlock ssterm from now on; you will get a new recovery code."
         : "Choose how ssterm unlocks when it opens. Your servers and keys stay on this Mac."}
     >
-      <PasswordSetupForm owner={owner} submitLabel="Create password" onConfigured={onConfigured} />
+      <PasswordSetupForm owner={owner} submitLabel="Create password" autoFocus onConfigured={onConfigured} />
       <div className="app-lock-divider"><span>or</span></div>
       <Problem text={problem} />
       <GoogleButton
@@ -269,7 +307,15 @@ function UnlockScreen({ owner, status, onChange }: { owner: Owner; status: AppLo
   const [retry, setRetry] = useState(status.retryAfterMs);
   const wait = useCountdown(retry);
   const passwordInput = useRef<HTMLInputElement>(null);
+  const recoveryInput = useRef<HTMLInputElement>(null);
   useEffect(() => { if (status.method === "password") passwordInput.current?.focus(); }, [status.method]);
+  const forgot = useRef<HTMLButtonElement>(null);
+  const back = useRef(false);
+  useEffect(() => {
+    if (mode === "recover") recoveryInput.current?.focus();
+    // Back from recovery: return to the password field, or to Forgot when there is none (Google).
+    else if (back.current) (passwordInput.current ?? forgot.current)?.focus();
+  }, [mode]);
   const finish = (result: AttemptResponse | undefined, fallback: string) => {
     const text = attemptText(result, fallback);
     if (result?.status === "rejected") setRetry(result.retryAfterMs);
@@ -307,6 +353,7 @@ function UnlockScreen({ owner, status, onChange }: { owner: Owner; status: AppLo
   const waitText = wait ? `Try again in ${wait} s.` : undefined;
   return (
     <Screen
+      owner={owner}
       title="Unlock ssterm"
       description={recordMissing ? "The sign-in record for this Mac is missing from the Keychain. Enter the recovery code you saved to set up sign-in again."
         : mode === "recover" ? "Enter the recovery code you saved when you set up sign-in."
@@ -318,12 +365,12 @@ function UnlockScreen({ owner, status, onChange }: { owner: Owner; status: AppLo
         <form className="grid gap-3" noValidate onSubmit={(event) => { event.preventDefault(); void recover(); }}>
           <Field>
             <FieldLabel htmlFor="app-lock-recovery">Recovery code</FieldLabel>
-            <Input id="app-lock-recovery" value={code} autoComplete="off" spellCheck={false} autoCapitalize="characters"
+            <Input ref={recoveryInput} id="app-lock-recovery" value={code} autoComplete="off" spellCheck={false} autoCapitalize="characters"
               className="font-mono" onKeyDown={imeEnterGuard} onChange={(event) => setCode(event.target.value)} />
             {waitText ? <FieldDescription>{waitText}</FieldDescription> : null}
           </Field>
           <Button type="submit" disabled={busy || !!wait}>{busy ? <Spinner data-icon="inline-start" /> : <KeyRoundIcon data-icon="inline-start" />}Use recovery code</Button>
-          {recordMissing ? null : <Button type="button" variant="ghost" onClick={() => { setMode("main"); setProblem(undefined); }}>Back</Button>}
+          {recordMissing ? null : <Button type="button" variant="ghost" onClick={() => { back.current = true; setMode("main"); setProblem(undefined); }}>Back</Button>}
         </form>
       ) : status.method === "google" ? (
         <div className="grid gap-3">
@@ -351,7 +398,7 @@ function UnlockScreen({ owner, status, onChange }: { owner: Owner; status: AppLo
         </form>
       )}
       {mode === "main" ? (
-        <Button variant="link" className="justify-self-start px-0" onClick={() => { setMode("recover"); setProblem(undefined); }}>
+        <Button ref={forgot} variant="link" className="justify-self-start px-0" onClick={() => { setMode("recover"); setProblem(undefined); }}>
           Forgot? Use a recovery code
         </Button>
       ) : null}
