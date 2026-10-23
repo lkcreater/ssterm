@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -499,6 +500,239 @@ test("AI Agent modes: Auto plan and per-command approvals on the fixture, Full a
     expect(desktop.externalRequests).toEqual([]);
     expect(desktop.errors).toEqual([]);
     testInfo.annotations.push({ type: "evidence", description: `Docker OpenSSH ${lab.container.slice(0, 12)}; DEV and PROD hosts on one fixture` });
+  } finally {
+    await desktop?.close();
+    await lab.dispose();
+    await rm(profile, { recursive: true, force: true });
+  }
+});
+
+test("AI Agent password handoff: listed programs only, card and banner with the command, wrong then right, echo-back withheld, held keys dropped, a composer draft keeps focus, read-only and unlisted prompts stopped, a waiting prompt refuses the probe, and the password reaches nothing", async ({}, testInfo) => {
+  test.setTimeout(300_000);
+  const profile = await mkdtemp(join(tmpdir(), "ssterm-e2e-agent-pw-"));
+  const home = join(profile, "agent-home");
+  await mkdir(home);
+  const cli = join(profile, "claude");
+  await writeFile(cli, `#!/bin/sh\nexec '${process.execPath}' '${resolve("tests/fixtures/agent/fake-claude.mjs")}' "$@"\n`, { mode: 0o755 });
+  const lab = await startFixture();
+  // Fixture-only values, never the SSH password. The image has no sudo: a deterministic stand-in is installed as `sudo`
+  // in the owned container. It prompts exactly like sudo, reads without echo (`read -s`) and allows three attempts;
+  // with --ssterm-echo-back it prints the accepted entry back, plain and as base64 (the leak the redaction covers).
+  const password = `PW-${randomUUID()}`;
+  const wrong = `WRONG-${randomUUID()}`;
+  const scripts: Record<string, string> = {
+    "/usr/local/bin/sudo": [
+      "#!/bin/bash",
+      "echo_back=",
+      'if [ "$1" = --ssterm-echo-back ]; then echo_back=1; shift; fi',
+      "for attempt in 1 2 3; do",
+      `  printf '[sudo] password for %s: ' "$(id -un)"`,
+      "  IFS= read -r -s answer",
+      "  printf '\\n'",
+      `  if [ "$answer" = '${password}' ]; then`,
+      '    if [ -n "$echo_back" ]; then echo "typed: $answer"; printf "%s" "$answer" | base64; fi',
+      '    exec "$@"',
+      "  fi",
+      '  if [ "$attempt" -lt 3 ]; then echo "Sorry, try again."; fi',
+      "done",
+      "echo 'sudo: 3 incorrect password attempts' >&2",
+      "exit 1",
+    ].join("\n"),
+    // Not a known prompting program: it would print back whatever is typed, so it must never get a handoff.
+    "/usr/local/bin/ssterm-echo": ["#!/bin/bash", "printf 'Password: '", "IFS= read -r line", 'echo "you typed: $line"'].join("\n"),
+  };
+  for (const [path, body] of Object.entries(scripts))
+    await runFile("docker", ["exec", lab.container, "sh", "-c", `echo ${Buffer.from(`${body}\n`).toString("base64")} | base64 -d > ${path} && chmod 0755 ${path}`]);
+  await runFile("docker", ["exec", "-u", "fixture", lab.container, "python3", "-c",
+    "import os\nos.makedirs('/home/fixture/agent', exist_ok=True)\nopen('/home/fixture/agent/note.txt','w').write('AGENT-NOTE-42\\n')\nopen('/home/fixture/agent/prompt.txt','w').write('Password: ')"]);
+  const logs: string[] = [];
+  let desktop: Desktop | undefined;
+  try {
+    desktop = await launchDesktop(profile, { env: { SSTERM_TEST_AGENT_CLI: cli, SSTERM_TEST_AGENT_HOME: home } });
+    const { app, page } = desktop;
+    // Everything main and the renderer print, to prove the password is in none of it.
+    app.process().stdout?.on("data", (chunk: Buffer) => logs.push(chunk.toString("utf8")));
+    app.process().stderr?.on("data", (chunk: Buffer) => logs.push(chunk.toString("utf8")));
+    page.on("console", (message) => logs.push(message.text()));
+    const secret = join(lab.directory, "password");
+    await writeFile(secret, lab.password, { mode: 0o600 });
+    const [identityId] = await changeCatalog(app, [
+      { type: "create-identity", data: { label: "Agent password lab", username: lab.username, method: "password" } },
+      { type: "create-host", data: { label: server, address: lab.host, environment: "DEV", port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId: "$0" } } },
+    ]);
+    await page.reload();
+    await expect(page.getByTestId("hosts-page")).toContainText(server);
+    expect(await app.evaluate(async ({ BrowserWindow }, { file, identityId }) => {
+      const value = process.getBuiltinModule("node:fs").readFileSync(file, "utf8");
+      return BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScript(`(async () => {
+        const boot = await window.ssterm.bootstrap();
+        const saved = await window.ssterm.setIdentityPassword({ owner: boot.value.owner, identityId: ${JSON.stringify(identityId)},
+          expectedRevision: 1, value: new TextEncoder().encode(${JSON.stringify(value)}) });
+        return saved.ok ? saved.value.status : saved.error.code; })()`);
+    }, { file: secret, identityId })).toBe("saved");
+    const owner = await page.evaluate(async () => { const boot = await window.ssterm.bootstrap(); if (!boot.ok) throw new Error("bootstrap"); return boot.value.owner; });
+    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "low" as const, instructions: "", allowFullAllowOnProd: false };
+    expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: true, settings })).ok, { owner, settings })).toBe(true);
+    // Every agent and terminal state push the renderer receives.
+    await page.evaluate(() => {
+      const pushes: string[] = [];
+      (window as unknown as { __pushes: string[] }).__pushes = pushes;
+      window.ssterm.onAgentState((state) => pushes.push(JSON.stringify(state)));
+      window.ssterm.onTerminalState((state) => pushes.push(JSON.stringify(state)));
+    });
+    const pushes = () => page.evaluate(() => (window as unknown as { __pushes: string[] }).__pushes);
+    const handoffs = async () => (await pushes()).filter((push) => push.includes('"password":true')).length;
+
+    await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${server}`, exact: true }).click();
+    await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
+    const pane = page.locator("section[data-terminal-kind=ssh]").first();
+    const rows = pane.locator(".xterm-rows");
+    const textarea = pane.locator(".xterm-helper-textarea");
+    const banner = pane.getByTestId("agent-banner");
+    await expect(pane).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+    await expect(rows).toContainText("fixture@", { timeout: 20_000 });
+    await pane.getByRole("button", { name: "AI Agent" }).click();
+    const panel = page.getByTestId("agent-panel");
+    const modes = panel.getByTestId("agent-mode");
+    const composer = panel.getByLabel("Message to the agent");
+    const messages = panel.getByTestId("agent-messages");
+    const card = panel.getByTestId("agent-password");
+    await modes.getByRole("button", { name: "Full allow", exact: true }).click();
+    await panel.getByTestId("agent-full-allow-step").getByRole("button", { name: "Allow every command" }).click();
+    await expect(modes).toHaveAttribute("data-mode", "full-allow");
+    const calls = () => readFileSync(join(home, "fake-claude-calls.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const runResult = (command: string) => calls().filter((entry) => entry.name === "run_command" && entry.args.command === command).at(-1)!.result.structuredContent;
+
+    // 1. sudo reaches its prompt: the run pauses, the card names the target and warns with the command, the banner says
+    //    the agent cannot see it, and focus moves to the pane.
+    await composer.fill("delegate:run:sudo cat /home/fixture/agent/note.txt");
+    await composer.press("Enter");
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(card).toContainText("Waiting for you to type the password in the terminal");
+    await expect(card).toContainText(server);
+    await expect(card).toContainText(`${lab.username}@${lab.host}:${lab.port}`);
+    await expect(card.getByTestId("agent-password-warning")).toHaveText("Only type a password if you expected this prompt from sudo cat /home/fixture/agent/note.txt.");
+    await expect(banner).toHaveAttribute("data-password", "true");
+    await expect(banner).toContainText("Type your password in the terminal — ssterm does not pass what you type to the agent · only if you expected this prompt from sudo cat /home/fixture/agent/note.txt");
+    await expect(banner.getByRole("button", { name: "Stop" })).toBeVisible();
+    await expect(textarea).toBeFocused();
+    await expect(rows).toContainText("[sudo] password for fixture:");
+    await expect(panel.locator('[data-testid="agent-task"][data-task-id="task-1"]')).toHaveAttribute("data-status", "running");
+    // Rendered contrast and names of the card and banner, before anything is typed.
+    expect((await audit(page)).findings).toEqual([]);
+    await textarea.focus();
+
+    // 2. A wrong password: the prompt repeats and is handed off again. Keys go through CDP input into the pane.
+    await page.keyboard.type(wrong);
+    await page.keyboard.press("Enter");
+    await expect(rows).toContainText("Sorry, try again.");
+    await expect(card).toBeVisible();
+    await expect(banner).toHaveAttribute("data-password", "true");
+    await expect(textarea).toBeFocused();
+
+    // 3. The right one: the command completes and the agent gets its exit code and output, not the input.
+    await page.keyboard.type(password);
+    await page.keyboard.press("Enter");
+    await expect(messages).toContainText("Summary task-1 (completed): sudo cat /home/fixture/agent/note.txt -> exit 0", { timeout: 30_000 });
+    await expect(card).toHaveCount(0);
+    await expect(banner).toHaveCount(0);
+    await expect(rows).toContainText("AGENT-NOTE-42");
+    const task = panel.locator('[data-testid="agent-task"][data-task-id="task-1"]');
+    await task.getByRole("button", { name: /^Record \(1 command\)/u }).click();
+    await expect(task.getByTestId("agent-task-record")).toContainText("AGENT-NOTE-42");
+    await expect(task.getByTestId("agent-task-record")).toContainText("Exit 0");
+    expect(runResult("sudo cat /home/fixture/agent/note.txt")).toEqual({ status: "completed", command: "sudo cat /home/fixture/agent/note.txt", exitCode: 0,
+      output: "[sudo] password for fixture: \nSorry, try again.\n[sudo] password for fixture: \nAGENT-NOTE-42\n", truncated: false,
+      passwordPrompts: 2, passwordHandedOff: true,
+      note: "A password prompt was handed to the user, who typed in the terminal; what they typed is not included." });
+
+    // 4. A listed program prints the entry back (plain and base64): the whole output is withheld. Keys typed right after
+    //    Return are held and dropped, never replayed once the command ends.
+    await composer.fill("delegate:run:sudo --ssterm-echo-back sleep 3");
+    await composer.press("Enter");
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(textarea).toBeFocused();
+    await page.keyboard.type(password);
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("echo REPLAY-$((2+3))");
+    await page.keyboard.press("Enter");
+    await expect(pane.getByTestId("terminal-feedback")).toContainText("Input is held");
+    await expect(messages).toContainText("Summary task-2 (completed): sudo --ssterm-echo-back sleep 3 -> exit 0", { timeout: 30_000 });
+    expect(runResult("sudo --ssterm-echo-back sleep 3")).toMatchObject({ status: "completed", exitCode: 0, passwordHandedOff: true,
+      outputWithheld: true, output: "[ssterm: output withheld: it contained what you typed at a password prompt]\n" });
+    await expect(rows).toContainText("typed: PW-");
+    await page.waitForTimeout(1_000);
+    await expect(rows).not.toContainText("REPLAY-5");
+
+    // 5. An unsent message in the composer keeps focus there (the card alone shows); Stop in the banner still works at a
+    //    password prompt: Ctrl+C, and the hold is back.
+    await composer.fill("delegate:run:sudo true");
+    await composer.press("Enter");
+    await composer.fill("an unsent draft");
+    await expect(banner).toHaveAttribute("data-password", "true", { timeout: 30_000 });
+    await expect(card).toBeVisible();
+    await page.waitForTimeout(300);
+    await expect(composer).toBeFocused();
+    await expect(textarea).not.toBeFocused();
+    await composer.fill("");
+    await banner.getByRole("button", { name: "Stop" }).click();
+    await expect(messages).toContainText("Summary task-3 (completed): sudo true -> interrupted", { timeout: 30_000 });
+    await expect(card).toHaveCount(0);
+
+    // 6. A read-only step never reads the terminal (`cat -` ends at once) and a prompt-shaped line in it is stopped;
+    //    a program that is not a known prompting program (and would echo the entry back) is stopped too. No handoff.
+    const before = await handoffs();
+    await composer.fill("delegate:run:tail -f /home/fixture/agent/prompt.txt;;cat -||run:ssterm-echo");
+    await composer.press("Enter");
+    await expect(messages).toContainText("Summary task-4 (completed): tail -f /home/fixture/agent/prompt.txt -> password-prompt-refused: Password: ^C | cat - -> exit 0", { timeout: 30_000 });
+    await expect(messages).toContainText("Summary task-5 (completed): ssterm-echo -> password-prompt-refused", { timeout: 30_000 });
+    expect(await handoffs(), "no card or banner handoff for either").toBe(before);
+    expect(runResult("cat -")).toMatchObject({ status: "completed", exitCode: 0, output: "" });
+    expect(runResult("ssterm-echo").note).toContain("starting with a known prompting program (sudo, su, ssh, scp, sftp, ssh-keygen, ssh-add, passwd, git, docker login)");
+    await expect(rows).not.toContainText("you typed");
+    const record = panel.locator('[data-testid="agent-task"][data-task-id="task-4"]');
+    await record.getByRole("button", { name: /^Record/u }).click();
+    await expect(record.getByTestId("agent-task-record").locator("li").first()).toContainText("Stopped: password prompt");
+
+    // 7. A prompt left waiting by the user's own command: the agent's probe is refused, nothing is typed into it, and
+    //    the user's first attempt is still the first (no "Sorry, try again." from a submitted probe line).
+    await textarea.focus();
+    await page.keyboard.type("clear");
+    await page.keyboard.press("Enter");
+    await expect(rows).not.toContainText("AGENT-NOTE-42");
+    await page.keyboard.type("sudo echo USER-SUDO-$((40+2))");
+    await page.keyboard.press("Enter");
+    await expect(rows).toContainText("[sudo] password for fixture:");
+    await composer.fill("delegate:run:pwd");
+    await composer.press("Enter");
+    await expect(messages).toContainText("Summary task-6 (completed): pwd -> refused: The terminal is waiting at a password prompt, so nothing was typed", { timeout: 30_000 });
+    await expect(rows).not.toContainText("ssterm;ready");
+    await textarea.focus();
+    await page.keyboard.type(password);
+    await page.keyboard.press("Enter");
+    await expect(rows).toContainText("USER-SUDO-42");
+    await expect(rows, "the probe never counted as an attempt").not.toContainText("Sorry, try again.");
+
+    // 8. The password and the wrong attempt reached nothing ssterm sends or keeps: tool results, the CLIs' logs, state
+    //    pushes, the panel (cards and records), main's and the renderer's output. (The pane itself showed the echo-back.)
+    const everything = await pushes();
+    expect(everything.some((push) => push.includes('"password":true'))).toBe(true);
+    const b64 = Buffer.from(password).toString("base64");
+    const places: [string, string][] = [
+      ["tool results", readFileSync(join(home, "fake-claude-calls.log"), "utf8")],
+      ["CLI launches", readFileSync(join(home, "fake-claude.log"), "utf8")],
+      ["state pushes", everything.join("\n")],
+      ["panel", (await panel.textContent()) ?? ""],
+      ["logs", logs.join("\n")],
+    ];
+    for (const [where, text] of places)
+      for (const [label, value] of [["password", password], ["base64 password", b64], ["wrong password", wrong]] as const)
+        expect(text.includes(value), `${label} in ${where}`).toBe(false);
+    expect(((await rows.textContent()) ?? "").includes(wrong), "read -s never echoed").toBe(false);
+    expect(calls().filter((entry) => entry.role === "main").some((entry) => entry.name === "get_task_status")).toBe(true);
+    expect(desktop.externalRequests).toEqual([]);
+    expect(desktop.errors).toEqual([]);
+    testInfo.annotations.push({ type: "evidence", description: `Docker OpenSSH ${lab.container.slice(0, 12)}; sudo stand-in installed in the owned container (no sudo in the image); no screenshots after entry` });
   } finally {
     await desktop?.close();
     await lab.dispose();

@@ -16,11 +16,11 @@ import { exactObject } from "@ssterm/contracts";
 import type { ObservedTerminal, TerminalObserver } from "@ssterm/domain";
 import type { AgentStepVia } from "@ssterm/contracts";
 import { MAX_PLAN_COMMANDS, MAX_PLAN_GOAL } from "./agent-policy";
-import { classifyReadOnly, MAX_AGENT_COMMAND, ScreenTracker, TerminalExecutor, type AgentRunRefusal, type AgentRunResult, type SessionRegistry } from "@ssterm/services";
+import { classifyReadOnly, LineTracker, MAX_AGENT_COMMAND, PROMPTING_PROGRAMS, ScreenTracker, TerminalExecutor, type AgentRunRefusal, type AgentRunResult, type SessionRegistry } from "@ssterm/services";
 
 type Registry = Pick<SessionRegistry, "snapshot" | "terminal">;
 /** One per observed SSH generation; the executor exists only once a credential was issued for it (idle sessions pay a screen scan). */
-interface Live { ownerId: string; sessionId: string; generation: number; screen: ScreenTracker; executor?: TerminalExecutor }
+interface Live { ownerId: string; sessionId: string; generation: number; screen: ScreenTracker; line: LineTracker; executor?: TerminalExecutor }
 /** What one terminal-tool call did, run or refused: ssterm's own task record (ticket 03). */
 export interface AgentStepRecord {
   command: string;
@@ -125,6 +125,7 @@ const refusals: Record<AgentRunRefusal, string> = {
   "full-screen": "A full-screen program is open in this terminal, so nothing was typed. Ask the user to leave it first.",
   "not-accepted": "The terminal did not accept input, so nothing was sent.",
   ended: "The bound session has ended.",
+  "password-prompt-pending": "The terminal is waiting at a password prompt, so nothing was typed (it would be taken as a password). Ask the user to answer or cancel it in the terminal first.",
 };
 export const text = (value: unknown, isError = false): ToolResult => typeof value === "string"
   ? { content: [{ type: "text", text: value }], isError }
@@ -132,6 +133,9 @@ export const text = (value: unknown, isError = false): ToolResult => typeof valu
 /** Nothing ran (or it is unknown whether it will): the model must not treat these as command results. */
 const UNRUN: readonly AgentRunResult["status"][] = ["not-at-prompt", "not-started", "ended"];
 const notes: Partial<Record<AgentRunResult["status"], string>> = {
+  timeout: "Timed out waiting for input (or for the command to finish), so ssterm sent Ctrl+C. Use non-interactive flags.",
+  "password-prompt-refused": `The command showed a password prompt. ssterm hands a prompt to the user only for a simple command (no chaining, pipes or redirects) starting with a known prompting program (${PROMPTING_PROGRAMS.join(", ")}), never in a read-only step, so it sent Ctrl+C and nothing was typed into the prompt.`,
+  "password-handoff": "A password prompt was handed to the user to type in the terminal, but it was not answered (three prompts, or the timeout), so ssterm sent Ctrl+C. What the user typed is never included.",
   "not-at-prompt": "The terminal is not idle at a shell prompt (a program, a continuation line or a prompt is waiting), so the command was not typed. Ask the user to return the pane to its prompt.",
   "not-started": "The command line was typed but the shell did not start it within 5 seconds; it may still run when the shell reads it. Ask the user to check the terminal.",
 };
@@ -239,13 +243,15 @@ export function createAgentTerminals(options: {
           revoke(binding);
           return refuse(command, "This binding is no longer valid: the session ended or reconnected, or the workspace locked. Nothing was sent.");
         }
-        const started = still.run(command);
+        // A read-only step reads nothing from the terminal (stdin is /dev/null) and never gets a password handoff.
+        const started = still.run(command, { readOnly: decision.via === "read-only" });
         if (typeof started === "string") { decision.undo?.(); return refuse(command, refusals[started]); }
         binding.running = true;
         const result = await started.finally(() => { binding.running = false; });
         if (result.status === "not-at-prompt") decision.undo?.();
         binding.record?.({ command: shown(command), status: result.status, exitCode: result.exitCode, output: result.output, truncated: result.truncated, via: decision.via });
-        const note = notes[result.status];
+        const note = notes[result.status] ?? (result.passwordPrompts
+          ? "A password prompt was handed to the user, who typed in the terminal; what they typed is not included." : undefined);
         return text(note ? { ...result, note } : result, UNRUN.includes(result.status));
       }
       case "propose_plan": return (binding.gate ?? READ_ONLY_GATE).propose(args, signal);
@@ -394,11 +400,16 @@ export function createAgentTerminals(options: {
     observe(session: ObservedTerminal): TerminalObserver | undefined {
       if (disposed || session.local) return undefined;
       const { ownerId, sessionId, generation } = session;
-      const live: Live = { ownerId, sessionId, generation, screen: new ScreenTracker() };
+      const live: Live = { ownerId, sessionId, generation, screen: new ScreenTracker(), line: new LineTracker() };
       executors.set(key(sessionId, generation), live);
       return {
-        // Until a credential exists only the screen state is tracked (a full-screen program refuses the first run).
-        output: (chunk) => { if (live.executor) live.executor.output(chunk); else live.screen.feed(chunk); },
+        // Until a credential exists only the screen state and the current line are tracked (a full-screen program or a
+        // waiting password prompt refuses the first run).
+        output: (chunk) => {
+          if (live.executor) return live.executor.output(chunk);
+          live.screen.feed(chunk);
+          live.line.feed(chunk);
+        },
         end: () => {
           if (executors.get(key(sessionId, generation)) === live) executors.delete(key(sessionId, generation));
           for (const binding of [...credentials.values()]) if (binding.live === live) revoke(binding);
@@ -406,16 +417,20 @@ export function createAgentTerminals(options: {
         },
       };
     },
-    /** The pane banner: the command an agent is running in this exact generation. */
-    status(ownerId: string, sessionId: string, generation: number): { command: string } | undefined {
+    /** The pane banner: the command an agent is running in this exact generation, and whether it waits for a password. */
+    status(ownerId: string, sessionId: string, generation: number): { command: string; password?: true } | undefined {
       const live = executors.get(key(sessionId, generation));
-      const command = live?.ownerId === ownerId ? live.executor?.running : undefined;
-      return command === undefined ? undefined : { command };
+      const executor = live?.ownerId === ownerId ? live.executor : undefined;
+      const command = executor?.running;
+      return command === undefined ? undefined : { command, ...(executor!.password ? { password: true as const } : {}) };
     },
-    /** User input to a pane; false holds it (A9). */
-    input(ownerId: string, sessionId: string, generation: number, bytes: Uint8Array): boolean {
+    /**
+     * User input to a pane: the bytes that may be written, or undefined to hold it (A9). At a handed-off password prompt
+     * (A4) input passes up to and including Return; the rest of that write is dropped.
+     */
+    input(ownerId: string, sessionId: string, generation: number, bytes: Uint8Array): Uint8Array | undefined {
       const live = executors.get(key(sessionId, generation));
-      return live?.ownerId === ownerId && live.executor ? live.executor.input(bytes) : true;
+      return live?.ownerId === ownerId && live.executor ? live.executor.input(bytes) : bytes;
     },
     onChange(listener: (ownerId: string) => void): () => void {
       listeners.add(listener);
@@ -448,6 +463,7 @@ export function createAgentTerminals(options: {
           catch { return "closed"; }
         },
         screen: live.screen,
+        line: live.line,
         ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
         ...(options.settleMs ? { settleMs: options.settleMs } : {}),
         ...(options.probeMs ? { probeMs: options.probeMs } : {}),

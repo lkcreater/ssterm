@@ -245,11 +245,14 @@ export function createTerminalController(options: {
     writeTerminal(request: WriteTerminalRequest): Result<TerminalActionResponse> {
       if (!isWriteTerminalRequest(request)) return failure("invalid-request");
       return withStream(request, (stream) => {
-        // A9: while an agent command runs, only a lone Ctrl+C reaches its shell.
-        if (options.agent && !options.agent.input(sessionOwnerId(request.owner), request.sessionId, request.generation, request.bytes))
-          return failure("held");
-        const written = stream.write(request.bytes);
-        return written === "ok" ? accepted : failure(written === "busy" ? "busy" : "conflict");
+        // A9: while an agent command runs, only a lone Ctrl+C reaches its shell; at a handed-off password prompt (A4)
+        // input up to Return does. Held bytes are dropped here, never kept for later.
+        const allowed = options.agent ? options.agent.input(sessionOwnerId(request.owner), request.sessionId, request.generation, request.bytes) : request.bytes;
+        if (!allowed) return failure("held");
+        const written = stream.write(allowed);
+        if (written !== "ok") return failure(written === "busy" ? "busy" : "conflict");
+        // The rest of a write after Return at a password prompt was dropped: a distinct outcome, since part was written.
+        return allowed.length < request.bytes.length ? failure("partly-held") : accepted;
       });
     },
     resizeTerminal(request: ResizeTerminalRequest): Result<TerminalActionResponse> {

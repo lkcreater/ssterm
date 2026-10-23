@@ -13,11 +13,13 @@ export interface TerminalInputHandle {
   bracketed(): boolean;
   /**
    * `sent` once main accepted the write for `generation`; `refused` if the pane is not accepting, the
-   * generation moved on, or the write was refused (which pauses the pane, as for typing).
+   * generation moved on, or the write was refused (which pauses the pane, as for typing); `partial` when only the
+   * text up to the first Return was written (an agent command's password prompt took it) and the rest was dropped.
    * Copies bytes synchronously before returning; callers may wipe their buffer immediately. The pane
    * owns and purges its queued copy on acceptance, refusal, generation change or disposal.
    */
-  deliver(bytes: Uint8Array, generation: number): Promise<"sent" | "refused">;
+  deliver(bytes: Uint8Array, generation: number): Promise<DeliverOutcome>;
 }
+export type DeliverOutcome = "sent" | "partial" | "refused";
 export type TerminalInputs = Map<string, TerminalInputHandle>;
 export const TerminalInputsContext = createContext<TerminalInputs | null>(null);

@@ -93,6 +93,7 @@ const problems: Record<PaneError, string> = {
   busy: "This Mac is still waiting on another folder. Try again in a moment.",
   // Terminal-only (SST-041); Files never receives it.
   held: "Files are unavailable right now. Try again.",
+  "partly-held": "Files are unavailable right now. Try again.",
   unavailable: "Files are unavailable right now. Try again.",
 };
 const gotoProblems: Partial<Record<PaneError, string>> = {

@@ -1723,3 +1723,18 @@ Rules:
     - Full E2E was 94/95 before the fixes; the one failure, the `desktop.spec` allowlist, is fixed.
     - Focused agent specs pass after the fixes.
   - **Recurring:** `npm test` hung a second time, now pinpointed in `tests/unit/local-pty.test.ts` ("cancellation waits for actual in-flight native input"), a file untouched by SST-041. Investigate in ticket 08.
+- **SST-041/05 done (2026-10-23): password handoff.**
+  - **Prompt detection:** bounded patterns (sudo, `password:`, git, passphrase, OTP, PIN) on the current line after a 100 ms quiet period. The prompt is handed to the user in the pane, with a card and banner that name the command.
+  - **Handoff scope:** only for a *simple* command (no control operators, substitutions or redirects) whose first word is in `PROMPTING_PROGRAMS`, in a non-read-only step.
+  - **Read-only steps:** run with `</dev/null`; any prompt there is refused.
+  - **Entries:** line-edited. Input passes only up to the first Return or Ctrl+C, a cut write reports `partly-held`, and held keys are dropped, never replayed.
+  - **Output withholding:** if a finished entry (plain, trimmed or base64) shows up in a command's output, that whole output is withheld, which leaves the agent at most one bit per entry. Buffers are zeroed on a best-effort basis.
+  - **Pre-probe refusal:** if a prompt is already waiting, ssterm refuses rather than probing (fixes the 02 probe/sudo limit).
+  - **Review:**
+    - First reviewer BLOCKED, provisionally and partially: exclusion ended at the newline. Hardened with `</dev/null`, the program allowlist, matching and the warning.
+    - Complete second review APPROVED. M1 (redaction oracle → withhold) and M2 (simple commands only) fixed, plus L1–L9.
+  - **Residual limit, documented:** second prompts under a listed wrapper (`sudo sh -c`, `ssh host 'cmd'`, askpass) can still be handed off. The warning naming the command is the control.
+  - **Checks:**
+    - typecheck pass, unit 841/842 (1 known skip), build pass.
+    - Full E2E 96/96 before the final fix round; the focused agent and terminal specs pass after it.
+    - E2E uses a bash `read -s` sudo stand-in, because the image has no sudo.

@@ -7,7 +7,7 @@
 //                anything else              echoed
 //   sub agent:   goal "run:<command>;;<command>" runs each command with run_command; with a "plan:<command>;;<command>##"
 //                prefix it first calls propose_plan with those commands (ticket 04) and runs the rest whatever the answer
-// Every launch appends one JSON line to $HOME/fake-claude.log.
+// Every launch appends one JSON line to $HOME/fake-claude.log, and every tool call one to $HOME/fake-claude-calls.log.
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -72,7 +72,12 @@ const request = (method, params) => new Promise((resolve) => {
   waiting.set(id, resolve);
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
 });
-const call = async (name, args) => (await request("tools/call", { name, arguments: args })).result;
+// Every tool result this CLI receives, so a test can prove what reached the model (ticket 05: never a password).
+const call = async (name, args) => {
+  const { result } = await request("tools/call", { name, arguments: args });
+  appendFileSync(join(home, "fake-claude-calls.log"), `${JSON.stringify({ pid: process.pid, role, name, args, result })}\n`);
+  return result;
+};
 const init = await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fake-claude", version: "2.1.309" } });
 child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
 const tools = (await request("tools/list", {})).result.tools.map((tool) => `mcp__ssterm__${tool.name}`);

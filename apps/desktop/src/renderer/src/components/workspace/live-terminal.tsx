@@ -17,6 +17,7 @@ import "@xterm/xterm/css/xterm.css";
 import {
   BanIcon,
   BotIcon,
+  KeyRoundIcon,
   CircleDotIcon,
   CircleIcon,
   CircleOffIcon,
@@ -72,7 +73,7 @@ import {
 import { terminalIdentity } from "@/lib/terminal-target";
 import { copyText } from "@/lib/clipboard";
 import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
-import { TerminalInputsContext, type TerminalInputHandle } from "@/components/workspace/terminal-inputs";
+import { TerminalInputsContext, type DeliverOutcome, type TerminalInputHandle } from "@/components/workspace/terminal-inputs";
 import {
   terminalSearchDecorations,
   terminalStyle,
@@ -123,7 +124,7 @@ interface Controls {
   /** What is typed after the shell's prompt (OSC 133;B), or null when not at an integrated prompt. */
   prefix(): string | null;
   /** Inserts text at the prompt through the pane's queue (bracketed when the shell asks); never adds Enter. */
-  insert(text: string, generation: number): Promise<"sent" | "refused">;
+  insert(text: string, generation: number): Promise<DeliverOutcome>;
 }
 interface Suggestions { generation: number; prefix: string; items: string[] }
 
@@ -190,9 +191,11 @@ export function LiveTerminal({
   const [pending, setPending] = useState<PendingPaste>();
   const pasteSerial = useRef(0);
   const [suggestions, setSuggestions] = useState<Suggestions>();
-  // SST-041: while an agent command runs, typed input stays here (main holds it too); only Ctrl+C is sent.
+  // SST-041: while an agent command runs, typed input stays here (main holds it too); only Ctrl+C is sent. At a password
+  // prompt (A4) input flows to the pane until Return; main decides what passes.
   const agentRunning = useRef(false);
-  agentRunning.current = ready && !!session.agent;
+  const passwordPrompt = ready && !!session.agent?.password;
+  agentRunning.current = ready && !!session.agent && !passwordPrompt;
   // A pane that leaves Ready (lock, disconnect, failure) drops its suggestions at once.
   if (!ready && suggestions) setSuggestions(undefined);
 
@@ -331,7 +334,7 @@ export function LiveTerminal({
     // Input is sent strictly in order. After any refused write nothing later is sent until the
     // user resumes, so the remote only ever sees a prefix of what was typed.
     // `settle` reports one delivered chunk (snippets); typing has none.
-    const queue: { bytes: Uint8Array; generation: number; settle?: (sent: boolean) => void }[] = [];
+    const queue: { bytes: Uint8Array; generation: number; settle?: (sent: boolean, partial?: boolean) => void }[] = [];
     let queued = 0;
     let sending = false;
     let paused = false;
@@ -366,15 +369,17 @@ export function LiveTerminal({
         const request = { ...identity(), bytes };
         const result = await bridge.writeTerminal(request).catch(() => undefined);
         bytes.fill(0);
-        settle?.(!!result?.ok);
+        // Written only up to Return at an agent command's password prompt; the rest was dropped (ticket 05).
+        const partial = !!result && !result.ok && result.error.code === "partly-held";
+        settle?.(!!result?.ok, partial);
         // Held by a running agent command (main's own check): dropped and said so, not a paused pane.
-        if (result && !result.ok && result.error.code === "held") notify(result.error.message);
+        if (result && !result.ok && (result.error.code === "held" || partial)) notify(result.error.message);
         // A refusal for a generation that has since been replaced must not pause the new one.
         else if (!result?.ok && request.generation === current) pause();
       }
       sending = false;
     };
-    const send = (input: Uint8Array, settle?: (sent: boolean) => void) => {
+    const send = (input: Uint8Array, settle?: (sent: boolean, partial?: boolean) => void) => {
       if (agentRunning.current) {
         // Only a lone Ctrl+C goes through, even when earlier input paused this pane: it is how the user takes over.
         if (input.byteLength === 1 && input[0] === 0x03 && live && !cancelled) {
@@ -410,7 +415,7 @@ export function LiveTerminal({
           copy.fill(0);
           return done("refused");
         }
-        send(copy, (sent) => done(sent ? "sent" : "refused"));
+        send(copy, (sent, partial) => done(sent ? "sent" : partial ? "partial" : "refused"));
       }),
     };
     inputs?.set(sessionId, handle);
@@ -761,12 +766,20 @@ export function LiveTerminal({
       <div className="live-terminal-frame">
         <div ref={host} className="live-terminal" />
         {ready && session.agent ? (
-          <div className="live-terminal-agent" role="status" data-testid="agent-banner">
-            <BotIcon aria-hidden="true" />
-            <span className="live-terminal-agent-text">
-              Agent running: <code className="live-terminal-agent-command" title={session.agent.command}>{session.agent.command}</code>
-              <span className="text-muted-foreground"> · input held</span>
-            </span>
+          <div className="live-terminal-agent" role="status" data-testid="agent-banner" data-password={passwordPrompt || undefined}>
+            {passwordPrompt ? <KeyRoundIcon aria-hidden="true" /> : <BotIcon aria-hidden="true" />}
+            {passwordPrompt ? (
+              <span className="live-terminal-agent-text" title={session.agent.command}>
+                Type your password in the terminal — ssterm does not pass what you type to the agent
+                <span className="text-muted-foreground"> · only if you expected this prompt from </span>
+                <code className="live-terminal-agent-command">{session.agent.command}</code>
+              </span>
+            ) : (
+              <span className="live-terminal-agent-text">
+                Agent running: <code className="live-terminal-agent-command" title={session.agent.command}>{session.agent.command}</code>
+                <span className="text-muted-foreground"> · input held</span>
+              </span>
+            )}
             <Button size="sm" variant="outline" onClick={stopAgent}>
               <BanIcon data-icon="inline-start" aria-hidden="true" />
               Stop

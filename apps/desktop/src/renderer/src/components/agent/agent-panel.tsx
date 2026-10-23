@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BotIcon, ChevronRightIcon, SendIcon, ShieldAlertIcon, XIcon } from "lucide-react";
+import { BotIcon, ChevronRightIcon, KeyRoundIcon, SendIcon, ShieldAlertIcon, XIcon } from "lucide-react";
 import type { AgentConversation, AgentMode, AgentPlan, AgentStep, AgentTask, Owner } from "@ssterm/contracts";
 import { AGENT_MODELS, AGENT_MODES, MAX_AGENT_MESSAGE } from "@ssterm/contracts";
 import { EnvironmentBadge } from "@/components/connection/host-identity";
@@ -28,6 +28,8 @@ const stepStatus = (step: AgentStep): string => {
     case "ended": return "Session ended";
     case "not-at-prompt": return "Not run: terminal busy";
     case "not-started": return "Typed, not started";
+    case "password-handoff": return "Password prompt ended";
+    case "password-prompt-refused": return "Stopped: password prompt";
   }
 };
 
@@ -71,12 +73,15 @@ export function AgentPanel({
   owner,
   sessionId,
   conversation,
+  password,
   onClose,
 }: {
   owner: Owner;
   sessionId: string;
   /** Undefined until main publishes it, and again once it has ended (session end, lock, or the agent turned off). */
   conversation: AgentConversation | undefined;
+  /** A4: the agent command (text) that waits at a password prompt in the bound session; the user types it in the pane. */
+  password?: string;
   onClose(): void;
 }) {
   const [seen, setSeen] = useState(false);
@@ -201,6 +206,23 @@ export function AgentPanel({
               Allow every command
             </Button>
           </div>
+        </section>
+      ) : null}
+      {password !== undefined && target ? (
+        <section role="alert" aria-labelledby="agent-password-title" className="grid shrink-0 gap-1.5 border-b border-border px-3 py-2 text-sm" data-testid="agent-password">
+          <h3 id="agent-password-title" className="flex items-center gap-2 font-medium">
+            <KeyRoundIcon aria-hidden="true" className="size-4 shrink-0 text-primary" />
+            Waiting for you to type the password in the terminal
+          </h3>
+          <TargetLine target={target} />
+          <p className="text-connection-connecting" data-testid="agent-password-warning">
+            Only type a password if you expected this prompt from <code className="font-mono text-xs break-all">{password}</code>.
+          </p>
+          <p className="type-caption text-muted-foreground">
+            Type it in the terminal and press Return. ssterm does not pass what you type to the agent, and withholds the
+            command's output if it prints your entry back; it cannot recognise every transformed copy. Stop in the terminal
+            cancels the command.
+          </p>
         </section>
       ) : null}
       <div ref={log} role="log" aria-live="polite" aria-label="Conversation" className="min-h-0 flex-1 overflow-y-auto px-3 py-2" data-testid="agent-messages">

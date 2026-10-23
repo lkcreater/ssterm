@@ -77,7 +77,7 @@ export type ConfigureAgentResponse =
   | { status: "failed" };
 
 export type AgentTaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
-export type AgentStepStatus = "completed" | "interrupted" | "timeout" | "alternate-screen" | "ended" | "not-at-prompt" | "not-started" | "refused";
+export type AgentStepStatus = "completed" | "interrupted" | "timeout" | "alternate-screen" | "ended" | "not-at-prompt" | "not-started" | "password-handoff" | "password-prompt-refused" | "refused";
 /** ssterm's own record of one command the sub agent asked for (run or refused); `get_task_status` returns the same. */
 export interface AgentStep { command: string; status: AgentStepStatus; exitCode: number | null; output: string; truncated: boolean; via: AgentStepVia | null }
 /**
@@ -140,7 +140,7 @@ const bounded = (v: unknown, max: number): v is string => typeof v === "string" 
 /** One visible line or paragraph: no C0 controls besides tab and newline. */
 const prose = (v: unknown, max: number): v is string => bounded(v, max) && !/[\u0000-\u0008\u000b-\u001f\u007f]/u.test(v);
 const ENVIRONMENTS: readonly unknown[] = ["DEV", "STAGING", "PROD", null];
-const STEP_STATUS: readonly unknown[] = ["completed", "interrupted", "timeout", "alternate-screen", "ended", "not-at-prompt", "not-started", "refused"];
+const STEP_STATUS: readonly unknown[] = ["completed", "interrupted", "timeout", "alternate-screen", "ended", "not-at-prompt", "not-started", "password-handoff", "password-prompt-refused", "refused"];
 const TASK_STATUS: readonly unknown[] = ["queued", "running", "completed", "failed", "cancelled"];
 const VIA: readonly unknown[] = ["read-only", "plan", "approval", "full-allow", null];
 const PLAN_STATUS: readonly unknown[] = ["pending", "approved", "rejected", "expired", "cancelled"];

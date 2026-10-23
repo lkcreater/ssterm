@@ -373,6 +373,19 @@ export function TerminalWorkspace({
       type: "error",
     });
   };
+  // A4: when the panel's session waits at a password prompt, its pane is shown and focused for the user to type.
+  const agentCommand = sessions.find((session) => session.sessionId === agentSession)?.agent;
+  const passwordPrompt = agentCommand?.password ? agentCommand.command : undefined;
+  useEffect(() => {
+    if (passwordPrompt === undefined || hidden || !agentSession) return;
+    // An unsent message in the agent composer keeps focus there; the card alone tells the user (L4).
+    const draft = document.querySelector<HTMLTextAreaElement>('[data-testid="agent-panel"] textarea[aria-label="Message to the agent"]');
+    if (draft?.value.trim()) return;
+    dispatch({ type: "reveal", sessionId: agentSession });
+    const timer = setTimeout(() => document.querySelector<HTMLElement>(
+      `.terminal-workspace section[data-session-id="${CSS.escape(agentSession)}"] .xterm-helper-textarea`)?.focus());
+    return () => clearTimeout(timer);
+  }, [passwordPrompt !== undefined, hidden, agentSession]);
   const closeAgentPanel = () => {
     const sessionId = agentSession;
     setAgentSession(undefined);
@@ -557,6 +570,7 @@ export function TerminalWorkspace({
                 owner={owner}
                 sessionId={agentSession}
                 conversation={agent?.conversations.find((conversation) => conversation.sessionId === agentSession)}
+                password={passwordPrompt}
                 onClose={closeAgentPanel}
               />
             </ResizablePanel>

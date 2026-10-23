@@ -60,6 +60,8 @@ export type ErrorCode =
   | "busy"
   /** SST-041: user input to a pane while an agent command runs there. */
   | "held"
+  /** SST-041 ticket 05: input up to Return reached a password prompt; the rest of that write was dropped. */
+  | "partly-held"
   | "unavailable";
 export type Result<T> =
   | { ok: true; value: T }
@@ -328,6 +330,7 @@ const messages: Record<ErrorCode, string> = {
   conflict: "The state changed. Refresh and try again.",
   busy: "The session is not accepting input. Try again.",
   held: "Input is held while an agent command runs. Ctrl+C or Stop interrupts it.",
+  "partly-held": "Input up to Return reached the password prompt; the rest was held while the agent command runs.",
   unavailable: "The application is unavailable.",
 };
 export function failure<T = never>(code: ErrorCode): Result<T> {

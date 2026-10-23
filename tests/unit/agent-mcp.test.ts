@@ -9,7 +9,7 @@ import { createAgentTerminals, observeBoth, type AgentGate, type GateDecision } 
 import { createTerminalController } from "../../apps/desktop/src/main/terminals.ts";
 import { sessionOwnerId } from "../../apps/desktop/src/main/session-runtime.ts";
 import { SessionRegistry, TransientSecrets, type SessionContext } from "../../packages/services/src/index.ts";
-import { channels, failure, type TerminalState } from "../../packages/contracts/src/index.ts";
+import { channels, failure, isTerminalSession, type TerminalState } from "../../packages/contracts/src/index.ts";
 import type { ResolvedHostConfig, TerminalChannel } from "../../packages/domain/src/index.ts";
 
 const owner = { windowId: 1, generation: 1 };
@@ -97,7 +97,7 @@ test("a credential binds one Ready SSH generation over a 0600 socket in a 0700 f
   const { agents, target, cleanup, folder } = await lab();
   try {
     assert.equal(existsSync(join(folder, "mcp")), false, "no socket until a conversation is bound");
-    assert.equal(agents.input(ownerId, target.sessionId, target.generation, bytes("x")), true, "no executor, no hold, before a binding");
+    assert.ok(agents.input(ownerId, target.sessionId, target.generation, bytes("x")), "no executor, no hold, before a binding");
     assert.equal(await agents.issue(ownerId, "missing"), undefined);
     assert.equal(await agents.issue(sessionOwnerId({ windowId: 2, generation: 1 }), target.sessionId), undefined, "another owner's session");
     const issued = (await agents.issue(ownerId, target.sessionId))!;
@@ -153,7 +153,7 @@ test("run_command: a non-read-only command types nothing; a read-only one is typ
     assert.ok(!writes[0]!.includes("cat /etc/hostname"));
     emit(`\x1b]ssterm;ready;${nonce}\x07$ `);
     assert.equal(writes.length, 2);
-    assert.ok(writes[1]!.endsWith("\r") && writes[1]!.includes("; cat /etc/hostname; "));
+    assert.ok(writes[1]!.endsWith("\r") && writes[1]!.includes("; { cat /etc/hostname; } </dev/null; "), "a read-only step reads nothing from the terminal");
     assert.deepEqual(states.at(-1)!.sessions[0]!.agent, { command: "cat /etc/hostname" }, "the pane banner names the command");
     // A second command waits for the first: refused, not queued.
     assert.match((await agent.call("run_command", { command: "pwd" })).content[0].text, /one runs at a time/u);
@@ -389,5 +389,61 @@ test("M1: a card belongs to the MCP request that raised it; notifications/cancel
     assert.equal(writes.length, 0);
     assert.equal(steps.length, 2, "one record per admitted call");
     first.socket.destroy();
+  } finally { cleanup(); }
+});
+
+test("ticket 05: a password prompt is handed to the pane (banner, input passes until Return), the result carries only the handoff note; a waiting prompt refuses the probe", async () => {
+  const { agents, target, controller, writes, states, emit, cleanup } = await lab();
+  try {
+    const steps: unknown[] = [];
+    // The user's own sudo left at its prompt before the binding: nothing is typed into it.
+    emit("$ sudo -v\r\n[sudo] password for fixture: ");
+    const gate: AgentGate = { authorize: async (command) => ({ run: command, via: "full-allow" }), propose: async () => { throw new Error("unused"); } };
+    const issued = (await agents.issue(ownerId, target.sessionId, { record: (step) => steps.push(step), gate }))!;
+    const agent = await client(issued.socketPath, issued.credential);
+    const pendingPrompt = await agent.call("run_command", { command: "pwd" });
+    assert.equal(pendingPrompt.isError, true);
+    assert.match(pendingPrompt.content[0].text, /waiting at a password prompt, so nothing was typed/u);
+    assert.equal(writes.length, 0);
+    emit("\r\nsudo: 1 incorrect password attempt\r\n$ ");
+
+    const pending = agent.call("run_command", { command: "sudo cat /etc/hostname" });
+    await settle();
+    const nonce = nonceOf(writes[0]!);
+    emit(`\x1b]ssterm;ready;${nonce}\x07$ `);
+    assert.ok(!writes[1]!.includes("/dev/null"), "not a read-only step");
+    emit(`sudo cat /etc/hostname\r\n\x1b]ssterm;start;${nonce}\x07[sudo] password for fixture: `);
+    assert.deepEqual(controller.writeTerminal({ ...target, bytes: bytes("early") }), failure("held"), "held until the prompt stays quiet");
+    await new Promise((done) => setTimeout(done, 150));
+    assert.deepEqual(states.at(-1)!.sessions[0]!.agent, { command: "sudo cat /etc/hostname", password: true });
+    for (const key of "s3cret-P") assert.ok(controller.writeTerminal({ ...target, bytes: bytes(key) }).ok);
+    // A write that runs past Return: the entry up to Return goes through, the rest is dropped; a distinct outcome.
+    assert.deepEqual(controller.writeTerminal({ ...target, bytes: bytes("W\recho REPLAY\r") }), failure("partly-held"));
+    assert.deepEqual(states.at(-1)!.sessions[0]!.agent, { command: "sudo cat /etc/hostname" }, "Return ends the entry");
+    assert.deepEqual(controller.writeTerminal({ ...target, bytes: bytes("more\r") }), failure("held"));
+    assert.equal(writes.slice(2).join(""), "s3cret-PW\r", "the entry went to the pane, nothing else");
+    // The program prints the entry back: the whole output is withheld.
+    emit(`\r\nlab-host s3cret-PW\r\n\x1b]ssterm;done;${nonce};0\x07$ `);
+    const result = await pending;
+    assert.equal(result.isError, false);
+    assert.deepEqual(result.structuredContent, { status: "completed", command: "sudo cat /etc/hostname", exitCode: 0,
+      output: "[ssterm: output withheld: it contained what you typed at a password prompt]\n", truncated: false, outputWithheld: true, passwordPrompts: 1, passwordHandedOff: true,
+      note: "A password prompt was handed to the user, who typed in the terminal; what they typed is not included." });
+    assert.ok(!JSON.stringify([result, steps, states]).includes("s3cret"));
+    assert.equal((steps.at(-1) as { status: string }).status, "completed");
+    // Held bytes were dropped, never kept: once the command is over, input flows and nothing earlier is replayed.
+    assert.ok(controller.writeTerminal({ ...target, bytes: bytes("next") }).ok);
+    assert.equal(writes.slice(2).join(""), "s3cret-PW\rnext");
+    agent.socket.destroy();
+  } finally { cleanup(); }
+});
+
+test("ticket 05: the terminal contract carries the password flag only as true", async () => {
+  const { states, cleanup } = await lab();
+  try {
+    const session = states.at(-1)!.sessions[0]!;
+    assert.ok(isTerminalSession({ ...session, agent: { command: "ls", password: true } }));
+    for (const agent of [{ command: "ls", password: false }, { command: "ls", password: "yes" }, { command: "ls", typed: "x" }])
+      assert.equal(isTerminalSession({ ...session, agent }), false, JSON.stringify(agent));
   } finally { cleanup(); }
 });

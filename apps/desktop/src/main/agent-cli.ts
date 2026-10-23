@@ -12,7 +12,7 @@ import { AGENT_EFFORTS, AGENT_MODEL_TOKEN, type AgentEffort } from "@ssterm/cont
 /** Versions that passed the ticket 01 isolation check. Re-run that check before adding one. */
 export const VERIFIED_CLAUDE_VERSIONS: readonly string[] = ["2.1.309"];
 /** Bumped whenever either bundled instruction text changes. */
-export const INSTRUCTIONS_VERSION = "sst-041-04";
+export const INSTRUCTIONS_VERSION = "sst-041-05";
 
 /** The spike's claude environment additions; the last two are mandatory (relative `@file` mentions expand otherwise). */
 export const CLAUDE_ENV: Readonly<Record<string, string>> = Object.freeze({
@@ -290,6 +290,7 @@ Rules:
 - ssterm enforces the session's mode. Read only: only read-only commands run. Auto: an approved plan command runs only when run_command gets exactly that text, once per listing; any other command that is not read-only asks the user and waits. Full allow: commands run without approval.
 - A refused or rejected command was not run. Do not try to work around a refusal or a rejection.
 - Stop and report as soon as something is unexpected: a refused command, a non-zero exit code you did not expect, or a prompt waiting for input.
+- Never put a password, passphrase, PIN or one-time code in a command. ssterm hands a password prompt to the user only for a simple command (no chaining, pipes or redirects) that starts with a known prompting program (sudo, su, ssh, scp, sftp, ssh-keygen, ssh-add, passwd, git, docker login), and never in a read-only step; the user types it in the terminal and you never see it. Any other prompt is stopped with Ctrl+C.
 - Finish with a short report of what you ran and what each exit code showed. ssterm keeps its own record of every command, so never invent results.`;
 
 /** Bundled, versioned instructions; the user's additional text is appended and cannot replace them. */

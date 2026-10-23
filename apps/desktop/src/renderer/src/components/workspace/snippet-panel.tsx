@@ -142,6 +142,8 @@ export function SnippetPanel({
         setInFlight(false);
       });
     plan.bytes.fill(0);
+    if (result === "partial")
+      return problem(`Partly sent: ${captured.label} took the text up to the first line break (an agent command's password prompt); the rest was not sent.`);
     if (result !== "sent") return problem(`Not sent: ${captured.label} did not accept input. Nothing more was sent.`);
     if (fromComposer) clearComposer();
     setFeedback({
