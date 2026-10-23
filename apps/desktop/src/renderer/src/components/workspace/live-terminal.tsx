@@ -148,6 +148,7 @@ export function LiveTerminal({
   hidden = false,
   style,
   actions,
+  external,
   onDisconnect,
 }: {
   owner: Owner;
@@ -159,6 +160,8 @@ export function LiveTerminal({
   style?: CSSProperties;
   /** Extra header controls, such as the pane menu. */
   actions?: ReactNode;
+  /** SST-041 ticket 07: the banner of an external MCP client bound to this session. */
+  external?: ReactNode;
   /** Disconnect ends the session and removes the pane (the workspace owns the layout). */
   onDisconnect?(): void;
 }) {
@@ -786,6 +789,7 @@ export function LiveTerminal({
             </Button>
           </div>
         ) : null}
+        {ready ? external : null}
         {searchOpen ? (
           <TerminalSearchBar
             label={label}

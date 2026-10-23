@@ -1062,6 +1062,12 @@
   border: 1px solid var(--primary);
   border-radius: var(--radius);
 }
+.live-terminal-external {
+  top: auto;
+  bottom: 8px;
+  left: auto;
+  max-width: calc(100% - 24px);
+}
 .live-terminal-agent > svg {
   flex: none;
   width: 16px;

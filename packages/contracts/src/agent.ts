@@ -220,10 +220,12 @@ export interface AgentConversation {
   messages: AgentMessage[];
   tasks: AgentTask[];
 }
-export interface AgentState { owner: Owner; sequence: number; enabled: boolean; provider: AgentProvider; conversations: AgentConversation[] }
+/** `external` (ticket 07): pending pair/bind requests (every window) and this window's external bindings. */
+export interface AgentState { owner: Owner; sequence: number; enabled: boolean; provider: AgentProvider; conversations: AgentConversation[]; external: ExternalAgentState }
 export interface AgentStateRequest { owner: Owner }
 export interface OpenAgentRequest { owner: Owner; sessionId: string; generation: number }
-export type OpenAgentResponse = { status: "opened" } | { status: "refused"; reason: "disabled" | "session" | "provider" | "limit" };
+/** `external` (ticket 07): an external MCP client is bound to this session; a session has one or the other. */
+export type OpenAgentResponse = { status: "opened" } | { status: "refused"; reason: "disabled" | "session" | "provider" | "limit" | "external" };
 export interface AgentConversationRequest { owner: Owner; sessionId: string }
 export interface SendAgentRequest { owner: Owner; sessionId: string; text: string }
 export type SendAgentResponse = { status: "sent" } | { status: "refused"; reason: "busy" | "ended" };
@@ -309,16 +311,16 @@ export function isAgentConversation(v: unknown): v is AgentConversation {
     Array.isArray(v.tasks) && v.tasks.length <= MAX_AGENT_TASKS && v.tasks.every(isTask);
 }
 export function isAgentState(v: unknown): v is AgentState {
-  return exactObject(v, ["owner", "sequence", "enabled", "provider", "conversations"]) && isOwner(v.owner) && isCounter(v.sequence) &&
+  return exactObject(v, ["owner", "sequence", "enabled", "provider", "conversations", "external"]) && isOwner(v.owner) && isCounter(v.sequence) &&
     typeof v.enabled === "boolean" && PROVIDERS.includes(v.provider) && Array.isArray(v.conversations) && v.conversations.length <= 8 &&
-    v.conversations.every(isAgentConversation);
+    v.conversations.every(isAgentConversation) && isExternalAgentState(v.external);
 }
 export function isAgentStateRequest(v: unknown): v is AgentStateRequest { return exactObject(v, ["owner"]) && isOwner(v.owner); }
 export function isOpenAgentRequest(v: unknown): v is OpenAgentRequest {
   return exactObject(v, ["owner", "sessionId", "generation"]) && isOwner(v.owner) && identifier(v.sessionId) && isCounter(v.generation) && v.generation > 0;
 }
 export function isOpenAgentResponse(v: unknown): v is OpenAgentResponse {
-  if (exactObject(v, ["status", "reason"])) return v.status === "refused" && ["disabled", "session", "provider", "limit"].includes(v.reason as string);
+  if (exactObject(v, ["status", "reason"])) return v.status === "refused" && ["disabled", "session", "provider", "limit", "external"].includes(v.reason as string);
   return exactObject(v, ["status"]) && v.status === "opened";
 }
 export function isAgentConversationRequest(v: unknown): v is AgentConversationRequest {
@@ -354,5 +356,109 @@ export function isDecideAgentRequest(v: unknown): v is DecideAgentRequest {
 }
 export function isDecideAgentResponse(v: unknown): v is DecideAgentResponse {
   if (exactObject(v, ["status", "reason"])) return v.status === "refused" && (v.reason === "stale" || v.reason === "production");
+  return exactObject(v, ["status"]) && v.status === "applied";
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// SST-041 ticket 07: external MCP clients (A7, A8). Paired once through a one-time token the user approves; each tool
+// call runs only in a session the user binds in a drawer, under the same mode, plan, PROD and password rules.
+
+export const MAX_EXTERNAL_CLIENTS = 16;
+/** Per-client tool timeout: how long the client waits for one tool call (its cards expire 5 s before it). */
+export const EXTERNAL_TIMEOUT_MIN = 10;
+export const EXTERNAL_TIMEOUT_MAX = 3_600;
+export const EXTERNAL_TIMEOUT_DEFAULT = 60;
+/** A client's own name (shown for approval): letters, marks, digits, spaces and . _ ( ) + @ -; no run of 3+ marks (ticket 04 L1). */
+export const EXTERNAL_CLIENT_NAME = /^[\p{L}\p{M}\p{N}._()+@ -]{1,64}$/u;
+export const isExternalClientName = (v: unknown): v is string => typeof v === "string" && EXTERNAL_CLIENT_NAME.test(v) && v.trim() === v && v.length > 0 &&
+  !/\p{M}{3}/u.test(v);
+export interface ExternalClientView { id: string; name: string; createdAt: number; lastUsedAt: number | null; timeoutSec: number }
+/** `available`: Keychain and the profile folder work; without them nothing can be paired or authenticated. */
+export interface ExternalClientsView {
+  enabled: boolean; available: boolean; socketPath: string; bridgePath: string;
+  /** Suggested folder for the clients' credential files (outside ssterm's profile: the file is the client's). */
+  credentialFolder: string;
+  clients: ExternalClientView[];
+}
+export interface ExternalClientsRequest { owner: Owner }
+export type ExternalClientsAction =
+  | { type: "enable"; enabled: boolean }
+  | { type: "pair" }
+  | { type: "revoke"; clientId: string }
+  | { type: "timeout"; clientId: string; seconds: number };
+export interface UpdateExternalClientsRequest { owner: Owner; action: ExternalClientsAction }
+/** `pairing`: the one-time token, shown once (only for `pair`). */
+export type UpdateExternalClientsResponse =
+  | { status: "saved"; view: ExternalClientsView; pairing: { token: string; expiresAt: number } | null }
+  | { status: "refused"; reason: "disabled" | "unavailable" | "rate-limited" | "limit" | "unknown-client" | "failed" };
+/** A pending approval: a client asking to pair, or a paired client asking for a terminal. */
+export interface ExternalRequestView { id: string; kind: "pair" | "bind"; clientName: string; expiresAt: number }
+/** One client's binding to a session of this window; `task` holds its plan, pending card and ssterm's record. */
+export interface ExternalBindingView {
+  clientId: string; clientName: string; sessionId: string; generation: number; target: AgentConversation["target"];
+  mode: AgentMode; fullAllowAvailable: boolean; task: AgentTask;
+}
+/** `clients`: raised whenever the paired-client list changes (Settings reads it again). */
+export interface ExternalAgentState { requests: ExternalRequestView[]; bindings: ExternalBindingView[]; clients: number }
+/** Approve or deny one request; approving a binding names the Ready SSH session of this window. */
+export type AnswerExternalRequest =
+  | { owner: Owner; requestId: string; decision: "deny" }
+  | { owner: Owner; requestId: string; decision: "approve" }
+  | { owner: Owner; requestId: string; decision: "approve"; sessionId: string; generation: number };
+export type AnswerExternalResponse = { status: "applied" } | { status: "refused"; reason: "stale" | "session" };
+
+const CLIENT_ID = /^[0-9a-f]{32}$/u;
+const REQUEST_ID = /^(?:pair|bind)-[0-9a-f]{8}-[1-9][0-9]{0,5}$/u;
+const isTimestamp = (v: unknown): v is number => isCounter(v);
+const isSeconds = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= EXTERNAL_TIMEOUT_MIN && (v as number) <= EXTERNAL_TIMEOUT_MAX;
+function isExternalClientView(v: unknown): v is ExternalClientView {
+  return exactObject(v, ["id", "name", "createdAt", "lastUsedAt", "timeoutSec"]) && typeof v.id === "string" && CLIENT_ID.test(v.id) &&
+    isExternalClientName(v.name) && isTimestamp(v.createdAt) && (v.lastUsedAt === null || isTimestamp(v.lastUsedAt)) && isSeconds(v.timeoutSec);
+}
+export function isExternalClientsView(v: unknown): v is ExternalClientsView {
+  return exactObject(v, ["enabled", "available", "socketPath", "bridgePath", "credentialFolder", "clients"]) && typeof v.enabled === "boolean" &&
+    typeof v.available === "boolean" && prose(v.socketPath, 1_024) && prose(v.bridgePath, 1_024) && prose(v.credentialFolder, 1_024) &&
+    Array.isArray(v.clients) && v.clients.length <= MAX_EXTERNAL_CLIENTS && v.clients.every(isExternalClientView);
+}
+export function isExternalClientsRequest(v: unknown): v is ExternalClientsRequest { return exactObject(v, ["owner"]) && isOwner(v.owner); }
+function isExternalAction(v: unknown): v is ExternalClientsAction {
+  if (exactObject(v, ["type", "enabled"])) return v.type === "enable" && typeof v.enabled === "boolean";
+  if (exactObject(v, ["type", "clientId", "seconds"])) return v.type === "timeout" && typeof v.clientId === "string" && CLIENT_ID.test(v.clientId) && isSeconds(v.seconds);
+  if (exactObject(v, ["type", "clientId"])) return v.type === "revoke" && typeof v.clientId === "string" && CLIENT_ID.test(v.clientId);
+  return exactObject(v, ["type"]) && v.type === "pair";
+}
+export function isUpdateExternalClientsRequest(v: unknown): v is UpdateExternalClientsRequest {
+  return exactObject(v, ["owner", "action"]) && isOwner(v.owner) && isExternalAction(v.action);
+}
+export function isUpdateExternalClientsResponse(v: unknown): v is UpdateExternalClientsResponse {
+  if (exactObject(v, ["status", "reason"])) return v.status === "refused" &&
+    ["disabled", "unavailable", "rate-limited", "limit", "unknown-client", "failed"].includes(v.reason as string);
+  return exactObject(v, ["status", "view", "pairing"]) && v.status === "saved" && isExternalClientsView(v.view) &&
+    (v.pairing === null || (exactObject(v.pairing, ["token", "expiresAt"]) && typeof v.pairing.token === "string" &&
+      /^[A-Za-z0-9_-]{43}$/u.test(v.pairing.token) && isTimestamp(v.pairing.expiresAt)));
+}
+function isExternalRequestView(v: unknown): v is ExternalRequestView {
+  return exactObject(v, ["id", "kind", "clientName", "expiresAt"]) && typeof v.id === "string" && REQUEST_ID.test(v.id) &&
+    v.id.startsWith(`${v.kind as string}-`) && (v.kind === "pair" || v.kind === "bind") && isExternalClientName(v.clientName) && isTimestamp(v.expiresAt);
+}
+function isExternalBindingView(v: unknown): v is ExternalBindingView {
+  return exactObject(v, ["clientId", "clientName", "sessionId", "generation", "target", "mode", "fullAllowAvailable", "task"]) &&
+    typeof v.clientId === "string" && CLIENT_ID.test(v.clientId) && isExternalClientName(v.clientName) && identifier(v.sessionId) &&
+    isCounter(v.generation) && v.generation > 0 && exactObject(v.target, ["label", "endpoint", "environment"]) &&
+    prose(v.target.label, 400) && prose(v.target.endpoint, 1_300) && ENVIRONMENTS.includes(v.target.environment) &&
+    isMode(v.mode) && typeof v.fullAllowAvailable === "boolean" && isTask(v.task);
+}
+export function isExternalAgentState(v: unknown): v is ExternalAgentState {
+  return exactObject(v, ["requests", "bindings", "clients"]) && isCounter(v.clients) && Array.isArray(v.requests) && v.requests.length <= 2 * MAX_EXTERNAL_CLIENTS + 1 &&
+    v.requests.every(isExternalRequestView) && Array.isArray(v.bindings) && v.bindings.length <= MAX_EXTERNAL_CLIENTS && v.bindings.every(isExternalBindingView);
+}
+export function isAnswerExternalRequest(v: unknown): v is AnswerExternalRequest {
+  const base = (value: Record<string, unknown>) => isOwner(value.owner) && typeof value.requestId === "string" && REQUEST_ID.test(value.requestId);
+  if (exactObject(v, ["owner", "requestId", "decision", "sessionId", "generation"]))
+    return base(v) && v.decision === "approve" && (v.requestId as string).startsWith("bind-") && identifier(v.sessionId) && isCounter(v.generation) && v.generation > 0;
+  return exactObject(v, ["owner", "requestId", "decision"]) && base(v) && (v.decision === "deny" || (v.decision === "approve" && (v.requestId as string).startsWith("pair-")));
+}
+export function isAnswerExternalResponse(v: unknown): v is AnswerExternalResponse {
+  if (exactObject(v, ["status", "reason"])) return v.status === "refused" && (v.reason === "stale" || v.reason === "session");
   return exactObject(v, ["status"]) && v.status === "applied";
 }

@@ -68,6 +68,7 @@ export default defineConfig({
             "package-artifact.spec.ts",
             "upgrade.spec.ts",
             "agent-panel.spec.ts",
+            "agent-external.spec.ts",
           ],
         },
       ]
@@ -114,6 +115,7 @@ export default defineConfig({
             "agent-mcp.spec.ts",
             "agent-panel.spec.ts",
             "agent-custom.spec.ts",
+            "agent-external.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

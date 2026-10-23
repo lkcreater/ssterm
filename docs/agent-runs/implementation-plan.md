@@ -1775,3 +1775,18 @@ Rules:
   - **Pre-existing bug fixed:** `new URL()` threw on a malformed request line during the window; it now uses `URL.parse` and answers 404.
   - **Review:** APPROVED, and its lows are fixed.
   - **Checks:** unit 19/19 for the loopback and app-lock files, typecheck pass. The app-lock Google E2E is pending until SST-041/07 finishes (port 55411 is shared).
+- **SST-041/07 done (2026-10-23): external MCP clients.**
+  - **Off by default.** The socket is 0600 in a 0700 folder, reopened after a lock only when the feature is on, and refuses auth while the app lock is closed.
+  - **Pairing:** a 256-bit single-use token, valid 5 minutes and rate-limited, that burns after wrong presentations. The user approves the client name, and duplicate names are refused. The `<id>_<secret>` credential is delivered once; Keychain stores only its verifier, compared in constant time. An undelivered credential is revoked.
+  - **Revocation:** a revoked marker plus a retry at launch.
+  - **Bridge:** the bundled `ssterm-mcp` writes the credential file (0600) under a unique name per pairing. On a refusal it exits promptly with a clear error line and exit code.
+  - **Binding:** clients cannot list sessions. A bind drawer lists this window's Ready SSH sessions that are not local, not Team and not bound, and main re-validates the choice. External clients use the same A1–A4 gates and request-bound cards that expire at min(5 min, timeout−5 s). A banner shows the client with Stop; Settings lists clients with Revoke.
+  - **Lock:** drops all connections and bindings.
+  - **Review:** APPROVED. Fixed M1 and L1–L7.
+    - M1: an ssterm agent conversation and an external binding can no longer share a session. `read_output` and `cancel` are now per credential.
+    - L1–L7 are hardening and docs fixes.
+  - **Residual:** an established connection's bridge on macOS can linger until the client's next write after revoke or lock. The server refuses immediately.
+  - **Checks:**
+    - typecheck, build and unit 860/861 (1 known skip) pass.
+    - The orchestrator's own full development E2E: 99/99.
+    - Packaged agent-external and package-artifact: 5/5.

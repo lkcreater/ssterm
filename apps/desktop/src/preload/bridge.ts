@@ -60,6 +60,8 @@ import {
   isAgentSettingsRequest, isAgentSettingsView, isConfigureAgentRequest, isCheckAgentProviderRequest, isConfigureAgentResponse, isAgentStateRequest, isAgentState,
   isOpenAgentRequest, isOpenAgentResponse, isAgentConversationRequest, isSendAgentRequest, isSendAgentResponse,
   isCancelAgentTaskRequest, isCancelAgentTaskResponse, isSetAgentModeRequest, isSetAgentModeResponse, isDecideAgentRequest, isDecideAgentResponse,
+  isExternalClientsRequest, isExternalClientsView, isUpdateExternalClientsRequest, isUpdateExternalClientsResponse, isAnswerExternalRequest, isAnswerExternalResponse,
+  type ExternalClientsRequest, type UpdateExternalClientsRequest, type AnswerExternalRequest,
   type AgentSettingsRequest, type ConfigureAgentRequest, type CheckAgentProviderRequest, type AgentStateRequest, type AgentState, type OpenAgentRequest,
   type AgentConversationRequest, type SendAgentRequest, type CancelAgentTaskRequest, type SetAgentModeRequest, type DecideAgentRequest,
   failure,
@@ -801,6 +803,29 @@ export function createDesktopBridge(transport: BridgeTransport): {
       if (!isDecideAgentRequest(request)) return Promise.resolve(failure("invalid-request"));
       const { sessionId, generation, approvalId, decision, production } = request;
       return invoke(channels.decideAgent, [{ owner: { ...request.owner }, sessionId, generation, approvalId, decision, production }], isDecideAgentResponse);
+    },
+    externalClients(request: ExternalClientsRequest) {
+      if (!isExternalClientsRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.externalClients, [{ owner: { ...request.owner } }], isExternalClientsView);
+    },
+    updateExternalClients(request: UpdateExternalClientsRequest) {
+      if (!isUpdateExternalClientsRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.updateExternalClients, [{ owner: { ...request.owner }, action: { ...request.action } }], isUpdateExternalClientsResponse);
+    },
+    answerExternalRequest(request: AnswerExternalRequest) {
+      if (!isAnswerExternalRequest(request)) return Promise.resolve(failure("invalid-request"));
+      const { requestId, decision } = request;
+      const session = "sessionId" in request ? { sessionId: request.sessionId, generation: request.generation } : {};
+      return invoke(channels.answerExternalRequest, [{ owner: { ...request.owner }, requestId, decision, ...session }], isAnswerExternalResponse);
+    },
+    setExternalMode(request: SetAgentModeRequest) {
+      if (!isSetAgentModeRequest(request)) return Promise.resolve(failure("invalid-request"));
+      const { sessionId, generation, mode, acknowledged } = request;
+      return invoke(channels.setExternalMode, [{ owner: { ...request.owner }, sessionId, generation, mode, acknowledged }], isSetAgentModeResponse);
+    },
+    stopExternalBinding(request: AgentConversationRequest) {
+      if (!isAgentConversationRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.stopExternalBinding, [{ owner: { ...request.owner }, sessionId: request.sessionId }], isTerminalActionResponse);
     },
     openLink(request: OpenLinkRequest) {
       if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));

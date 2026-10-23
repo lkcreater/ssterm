@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BotIcon, ChevronRightIcon, KeyRoundIcon, SendIcon, ShieldAlertIcon, XIcon } from "lucide-react";
 import type { AgentConversation, AgentMode, AgentPlan, AgentStep, AgentTask, Owner } from "@ssterm/contracts";
 import { AGENT_MODELS, AGENT_MODES, MAX_AGENT_MESSAGE } from "@ssterm/contracts";
@@ -46,16 +46,16 @@ const planStatus: Record<AgentPlan["status"], string> = {
   expired: "Expired",
   cancelled: "Withdrawn",
 };
-const modeLabels: Record<AgentMode, string> = { "read-only": "Read only", auto: "Auto", "full-allow": "Full allow" };
-const modeNotes: Record<AgentMode, string> = {
+export const modeLabels: Record<AgentMode, string> = { "read-only": "Read only", auto: "Auto", "full-allow": "Full allow" };
+export const modeNotes: Record<AgentMode, string> = {
   "read-only": "Only commands classified read-only run; everything else is refused.",
   auto: "Read-only commands run. Anything else runs only from a plan you approve, or after you approve that command.",
   "full-allow": "Every command the agent asks for runs without approval in this conversation.",
 };
 type Target = AgentConversation["target"];
-type Decide = (approvalId: string, decision: "approve" | "reject", production: boolean) => void;
+export type Decide = (approvalId: string, decision: "approve" | "reject", production: boolean) => void;
 
-function TargetLine({ target }: { target: Target }) {
+export function TargetLine({ target }: { target: Target }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5 type-caption text-muted-foreground">
       <span className="truncate text-foreground" title={target.label}>{target.label}</span>
@@ -74,6 +74,7 @@ export function AgentPanel({
   sessionId,
   conversation,
   password,
+  external,
   onClose,
 }: {
   owner: Owner;
@@ -82,6 +83,8 @@ export function AgentPanel({
   conversation: AgentConversation | undefined;
   /** A4: the agent command (text) that waits at a password prompt in the bound session; the user types it in the pane. */
   password?: string;
+  /** Ticket 07: an external client's binding to this same session (its mode, cards and record). */
+  external?: ReactNode;
   onClose(): void;
 }) {
   const [seen, setSeen] = useState(false);
@@ -228,6 +231,7 @@ export function AgentPanel({
           </p>
         </section>
       ) : null}
+      {external ? <div className="max-h-[50%] shrink-0 overflow-y-auto border-b border-border px-3 py-2">{external}</div> : null}
       <div ref={log} role="log" aria-live="polite" aria-label="Conversation" className="min-h-0 flex-1 overflow-y-auto px-3 py-2" data-testid="agent-messages">
         {ended ? (
           <p className="type-caption text-muted-foreground" data-testid="agent-ended">
@@ -334,25 +338,28 @@ function Decision({ id, kind, target, onDecide }: { id: string; kind: "plan" | "
   );
 }
 
-function TaskCard({ task, target, onDecide, onCancel }: { task: AgentTask; target: Target; onDecide: Decide; onCancel(): void }) {
-  const open = task.status === "queued" || task.status === "running";
+/** `onCancel` absent (an external binding): no status or Cancel; the client's own cancel tool and Stop apply. */
+export function TaskCard({ task, target, onDecide, onCancel }: { task: AgentTask; target: Target; onDecide: Decide; onCancel?(): void }) {
+  const open = !!onCancel && (task.status === "queued" || task.status === "running");
   return (
     <li className="rounded-lg border border-border bg-background p-2" data-testid="agent-task" data-task-id={task.id} data-status={task.status}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="type-caption text-muted-foreground">Task {task.id.slice(5)}</p>
+          {onCancel ? <p className="type-caption text-muted-foreground">Task {task.id.slice(5)}</p> : null}
           <p className="text-sm break-words">{task.goal}</p>
         </div>
-        <Badge variant={task.status === "failed" ? "destructive" : task.status === "running" ? "recording" : "outline"}>
-          {task.status === "running" ? <Spinner aria-hidden="true" /> : null}
-          {taskStatus[task.status]}
-        </Badge>
+        {onCancel ? (
+          <Badge variant={task.status === "failed" ? "destructive" : task.status === "running" ? "recording" : "outline"}>
+            {task.status === "running" ? <Spinner aria-hidden="true" /> : null}
+            {taskStatus[task.status]}
+          </Badge>
+        ) : null}
         {open ? <Button size="xs" variant="outline" onClick={onCancel}>Cancel</Button> : null}
       </div>
       {task.plan ? (
         <div className="mt-2 rounded-md border border-border p-2" data-testid="agent-plan" data-plan-id={task.plan.id} data-status={task.plan.status}>
           <div className="flex items-center gap-2">
-            <p className="min-w-0 flex-1 type-caption text-muted-foreground">Plan proposed by the sub agent</p>
+            <p className="min-w-0 flex-1 type-caption text-muted-foreground">{onCancel ? "Plan proposed by the sub agent" : "Plan proposed by the client"}</p>
             <Badge variant={task.plan.status === "pending" ? "warning" : "outline"}>{planStatus[task.plan.status]}</Badge>
           </div>
           <p className="text-sm break-words">{task.plan.goal}</p>

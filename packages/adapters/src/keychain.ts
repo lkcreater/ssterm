@@ -122,3 +122,32 @@ export class KeychainRecordStore implements RecordStore {
     }
   }
 }
+/**
+ * SST-041 ticket 07: one Keychain item per paired external MCP client (`mcp-client/v1/<client id>`), holding the SHA-256
+ * verifier of its credential; the credential itself goes to the client once and is never stored by ssterm.
+ */
+export class KeychainMcpClientStore {
+  constructor(private readonly namespace: string) {
+    if (namespace !== PRODUCTION_SECRET_NAMESPACE && !testNamespace.test(namespace)) throw new Error('Unsupported secret namespace');
+  }
+  private entry(clientId: string): AsyncEntry | undefined {
+    return /^[0-9a-f]{32}$/u.test(clientId) ? new AsyncEntry(this.namespace, `mcp-client/v1/${clientId}`) : undefined;
+  }
+  async read(clientId: string): Promise<Buffer | 'missing' | 'error'> {
+    try {
+      const value = await this.entry(clientId)?.getSecret();
+      if (value === undefined) return 'error';
+      if (value === null) return 'missing';
+      const bytes = Buffer.from(value);
+      value.fill(0);
+      return bytes;
+    } catch (error) { return classifyProviderError(error) === 'missing' ? 'missing' : 'error'; }
+  }
+  async write(clientId: string, value: Uint8Array): Promise<boolean> {
+    try { const entry = this.entry(clientId); if (!entry) return false; await entry.setSecret(value); return true; } catch { return false; }
+  }
+  async delete(clientId: string): Promise<boolean> {
+    try { await this.entry(clientId)?.deleteCredential(); return true; }
+    catch (error) { return classifyProviderError(error) === 'missing'; }
+  }
+}

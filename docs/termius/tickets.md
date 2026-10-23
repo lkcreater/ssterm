@@ -492,7 +492,7 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 
 ### SST-042 — Google sign-in callback page v2
 
-**Status:** `READY` (authorized 2026-10-23).
+**Status:** `DONE` (09a7c58; Google E2E passed with SST-041/07 review and the 99/99 full run).
 
 **Acceptance:** the loopback OAuth callback page (success, not completed, not found) uses UI v2 Charcoal styling with the icon v2 logo embedded inline. A "Close this window" button attempts to close the window and, when the browser blocks that, shows "close this tab" guidance. The page has a strict CSP and makes no external requests. It never echoes query parameters. The Host, state and single-use behaviour are unchanged.
 

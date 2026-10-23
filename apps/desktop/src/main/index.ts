@@ -59,6 +59,7 @@ import { createTunnelController, registerTunnelHandlers, type TunnelController }
 import { createAgentTerminals, observeBoth, type AgentTerminals } from "./agent-mcp";
 import { createAgentRunner, registerAgentHandlers, type AgentRunner } from "./agent-runner";
 import { sweepCheckSockets } from "./agent-check";
+import { createExternalClients, type ClientKeys } from "./agent-external";
 import {
   claudeCandidates, cliBaseEnv, cliEnv, CODEX_MANAGED, codexCandidates, managedPolicyPaths, parseCodexVersion, resolveClaude, sweepStaleRuns,
   VERIFIED_CODEX_VERSIONS,
@@ -722,7 +723,24 @@ if (ownsInstance) {
     await sweepStaleRuns({ tmp: runTmp, home: agentHome, profile }).catch(() => 0);
     // Isolation-check socket folders left by a crash or forced quit (ticket 06 review L4).
     await sweepCheckSockets().catch(() => 0);
+    // Ticket 07: paired external MCP clients. Their list is a profile file; each credential's verifier is in Keychain (the
+    // test namespace in test profiles). Without Keychain the feature is unavailable.
+    let clientKeys: ClientKeys | undefined;
+    try {
+      const { KeychainMcpClientStore, PRODUCTION_SECRET_NAMESPACE } = await import("@ssterm/adapters/keychain");
+      const namespace = secretNamespace(process.env, PRODUCTION_SECRET_NAMESPACE);
+      if (namespace) clientKeys = new KeychainMcpClientStore(namespace);
+    } catch { clientKeys = undefined; }
+    const testPairing = Number(testUserData ? process.env.SSTERM_TEST_PAIRING_MS : undefined);
+    const externalClients = createExternalClients({
+      store: new FileRecordStore(join(app.getPath("userData"), "mcp-clients.json")), keys: clientKeys,
+      ...(Number.isSafeInteger(testPairing) && testPairing > 0 ? { pairingMs: testPairing } : {}),
+    });
     const runner = createAgentRunner({
+      clients: externalClients,
+      socketPath: join(app.getPath("userData"), "mcp", "ssterm.sock"),
+      credentialFolder: join(homedir(), ".config", "ssterm-mcp"),
+      accessible: () => appLock?.open() ?? true,
       terminals: agents,
       registry: () => desktopSessions?.registry,
       store: new FileRecordStore(join(app.getPath("userData"), "agent-settings.json")),
@@ -750,6 +768,10 @@ if (ownsInstance) {
       graceMs: 2_000,
     });
     agentRunner = runner;
+    agents.serveExternal(runner.externalHooks);
+    // External clients that are on need the socket from launch (no TCP is ever opened).
+    await externalClients.ready.catch(() => undefined);
+    if (externalClients.enabled) await agents.listenExternal();
     const observeAgents = observeBoth(agents.observe, runner.observe);
     // Test seam: with a validated test profile only, E2E mints a conversation credential for a Ready SSH session.
     if (testUserData && process.env.SSTERM_TEST_MCP === "on") {

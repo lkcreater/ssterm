@@ -7,6 +7,12 @@
  * The first line on a connection is the credential, `{"credential":"<token>"}`; there is no reply to it, and a
  * wrong, stale or revoked credential closes the connection. A minimal implementation (initialize, ping, tools/list,
  * tools/call) instead of the MCP SDK: that is the whole surface this endpoint serves, with nothing to bundle.
+ *
+ * Ticket 07: external clients (A8) open with `{"pair":"<one-time token>","name":"<client name>"}` (answered, once the
+ * user approves, with one line `{"credential":"<client credential>"}`) or with their credential. They get the terminal
+ * tools only; the first propose_plan or run_command without a binding asks the user, in ssterm, to pick a session. A
+ * refused pairing or client credential is answered with one line `{"error":"<code>"}` before the connection closes, so
+ * the bridge can say why (ssterm-launched agents' credentials get no answer, as before).
  */
 import { createServer, type Server, type Socket } from "node:net";
 import { createHash, randomBytes } from "node:crypto";
@@ -68,6 +74,11 @@ interface Binding {
   gate?: AgentGate;
   /** A run_command of this binding is in the executor: revoking it interrupts that command. */
   running: boolean;
+  /**
+   * Review M1: this binding's own last result. read_output and cancel answer only for commands this credential started,
+   * never for another agent's command in the same terminal.
+   */
+  last?: AgentRunResult;
 }
 
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -83,6 +94,23 @@ const PROGRESS_MS = 15_000;
 /** sun_path on macOS. */
 const MAX_SOCKET_PATH = 103;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/u;
+
+/** Ticket 07: what the endpoint needs from the external-client registry and the runner (set once both exist). */
+export interface ExternalHooks {
+  enabled(): boolean;
+  /** A paired client's credential, compared in constant time; its id, or undefined (also while locked or off). */
+  authenticate(credential: string): string | undefined;
+  /** Still paired, the feature on and the workspace unlocked. */
+  valid(clientId: string): boolean;
+  /** The first connect: resolves once the user approves the name, else with why it was refused. */
+  pair(token: unknown, name: unknown, signal: AbortSignal): Promise<{ clientId: string; credential: string } | "pairing-refused" | "name-in-use">;
+  /** The credential line could not be written: the new client must not stay valid unseen. */
+  undelivered(clientId: string): void;
+  /** The internal credential of the client's binding; with `ask`, the user is asked to pick a session when there is none. */
+  bind(clientId: string, ask: boolean, signal: AbortSignal): Promise<string | { refuse: string }>;
+}
+/** Lines a pairing connection may send before the user decides (an MCP client initializes at once). */
+const MAX_QUEUED = 16;
 
 /** The terminal tools (sub agents and external clients). */
 export const TOOLS = [
@@ -175,6 +203,9 @@ export function createAgentTerminals(options: {
   const credentials = new Map<string, Binding>();
   const sockets = new Set<Socket>();
   const listeners = new Set<(ownerId: string) => void>();
+  /** External connections: the client id, or null while pairing. */
+  const external = new Map<Socket, string | null>();
+  let hooks: ExternalHooks | undefined;
   let server: Server | undefined;
   let listening: Promise<void> | undefined;
   let epoch = 0;
@@ -251,6 +282,7 @@ export function createAgentTerminals(options: {
         if (typeof started === "string") { decision.undo?.(); return refuse(command, refusals[started]); }
         binding.running = true;
         const result = await started.finally(() => { binding.running = false; });
+        binding.last = result;
         if (result.status === "not-at-prompt") decision.undo?.();
         binding.record?.({ command: shown(command), status: result.status, exitCode: result.exitCode, output: result.output, truncated: result.truncated, via: decision.via });
         const note = notes[result.status] ?? (result.passwordPrompts
@@ -260,29 +292,52 @@ export function createAgentTerminals(options: {
       case "propose_plan": return (binding.gate ?? READ_ONLY_GATE).propose(args, signal);
       case "read_output": {
         if (!none) return text("read_output takes no arguments.", true);
-        const running = executor.peek();
+        const running = binding.running ? executor.peek() : undefined;
         if (running) return text({ status: "running", exitCode: null, ...running });
-        return text(executor.last ?? { status: "none" });
+        return text(binding.last ?? { status: "none" });
       }
       case "cancel":
         if (!none) return text("cancel takes no arguments.", true);
-        return text({ cancelled: executor.cancel() });
+        return text({ cancelled: binding.running ? executor.cancel() : false });
       default:
         return text(`Unknown tool: ${typeof name === "string" ? name.slice(0, 64) : "?"}.`, true);
     }
+  }
+
+  /** An external client's tool call: its binding, asked for when needed (the user picks the session in ssterm). */
+  async function callExternal(clientId: string, name: unknown, args: unknown, signal: AbortSignal): Promise<ToolResult> {
+    if (!TOOLS.some((tool) => tool.name === name)) return text(`Unknown tool: ${typeof name === "string" ? name.slice(0, 64) : "?"}.`, true);
+    const bound = await hooks?.bind(clientId, name === "run_command" || name === "propose_plan", signal) ?? { refuse: "External clients are off." };
+    if (typeof bound !== "string") return text(bound.refuse, true);
+    const binding = credentials.get(digest(bound));
+    if (!binding) return text("The binding ended before this call ran; nothing was sent. Call again to ask the user for a session.", true);
+    return call(binding, name, args, signal);
   }
 
   function accept(socket: Socket) {
     if (disposed || sockets.size >= MAX_CONNECTIONS) { socket.destroy(); return; }
     sockets.add(socket);
     let binding: Binding | undefined;
+    /** Ticket 07: an external client, and a pairing that waits for the user (its lines queue meanwhile). */
+    let client: string | undefined;
+    let pairing: AbortController | undefined;
+    const queued: string[] = [];
+    /** Answered with an error line and closing: nothing more is read. */
+    let rejected = false;
+    const reject = (code: string) => {
+      rejected = true;
+      socket.end(`${JSON.stringify({ error: code })}\n`);
+      setTimeout(() => socket.destroy(), 1_000).unref();
+    };
     let buffered = "";
     let pending = 0;
     /** In-flight tools/call requests of this connection, aborted by `notifications/cancelled` or the connection closing. */
     const inFlight = new Map<string | number, AbortController>();
-    const timer = setTimeout(() => { if (!binding) socket.destroy(); }, AUTH_TIMEOUT_MS);
+    const timer = setTimeout(() => { if (!binding && !client && !pairing) socket.destroy(); }, AUTH_TIMEOUT_MS);
     socket.on("close", () => {
       clearTimeout(timer);
+      pairing?.abort();
+      external.delete(socket);
       sockets.delete(socket);
       binding?.sockets.delete(socket);
       for (const controller of inFlight.values()) controller.abort();
@@ -301,14 +356,39 @@ export function createAgentTerminals(options: {
         const value: unknown = JSON.parse(line);
         if (exactObject(value, ["credential"]) && typeof value.credential === "string" && TOKEN.test(value.credential))
           found = credentials.get(digest(value.credential));
+        else if (hooks && exactObject(value, ["credential"]) && typeof value.credential === "string") {
+          const id = hooks.authenticate(value.credential);
+          if (id) { clearTimeout(timer); client = id; external.set(socket, id); return; }
+          if (!TOKEN.test(value.credential)) { reject("credential-rejected"); return; }
+        } else if (hooks && exactObject(value, ["pair", "name"])) {
+          if (!hooks.enabled()) { reject("pairing-refused"); return; }
+          const controller = new AbortController();
+          pairing = controller;
+          external.set(socket, null);
+          clearTimeout(timer);
+          void hooks.pair(value.pair, value.name, controller.signal).catch(() => "pairing-refused" as const).then((paired) => {
+            pairing = undefined;
+            if (socket.destroyed) { if (typeof paired === "object") hooks?.undelivered(paired.clientId); return; }
+            if (typeof paired === "string") { reject(paired); return; }
+            if (!hooks?.valid(paired.clientId)) { reject("pairing-refused"); return; }
+            client = paired.clientId;
+            external.set(socket, paired.clientId);
+            // Sent once; the client keeps it (the bridge writes it to its credential file). Review L3: if it cannot be
+            // written, the client is revoked.
+            socket.write(`${JSON.stringify({ credential: paired.credential })}\n`, (error) => { if (error) hooks?.undelivered(paired.clientId); });
+            for (const next of queued.splice(0)) if (!socket.destroyed) handle(next, { client: paired.clientId });
+          });
+          return;
+        }
       } catch { /* Not JSON. */ }
       if (!found || !current(found)) { socket.destroy(); return; }
       clearTimeout(timer);
       binding = found;
       found.sockets.add(socket);
     };
-    const handle = (line: string, bound: Binding) => {
-      if (credentials.get(bound.hash) !== bound) { socket.destroy(); return; }
+    const handle = (line: string, peer: Binding | { client: string }) => {
+      const bound = "client" in peer ? undefined : peer;
+      if (bound ? credentials.get(bound.hash) !== bound : !hooks?.valid((peer as { client: string }).client)) { socket.destroy(); return; }
       let message: unknown;
       try { message = JSON.parse(line); } catch { reply({ id: null, error: { code: -32700, message: "Parse error" } }); return; }
       if (!message || typeof message !== "object" || Array.isArray(message)) { reply({ id: null, error: { code: -32600, message: "Invalid Request" } }); return; }
@@ -335,7 +415,7 @@ export function createAgentTerminals(options: {
           return;
         }
         case "ping": reply({ id, result: {} }); return;
-        case "tools/list": reply({ id, result: { tools: bound.role?.tools ?? TOOLS } }); return;
+        case "tools/list": reply({ id, result: { tools: bound?.role?.tools ?? TOOLS } }); return;
         case "tools/call": {
           if (pending >= MAX_PENDING) { reply({ id, error: { code: -32000, message: "Too many calls in progress." } }); return; }
           if (inFlight.has(id)) { reply({ id, error: { code: -32600, message: "A request with this id is in progress." } }); return; }
@@ -349,7 +429,8 @@ export function createAgentTerminals(options: {
           const progress = (typeof token === "string" && token.length <= 256) || (typeof token === "number" && Number.isSafeInteger(token))
             ? setInterval(() => reply({ method: "notifications/progress", params: { progressToken: token, progress: ++beat, message: "waiting" } }), PROGRESS_MS)
             : undefined;
-          void call(bound, request.name, request.arguments, controller.signal).then(
+          void (bound ? call(bound, request.name, request.arguments, controller.signal)
+            : callExternal((peer as { client: string }).client, request.name, request.arguments, controller.signal)).then(
             (result) => reply({ id, result }),
             () => reply({ id, error: { code: -32603, message: "Internal error" } }),
           ).finally(() => {
@@ -365,11 +446,13 @@ export function createAgentTerminals(options: {
     socket.on("data", (chunk: string) => {
       buffered += chunk;
       let newline: number;
-      while ((newline = buffered.indexOf("\n")) >= 0 && !socket.destroyed) {
+      while ((newline = buffered.indexOf("\n")) >= 0 && !socket.destroyed && !rejected) {
         const line = buffered.slice(0, newline).replace(/\r$/u, "");
         buffered = buffered.slice(newline + 1);
         if (!line.trim()) continue;
         if (binding) handle(line, binding);
+        else if (client) handle(line, { client });
+        else if (pairing) { if (queued.push(line) > MAX_QUEUED) socket.destroy(); }
         else authenticate(line);
       }
       if (buffered.length > MAX_LINE) socket.destroy();
@@ -494,11 +577,28 @@ export function createAgentTerminals(options: {
       const binding = TOKEN.test(credential) ? credentials.get(digest(credential)) : undefined;
       if (binding) revoke(binding);
     },
-    /** Lock workspace, screen lock or suspend: every credential is revoked and every connection dropped. */
+    /**
+     * Lock workspace, screen lock or suspend: every credential is revoked and every connection dropped. With external
+     * clients on, the socket comes back at once; a client then needs a new binding (and, under the app lock, an unlock).
+     */
     lock() {
       epoch += 1;
       for (const binding of [...credentials.values()]) revoke(binding);
       closeServer();
+      if (hooks?.enabled() && !disposed) void listen().catch(() => undefined);
+    },
+    /** Ticket 07: the external-client hooks (registry and runner). */
+    serveExternal(next: ExternalHooks): void { hooks = next; },
+    /** Ticket 07: external clients need the socket whenever they are on. */
+    listenExternal(): Promise<boolean> { return disposed ? Promise.resolve(false) : listen().then(() => true, () => false); },
+    /** Drops one external client's connections (revoke), or every external connection (turned off). */
+    dropExternal(clientId?: string): void {
+      for (const [socket, id] of [...external]) if (clientId === undefined || id === clientId) socket.destroy();
+    },
+    /** The credential is still issued and its generation Ready. */
+    active(credential: string): boolean {
+      const binding = TOKEN.test(credential) ? credentials.get(digest(credential)) : undefined;
+      return !!binding && !!current(binding);
     },
     dispose() {
       disposed = true;

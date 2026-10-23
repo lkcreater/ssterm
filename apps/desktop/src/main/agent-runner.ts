@@ -13,7 +13,9 @@ import {
   AGENT_DISCLOSURE_VERSION, AGENT_EFFORTS, AGENT_MODELS, effectiveDefaultModel, isAgentModelId, isVerifiedAgentModel, MAX_AGENT_INSTRUCTIONS, MAX_AGENT_MESSAGES, MAX_AGENT_STEPS, MAX_AGENT_TASKS, channels, exactObject,
   failure, isAgentConversationRequest, isAgentSettingsRequest, isAgentStateRequest, isCancelAgentTaskRequest,
   isConfigureAgentRequest, isDecideAgentRequest, isOpenAgentRequest, isSendAgentRequest, isSetAgentModeRequest,
-  isCheckAgentProviderRequest, isAgentCustomProvider,
+  isCheckAgentProviderRequest, isAgentCustomProvider, isAnswerExternalRequest, isExternalClientsRequest, isUpdateExternalClientsRequest,
+  type AnswerExternalRequest, type AnswerExternalResponse, type ExternalAgentState, type ExternalBindingView, type ExternalClientsAction,
+  type ExternalClientsView, type UpdateExternalClientsResponse,
   type AgentConversation, type AgentCustomProvider, type AgentEffort, type AgentMessage, type AgentMode, type AgentPlan, type AgentProvider, type AgentProviderStatus,
   type AgentProviderView, type AgentSettings, type AgentSettingsView, type AgentState,
   type AgentStep, type AgentTask, type ConfigureAgentResponse, type DecideAgentResponse, type OpenAgentResponse, type Owner, type Result,
@@ -21,7 +23,8 @@ import {
 } from "@ssterm/contracts";
 import type { ObservedTerminal, TerminalObserver } from "@ssterm/domain";
 import type { SessionRegistry } from "@ssterm/services";
-import type { AgentGate, AgentTerminals, AgentToolRole, ToolDefinition, ToolResult } from "./agent-mcp";
+import type { AgentGate, AgentTerminals, AgentToolRole, ExternalHooks, ToolDefinition, ToolResult } from "./agent-mcp";
+import type { ExternalClients } from "./agent-external";
 import { readOnlyRefusal, text, TOOLS } from "./agent-mcp";
 import { APPROVAL_WAIT_MS, MAX_PLANS_PER_TASK, normalizeCommand, parsePlan, takePlanCommand, unshowable } from "./agent-policy";
 import {
@@ -228,8 +231,25 @@ export function taskRecord(task: AgentTask) {
   return { taskId: task.id, goal: task.goal, status: task.status, limitReached: task.limitReached, subAgentReport: task.subAgentReport,
     plan: task.plan, commands };
 }
+/** Ticket 07: plans one external binding may propose (each is a card the user sees). */
+const MAX_EXTERNAL_PLANS = 64;
+/** A client's cards expire 5 s before its tool timeout (at most the usual 5 minutes). */
+const cardMs = (timeoutSec: number) => Math.min(APPROVAL_WAIT_MS, (timeoutSec - 5) * 1_000);
+type ExternalAnswer = { outcome: "approved"; ownerId?: string; sessionId?: string; generation?: number } | { outcome: "denied" | "expired" | "cancelled" };
+interface ExternalRequest { id: string; kind: "pair" | "bind"; clientId?: string; clientName: string; expiresAt: number; finish(answer: ExternalAnswer): void }
+/** One client's binding: a conversation-shaped record (mode, cards) with one long-lived task (plan, approval, record). */
+interface ExternalBinding { clientId: string; clientName: string; conversation: Conversation; task: AgentTask; credential: string }
+
 export function createAgentRunner(options: {
-  terminals: Pick<AgentTerminals, "issue" | "revoke">;
+  terminals: Pick<AgentTerminals, "issue" | "revoke"> & Partial<Pick<AgentTerminals, "active" | "listenExternal" | "dropExternal">>;
+  /** Ticket 07: the paired external clients (absent: the feature is unavailable). */
+  clients?: ExternalClients;
+  /** The MCP socket path shown in the client configuration. */
+  socketPath?: string;
+  /** Suggested folder for external clients' credential files (theirs, outside the profile). */
+  credentialFolder?: string;
+  /** False while the app lock is closed: external clients are refused. */
+  accessible?: () => boolean;
   registry: () => Pick<SessionRegistry, "snapshot"> | undefined;
   store: AgentSettingsStore;
   /** Absolute path of the bundled `ssterm-mcp` bridge. */
@@ -269,6 +289,15 @@ export function createAgentRunner(options: {
   const opening = new Set<string>();
   let settings: StoredAgentSettings = { ...DEFAULT_AGENT_SETTINGS };
   let disposed = false;
+  /** Ticket 07: pending pair/bind requests (every window answers them) and bindings by client id. */
+  const requests = new Map<string, ExternalRequest>();
+  const bindings = new Map<string, ExternalBinding>();
+  const externalNonce = randomBytes(4).toString("hex");
+  let nextRequest = 0;
+  /** Raised when the paired-client list changes. */
+  let clientsRevision = 0;
+  const clientsChanged = () => { clientsRevision += 1; publishAll(); };
+  const accessible = () => !disposed && (options.accessible?.() ?? true);
   const key = (ownerId: string, sessionId: string) => `${ownerId}\n${sessionId}`;
 
   const ready = options.store.read().then((stored) => { settings = parseAgentSettings(stored.status === "present" ? stored.value : undefined); }, () => undefined);
@@ -372,6 +401,19 @@ export function createAgentRunner(options: {
       plan: task.plan && { ...task.plan, commands: task.plan.commands.map((entry) => ({ ...entry })) }, approval: task.approval && { ...task.approval },
     })),
   });
+  const externalView = (ownerId: string): ExternalAgentState => ({
+    clients: clientsRevision,
+    requests: [...requests.values()].map(({ id, kind, clientName, expiresAt }) => ({ id, kind, clientName, expiresAt })),
+    bindings: [...bindings.values()].filter((binding) => binding.conversation.ownerId === ownerId).map((binding): ExternalBindingView => {
+      const { conversation, task } = binding;
+      return {
+        clientId: binding.clientId, clientName: binding.clientName, sessionId: conversation.sessionId, generation: conversation.generation,
+        target: { ...conversation.target }, mode: conversation.mode, fullAllowAvailable: fullAllowAvailable(conversation),
+        task: { ...task, steps: task.steps.map((step) => tail(step, VIEW_OUTPUT, VIEW_NOTE)),
+          plan: task.plan && { ...task.plan, commands: task.plan.commands.map((entry) => ({ ...entry })) }, approval: task.approval && { ...task.approval } },
+      };
+    }),
+  });
   const production = (conversation: Conversation) => conversation.target.environment === "PROD";
   const fullAllowAvailable = (conversation: Conversation) => !production(conversation) || settings.allowFullAllowOnProd;
   const stateFor = (ownerId: string): AgentState | undefined => {
@@ -380,6 +422,7 @@ export function createAgentRunner(options: {
     return {
       owner: { ...listener.owner }, sequence: listener.sequence, enabled: settings.enabled, provider: settings.provider,
       conversations: [...conversations.values()].filter((conversation) => conversation.ownerId === ownerId).map(view),
+      external: externalView(ownerId),
     };
   };
   const publish = (ownerId: string) => {
@@ -584,7 +627,7 @@ export function createAgentRunner(options: {
   }
   /** A card that expired because the CLI stops waiting sooner than 5 minutes says so (the agent stopped waiting). */
   const explain = (conversation: Conversation, outcome: Exclude<Outcome, "approved">) => outcome === "expired" && conversation.approvalMs < approvalMs
-    ? `The agent's CLI stops waiting for a tool call after ${Math.round((conversation.approvalMs + 5_000) / 1_000)} seconds, so the card expired just before that (the agent stopped waiting).`
+    ? `The agent's client stops waiting for a tool call after ${Math.round((conversation.approvalMs + 5_000) / 1_000)} seconds, so the card expired just before that (the agent stopped waiting).`
     : outcomeText[outcome];
   /** L4: ids carry a per-conversation nonce, so a stale renderer decision can never land on another conversation's card. */
   const approvalId = (conversation: Conversation, kind: "plan" | "command") => `${kind}-${conversation.nonce}-${++conversation.nextApproval}`;
@@ -593,7 +636,7 @@ export function createAgentRunner(options: {
   };
 
   /** A1/A2 for one task's sub agent: enforced here, whatever its instructions say. */
-  function gate(conversation: Conversation, task: AgentTask, gone: () => boolean): AgentGate {
+  function gate(conversation: Conversation, task: AgentTask, gone: () => boolean, maxPlans = MAX_PLANS_PER_TASK): AgentGate {
     let proposals = 0;
     const ended = "This task has ended; nothing was sent to the terminal.";
     return {
@@ -629,7 +672,7 @@ export function createAgentRunner(options: {
         if (conversation.mode === "read-only") return text("This session is in Read only mode: plans are not used and only read-only commands run. Ask the user to change the mode.", true);
         if (conversation.mode === "full-allow") return text({ planId: null, status: "not-needed", note: "Full allow mode: every command runs without approval." });
         if (task.plan?.status === "pending") return text("A plan is already waiting for the user's decision.", true);
-        if (proposals >= MAX_PLANS_PER_TASK) return text(`This task already proposed ${MAX_PLANS_PER_TASK} plans; no more can be proposed.`, true);
+        if (proposals >= maxPlans) return text(`This task already proposed ${maxPlans} plans; no more can be proposed.`, true);
         if (signal.aborted) return text(outcomeText.cancelled, true);
         proposals += 1;
         // The latest plan is the only one that applies.
@@ -762,6 +805,136 @@ export function createAgentRunner(options: {
   const closeWhere = (match: (conversation: Conversation) => boolean) =>
     Promise.all([...conversations.values()].filter(match).map(close)).then(() => undefined);
 
+  // ------------------------------------------------------------------ external clients (ticket 07)
+
+  /** One drawer request; settled by the user, its expiry, the client's request ending, or a lock. */
+  function waitRequest(kind: ExternalRequest["kind"], clientName: string, expiresAt: number, signal: AbortSignal, clientId?: string): Promise<ExternalAnswer> {
+    return new Promise((resolve) => {
+      const id = `${kind}-${externalNonce}-${(nextRequest = nextRequest % 999_999 + 1)}`;
+      const aborted = () => finish({ outcome: "cancelled" });
+      const finish = (answer: ExternalAnswer) => {
+        if (!requests.delete(id)) return;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", aborted);
+        resolve(answer);
+        publishAll();
+      };
+      const timer = setTimeout(() => finish({ outcome: "expired" }), Math.max(0, expiresAt - Date.now()));
+      requests.set(id, { id, kind, clientName, expiresAt, finish, ...(clientId ? { clientId } : {}) });
+      if (signal.aborted) finish({ outcome: "cancelled" });
+      else { signal.addEventListener("abort", aborted, { once: true }); publishAll(); }
+    });
+  }
+  const cancelRequests = (clientId?: string) => {
+    for (const request of [...requests.values()]) if (clientId === undefined || request.clientId === clientId) request.finish({ outcome: "cancelled" });
+  };
+  /** Session end, lock, revoke, Stop, owner gone: the credential goes (a running command is interrupted), cards withdrawn. */
+  function endBinding(binding: ExternalBinding) {
+    if (binding.conversation.closed) return;
+    binding.conversation.closed = true;
+    if (bindings.get(binding.clientId) === binding) bindings.delete(binding.clientId);
+    options.terminals.revoke(binding.credential);
+    withdraw(binding.conversation);
+    publish(binding.conversation.ownerId);
+  }
+  const endBindings = (match: (binding: ExternalBinding) => boolean) => { for (const binding of [...bindings.values()]) if (match(binding)) endBinding(binding); };
+  /**
+   * Review M1: a session has either an ssterm agent conversation (open or opening) or an external binding, never both, so
+   * nothing of one (its output, read_output, cancel) can reach the other or the other's provider.
+   */
+  const agentSession = (ownerId: string, sessionId: string) => conversations.has(key(ownerId, sessionId)) || opening.has(key(ownerId, sessionId));
+  /** A session of this owner already bound by an external client. */
+  const boundSession = (ownerId: string, sessionId: string) => [...bindings.values()].some((binding) => binding.conversation.ownerId === ownerId && binding.conversation.sessionId === sessionId);
+  options.clients?.onDrop((clientId) => {
+    clientsChanged();
+    cancelRequests(clientId);
+    endBindings((binding) => clientId === undefined || binding.clientId === clientId);
+    options.terminals.dropExternal?.(clientId);
+  });
+
+  async function bindExternal(clientId: string, ask: boolean, signal: AbortSignal): Promise<string | { refuse: string }> {
+    const client = options.clients?.client(clientId);
+    if (!client || !options.clients?.enabled || !accessible()) return { refuse: "This client is no longer paired, external clients are off, or the workspace is locked." };
+    // Last use: every connect and tool call (written at most once a minute).
+    options.clients.touch(clientId);
+    const existing = bindings.get(clientId);
+    if (existing && options.terminals.active?.(existing.credential) !== false) return existing.credential;
+    if (existing) endBinding(existing);
+    if (!ask) return { refuse: "No terminal is bound to this client. Call propose_plan or run_command; ssterm then asks the user to pick a session." };
+    if ([...requests.values()].some((request) => request.clientId === clientId)) return { refuse: "A request for a terminal is already waiting for the user's decision; nothing was sent." };
+    const waitMs = cardMs(client.timeoutSec);
+    const answer = await waitRequest("bind", client.name, Date.now() + waitMs, signal, clientId);
+    if (answer.outcome !== "approved" || !answer.ownerId || !answer.sessionId || answer.generation === undefined) {
+      return { refuse: answer.outcome === "denied" ? "The user denied access to a terminal. Nothing was sent; do not retry unless the user asks."
+        : answer.outcome === "expired" ? `No session was chosen within ${Math.round(waitMs / 1_000)} seconds (just before this client's tool timeout). Nothing was sent.`
+          : "The request was withdrawn (the call was cancelled, the client was revoked or the workspace locked). Nothing was sent." };
+    }
+    const { ownerId, sessionId, generation } = answer;
+    const snapshot = bindable(ownerId, sessionId, generation);
+    if (!snapshot?.target || boundSession(ownerId, sessionId) || agentSession(ownerId, sessionId)) return { refuse: "The chosen session is no longer available. Nothing was sent." };
+    const { label, address, port, username, environment } = snapshot.target;
+    const conversation: Conversation = {
+      ownerId, sessionId, generation, status: "idle", messages: [], tasks: [], nextMessage: 1, nextTask: 0, waiters: new Set(), closed: false,
+      target: { label, environment, endpoint: `${username ? `${username}@` : ""}${address}:${port}` },
+      approvalMs: waitMs, provider: settings.provider, model: settings.model, effort: settings.effort,
+      // Every new binding starts in Auto (A2).
+      mode: "auto", decisions: new Map(), nextApproval: 0, nonce: randomBytes(4).toString("hex"),
+    };
+    const task: AgentTask = { id: "task-1", goal: `Requests from ${client.name}`, status: "running", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null };
+    const ended = "This binding has ended; nothing was sent to the terminal.";
+    const issued = await options.terminals.issue(ownerId, sessionId, {
+      // A long-lived record keeps its newest steps.
+      record: (step) => {
+        task.steps.push({ ...step });
+        if (task.steps.length > MAX_AGENT_STEPS) { task.steps.shift(); task.limitReached = true; }
+        if (!conversation.closed) publish(ownerId);
+      },
+      admit: () => conversation.closed ? ended : undefined,
+      gate: gate(conversation, task, () => conversation.closed, MAX_EXTERNAL_PLANS),
+    });
+    if (!issued || signal.aborted || !options.clients?.client(clientId) || !accessible() || !bindable(ownerId, sessionId, generation) || boundSession(ownerId, sessionId) ||
+      agentSession(ownerId, sessionId) || bindings.has(clientId)) {
+      if (issued) options.terminals.revoke(issued.credential);
+      return { refuse: "The chosen session is no longer available, or the request ended. Nothing was sent." };
+    }
+    bindings.set(clientId, { clientId, clientName: client.name, conversation, task, credential: issued.credential });
+    publish(ownerId);
+    return issued.credential;
+  }
+
+  /** What the MCP endpoint asks (agent-mcp `ExternalHooks`). */
+  const externalHooks: ExternalHooks = {
+    enabled: () => !!options.clients?.enabled,
+    authenticate(credential) {
+      if (!accessible()) return undefined;
+      const id = options.clients?.authenticate(credential);
+      if (id) options.clients?.touch(id);
+      return id;
+    },
+    valid: (clientId) => accessible() && !!options.clients?.enabled && !!options.clients.client(clientId),
+    async pair(token, name, signal) {
+      const clients = options.clients;
+      if (!clients?.enabled || !accessible() || typeof token !== "string" || typeof name !== "string") return "pairing-refused";
+      const ticket = clients.present(token, name);
+      if (!ticket || typeof ticket === "string") return ticket ?? "pairing-refused";
+      const answer = await waitRequest("pair", name, ticket.expiresAt, signal);
+      if (answer.outcome !== "approved" || !accessible()) { clients.release(ticket, answer.outcome === "denied"); return "pairing-refused"; }
+      const paired = await clients.complete(ticket, name);
+      if (!paired) return "pairing-refused";
+      // Nobody is left to receive the credential: it must not stay valid unseen.
+      if (signal.aborted || !accessible()) { await clients.revoke(paired.clientId); return "pairing-refused"; }
+      clients.touch(paired.clientId);
+      clientsChanged();
+      return paired;
+    },
+    undelivered(clientId) { void options.clients?.revoke(clientId); },
+    bind: bindExternal,
+  };
+  function clientsView(): ExternalClientsView {
+    return { enabled: !!options.clients?.enabled, available: !!options.clients?.available, socketPath: options.socketPath ?? "", bridgePath: options.bridge,
+      credentialFolder: options.credentialFolder ?? "", clients: options.clients?.list() ?? [] };
+  }
+
   return {
     ready,
     /** Settings › AI Agent: every provider as it is now (no isolation check runs here). */
@@ -799,10 +972,12 @@ export function createAgentRunner(options: {
       // A changed definition is not the one those conversations were checked with.
       else if (customChanged) await closeWhere((conversation) => conversation.provider === "custom");
       // Turning the PROD option off ends Full allow on PROD conversations at once.
-      for (const conversation of conversations.values()) if (conversation.mode === "full-allow" && !fullAllowAvailable(conversation)) {
-        conversation.mode = "auto";
-        say(conversation, "notice", "Full allow on PROD was turned off in Settings, so this conversation is back in Auto.");
-      }
+      for (const conversation of [...conversations.values(), ...[...bindings.values()].map((binding) => binding.conversation)])
+        if (conversation.mode === "full-allow" && !fullAllowAvailable(conversation)) {
+          conversation.mode = "auto";
+          withdraw(conversation);
+          say(conversation, "notice", "Full allow on PROD was turned off in Settings, so this conversation is back in Auto.");
+        }
       publishAll();
       return { status: "saved", view: await this.settingsView() };
     },
@@ -828,7 +1003,7 @@ export function createAgentRunner(options: {
       await ready;
       const ownerId = sessionOwnerId(owner);
       return stateFor(ownerId) ?? { owner: { ...owner }, sequence: 0, enabled: settings.enabled, provider: settings.provider,
-        conversations: [...conversations.values()].filter((conversation) => conversation.ownerId === ownerId).map(view) };
+        conversations: [...conversations.values()].filter((conversation) => conversation.ownerId === ownerId).map(view), external: externalView(ownerId) };
     },
     async open(owner: Owner, sessionId: string, generation: number): Promise<OpenAgentResponse> {
       await ready;
@@ -836,6 +1011,8 @@ export function createAgentRunner(options: {
       const ownerId = sessionOwnerId(owner);
       const snapshot = bindable(ownerId, sessionId, generation);
       if (!snapshot?.target) return { status: "refused", reason: "session" };
+      // Review M1: an externally bound session has no ssterm agent conversation (Stop the binding first).
+      if (boundSession(ownerId, sessionId)) return { status: "refused", reason: "external" };
       const existing = conversations.get(key(ownerId, sessionId));
       if (existing?.generation === generation) return { status: "opened" };
       if (existing) await close(existing);
@@ -852,6 +1029,7 @@ export function createAgentRunner(options: {
         if (!(await providerState(provider, true, definition)).launcher) return { status: "refused", reason: "provider" };
         // The session may have ended or the agent been turned off during the version check.
         if (disposed || !settings.enabled || !bindable(ownerId, sessionId, generation) || conversations.has(slot)) return { status: "refused", reason: "session" };
+        if (boundSession(ownerId, sessionId)) return { status: "refused", reason: "external" };
         if (settings.provider !== provider || settings.custom !== definition) return { status: "refused", reason: "provider" };
         const { label, address, port, username, environment } = snapshot.target;
         conversations.set(slot, {
@@ -897,8 +1075,11 @@ export function createAgentRunner(options: {
       return { status: "sent" };
     },
     /** Ticket 04: Full allow needs the warning acknowledged, and on PROD the Settings option; a change withdraws pending cards. */
-    setMode(owner: Owner, sessionId: string, generation: number, mode: AgentMode, acknowledged: boolean): SetAgentModeResponse {
-      const conversation = conversations.get(key(sessionOwnerId(owner), sessionId));
+    setMode(owner: Owner, sessionId: string, generation: number, mode: AgentMode, acknowledged: boolean, external = false): SetAgentModeResponse {
+      const ownerId = sessionOwnerId(owner);
+      const conversation = external
+        ? [...bindings.values()].find((binding) => binding.conversation.ownerId === ownerId && binding.conversation.sessionId === sessionId)?.conversation
+        : conversations.get(key(ownerId, sessionId));
       if (!conversation || conversation.closed || conversation.generation !== generation) return { status: "refused", reason: "ended" };
       if (mode === "full-allow" && !fullAllowAvailable(conversation)) return { status: "refused", reason: "production" };
       if (mode === "full-allow" && !acknowledged) return { status: "refused", reason: "acknowledge" };
@@ -911,7 +1092,10 @@ export function createAgentRunner(options: {
     },
     /** Ticket 04: one pending card of this exact conversation generation; approving on PROD needs the confirmation step. */
     decide(owner: Owner, sessionId: string, generation: number, approvalId: string, decision: "approve" | "reject", confirmedProduction: boolean): DecideAgentResponse {
-      const conversation = conversations.get(key(sessionOwnerId(owner), sessionId));
+      const ownerId = sessionOwnerId(owner);
+      // Ticket 07: an external binding's cards are decided the same way (approval ids carry a per-binding nonce).
+      const conversation = [conversations.get(key(ownerId, sessionId)), ...[...bindings.values()].map((binding) => binding.conversation)]
+        .find((candidate) => candidate?.ownerId === ownerId && candidate.sessionId === sessionId && candidate.decisions.has(approvalId));
       const pending = conversation && !conversation.closed && conversation.generation === generation ? conversation.decisions.get(approvalId) : undefined;
       if (!conversation || !pending) return { status: "refused", reason: "stale" };
       if (decision === "approve" && production(conversation) && !confirmedProduction) return { status: "refused", reason: "production" };
@@ -928,23 +1112,91 @@ export function createAgentRunner(options: {
       if (session.local) return undefined;
       return {
         output() {},
-        end: () => { void closeWhere((conversation) => conversation.ownerId === session.ownerId && conversation.sessionId === session.sessionId && conversation.generation === session.generation); },
+        end: () => {
+          const same = (conversation: Conversation) => conversation.ownerId === session.ownerId && conversation.sessionId === session.sessionId && conversation.generation === session.generation;
+          void closeWhere(same);
+          endBindings((binding) => same(binding.conversation));
+        },
       };
     },
     revokeOwner(owner: Owner): void {
       const ownerId = sessionOwnerId(owner);
       void closeWhere((conversation) => conversation.ownerId === ownerId);
+      endBindings((binding) => binding.conversation.ownerId === ownerId);
       owners.delete(ownerId);
     },
-    lock(): Promise<void> { stopChecks(); return closeWhere(() => true); },
+    /** Also every external binding and pending request (A8: a new binding is needed after unlock). */
+    lock(): Promise<void> { stopChecks(); cancelRequests(); endBindings(() => true); return closeWhere(() => true); },
     /** Quit: every CLI group gets SIGTERM, then SIGKILL; resolves when they and their cleanup are done. */
     async dispose(): Promise<void> {
       disposed = true;
       stopChecks();
+      cancelRequests();
+      endBindings(() => true);
       await Promise.all([...checking.values()].map((check) => check.catch(() => undefined)));
       await closeWhere(() => true);
       await Promise.all([...exits]);
       owners.clear();
+    },
+    // ---------------------------------------------------------------- ticket 07
+    externalHooks,
+    async externalClients(): Promise<ExternalClientsView> {
+      await options.clients?.ready;
+      return clientsView();
+    },
+    async updateExternalClients(action: ExternalClientsAction): Promise<UpdateExternalClientsResponse> {
+      const clients = options.clients;
+      if (!clients) return { status: "refused", reason: "unavailable" };
+      await clients.ready;
+      const saved = (pairing: { token: string; expiresAt: number } | null = null): UpdateExternalClientsResponse => ({ status: "saved", view: clientsView(), pairing });
+      switch (action.type) {
+        case "enable": {
+          if (action.enabled && !clients.available) return { status: "refused", reason: "unavailable" };
+          if (!(await clients.setEnabled(action.enabled))) return { status: "refused", reason: "failed" };
+          if (action.enabled && !(await options.terminals.listenExternal?.() ?? true)) {
+            await clients.setEnabled(false);
+            return { status: "refused", reason: "failed" };
+          }
+          publishAll();
+          return saved();
+        }
+        case "pair": {
+          const issued = clients.issuePairing();
+          return typeof issued === "string" ? { status: "refused", reason: issued } : saved(issued);
+        }
+        case "revoke": {
+          if (!clients.client(action.clientId)) return { status: "refused", reason: "unknown-client" };
+          // Invalid at once; a failed Keychain delete or list write is reported (the client stays revoked in memory).
+          return (await clients.revoke(action.clientId)) ? saved() : { status: "refused", reason: "failed" };
+        }
+        case "timeout": {
+          if (!(await clients.setTimeout(action.clientId, action.seconds))) return { status: "refused", reason: "unknown-client" };
+          clientsChanged();
+          return saved();
+        }
+      }
+    },
+    /** Approve or deny a pairing, or bind a Ready SSH session of this window (not local, not Team, not already bound). */
+    answerExternal(owner: Owner, request: AnswerExternalRequest): AnswerExternalResponse {
+      const pending = requests.get(request.requestId);
+      if (!pending || !accessible()) return { status: "refused", reason: "stale" };
+      if (request.decision === "deny") { pending.finish({ outcome: "denied" }); return { status: "applied" }; }
+      if (pending.kind === "pair") {
+        if ("sessionId" in request) return { status: "refused", reason: "stale" };
+        pending.finish({ outcome: "approved" });
+        return { status: "applied" };
+      }
+      if (!("sessionId" in request)) return { status: "refused", reason: "stale" };
+      const ownerId = sessionOwnerId(owner);
+      if (!bindable(ownerId, request.sessionId, request.generation)?.target || boundSession(ownerId, request.sessionId) || agentSession(ownerId, request.sessionId))
+        return { status: "refused", reason: "session" };
+      pending.finish({ outcome: "approved", ownerId, sessionId: request.sessionId, generation: request.generation });
+      return { status: "applied" };
+    },
+    /** Stop on the bound pane's banner. */
+    stopExternal(owner: Owner, sessionId: string): void {
+      const ownerId = sessionOwnerId(owner);
+      endBindings((binding) => binding.conversation.ownerId === ownerId && binding.conversation.sessionId === sessionId);
     },
     /** Test and diagnostics: live CLI process ids. */
     pids(): number[] {
@@ -961,6 +1213,7 @@ export type AgentRunner = ReturnType<typeof createAgentRunner>;
 export const agentChannels = Object.freeze([
   channels.agentSettings, channels.configureAgent, channels.checkAgentProvider, channels.agentState, channels.openAgent, channels.closeAgent,
   channels.sendAgent, channels.cancelAgentTask, channels.setAgentMode, channels.decideAgent,
+  channels.externalClients, channels.updateExternalClients, channels.answerExternalRequest, channels.setExternalMode, channels.stopExternalBinding,
 ]);
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 
@@ -998,5 +1251,14 @@ export function registerAgentHandlers(options: {
     ok(runner.setMode(owner, request.sessionId, request.generation, request.mode, request.acknowledged)));
   handle(channels.decideAgent, isDecideAgentRequest, async (runner, request, owner) =>
     ok(runner.decide(owner, request.sessionId, request.generation, request.approvalId, request.decision, request.production)));
+  handle(channels.externalClients, isExternalClientsRequest, async (runner) => ok(await runner.externalClients()));
+  handle(channels.updateExternalClients, isUpdateExternalClientsRequest, async (runner, request) => ok(await runner.updateExternalClients(request.action)));
+  handle(channels.answerExternalRequest, isAnswerExternalRequest, async (runner, request, owner) => ok(runner.answerExternal(owner, request)));
+  handle(channels.setExternalMode, isSetAgentModeRequest, async (runner, request, owner) =>
+    ok(runner.setMode(owner, request.sessionId, request.generation, request.mode, request.acknowledged, true)));
+  handle(channels.stopExternalBinding, isAgentConversationRequest, async (runner, request, owner) => {
+    runner.stopExternal(owner, request.sessionId);
+    return ok({ accepted: true as const });
+  });
   return () => { for (const channel of agentChannels) options.ipc.removeHandler(channel); };
 }

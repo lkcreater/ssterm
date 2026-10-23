@@ -43,6 +43,7 @@ import {
 import { toast } from "@/components/ui/toast";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { AgentPanel } from "@/components/agent/agent-panel";
+import { bindableSession, ExternalAgentPanel, ExternalBanner, ExternalBindingSection, ExternalRequestDrawer } from "@/components/agent/external-clients";
 import { useAgentState } from "@/hooks/use-agent";
 import { CloseConfirm, type CloseRequest } from "@/components/workspace/close-confirm";
 import { LiveTerminal, type PaneSettings } from "@/components/workspace/live-terminal";
@@ -369,6 +370,7 @@ export function TerminalWorkspace({
       description: reason === "disabled" ? "Turn it on in Settings › AI Agent first."
         : reason === "provider" ? "The claude CLI is not available in a verified version. See Settings › AI Agent."
           : reason === "limit" ? "Too many agent conversations are open. Close one first."
+            : reason === "external" ? "An external MCP client controls this session. Stop it on the session's banner first."
             : "The session is no longer connected.",
       type: "error",
     });
@@ -386,6 +388,17 @@ export function TerminalWorkspace({
       `.terminal-workspace section[data-session-id="${CSS.escape(agentSession)}"] .xterm-helper-textarea`)?.focus());
     return () => clearTimeout(timer);
   }, [passwordPrompt !== undefined, hidden, agentSession]);
+  // SST-041 ticket 07: external clients. Requests (pair, bind) open a drawer in every window; a binding's banner is on its
+  // pane, its cards in the agent panel of that session, else in a compact panel that reopens for each new card.
+  const externalBindings = agent?.external.bindings ?? [];
+  const externalRequest = agent?.external.requests[0];
+  const [answeredRequest, setAnsweredRequest] = useState<string>();
+  const embeddedBinding = externalBindings.find((binding) => binding.sessionId === agentSession);
+  const panelBindings = externalBindings.filter((binding) => binding !== embeddedBinding);
+  const externalSignature = panelBindings.map((binding) =>
+    `${binding.clientId}:${binding.generation}:${binding.task.plan?.status === "pending" ? binding.task.plan.id : ""}:${binding.task.approval?.id ?? ""}`).join("|");
+  const [dismissedExternal, setDismissedExternal] = useState<string>();
+  const showExternal = panelBindings.length > 0 && externalSignature !== dismissedExternal;
   const closeAgentPanel = () => {
     const sessionId = agentSession;
     setAgentSession(undefined);
@@ -526,6 +539,10 @@ export function TerminalWorkspace({
                 hidden={!visible}
                 style={style}
                 onDisconnect={() => controller.disconnect(session.sessionId)}
+                external={(() => {
+                  const binding = externalBindings.find((entry) => entry.sessionId === session.sessionId && entry.generation === session.generation);
+                  return binding ? <ExternalBanner owner={owner} binding={binding} onShow={() => setDismissedExternal(undefined)} /> : undefined;
+                })()}
                 actions={
                   entry ? (
                     <>
@@ -571,8 +588,17 @@ export function TerminalWorkspace({
                 sessionId={agentSession}
                 conversation={agent?.conversations.find((conversation) => conversation.sessionId === agentSession)}
                 password={passwordPrompt}
+                external={embeddedBinding ? <ExternalBindingSection owner={owner} binding={embeddedBinding} /> : undefined}
                 onClose={closeAgentPanel}
               />
+            </ResizablePanel>
+          </>
+        ) : null}
+        {showExternal ? (
+          <>
+            <ResizableHandle aria-label="Resize external clients panel" />
+            <ResizablePanel id="external-panel-area" defaultSize={360} minSize={280} maxSize="50" groupResizeBehavior="preserve-pixel-size">
+              <ExternalAgentPanel owner={owner} bindings={panelBindings} onClose={() => setDismissedExternal(externalSignature)} />
             </ResizablePanel>
           </>
         ) : null}
@@ -586,6 +612,15 @@ export function TerminalWorkspace({
             sessions={sessions}
             returnFocus={activeTextarea}
             onClose={() => setSnippets(0)}
+          />
+        ) : null}
+        {externalRequest && externalRequest.id !== answeredRequest ? (
+          <ExternalRequestDrawer
+            key={externalRequest.id}
+            owner={owner}
+            request={externalRequest}
+            sessions={sessions.filter((session) => bindableSession(session, externalBindings, agent?.conversations.map((conversation) => conversation.sessionId) ?? []))}
+            onDone={() => setAnsweredRequest(externalRequest.id)}
           />
         ) : null}
         {controller.closeRequest ? (

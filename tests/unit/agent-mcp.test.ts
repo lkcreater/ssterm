@@ -196,6 +196,31 @@ test("Ctrl+C from the pane and the cancel tool interrupt; the timeout path is th
   } finally { cleanup(); }
 });
 
+test("review M1: read_output and cancel answer only for commands their own credential started", async () => {
+  const { agents, target, writes, emit, cleanup } = await lab();
+  try {
+    const mine = (await agents.issue(ownerId, target.sessionId))!;
+    const theirs = (await agents.issue(ownerId, target.sessionId))!;
+    const a = await client(mine.socketPath, mine.credential);
+    const b = await client(theirs.socketPath, theirs.credential);
+    const running = a.call("run_command", { command: "sleep 30" });
+    await settle();
+    const nonce = nonceOf(writes.at(-1)!);
+    emit(`\x1b]ssterm;ready;${nonce}\x07$ \x1b]ssterm;start;${nonce}\x07SECRET-OUTPUT\r\n`);
+    await settle();
+    assert.equal((await a.call("read_output")).structuredContent.status, "running");
+    assert.deepEqual((await b.call("read_output")).structuredContent, { status: "none" }, "another credential sees nothing of it");
+    assert.deepEqual((await b.call("cancel")).structuredContent, { cancelled: false }, "nor can it cancel it");
+    assert.notEqual(writes.at(-1), "\x03");
+    assert.deepEqual((await a.call("cancel")).structuredContent, { cancelled: true });
+    assert.equal((await running).structuredContent.status, "interrupted");
+    assert.equal((await a.call("read_output")).structuredContent.status, "interrupted", "its own last result");
+    assert.deepEqual((await b.call("read_output")).structuredContent, { status: "none" }, "never another credential's last result");
+    a.socket.destroy();
+    b.socket.destroy();
+  } finally { cleanup(); }
+});
+
 test("a reconnect fences the old generation; a lock revokes every credential, drops connections and removes the socket", async () => {
   const { agents, registry, target, ready, cleanup } = await lab();
   try {

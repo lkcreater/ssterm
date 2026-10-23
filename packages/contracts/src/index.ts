@@ -49,6 +49,7 @@ import type {
   AgentSettingsRequest, AgentSettingsView, ConfigureAgentRequest, ConfigureAgentResponse, CheckAgentProviderRequest, AgentStateRequest, AgentState,
   OpenAgentRequest, OpenAgentResponse, AgentConversationRequest, SendAgentRequest, SendAgentResponse, CancelAgentTaskRequest,
   CancelAgentTaskResponse, SetAgentModeRequest, SetAgentModeResponse, DecideAgentRequest, DecideAgentResponse,
+  ExternalClientsRequest, ExternalClientsView, UpdateExternalClientsRequest, UpdateExternalClientsResponse, AnswerExternalRequest, AnswerExternalResponse,
 } from "./agent.ts";
 export * from "./agent.ts";
 /** Serializable values crossing the isolated preload boundary. */
@@ -212,6 +213,16 @@ export interface DesktopAPI {
   setAgentMode(request: SetAgentModeRequest): Promise<Result<SetAgentModeResponse>>;
   /** Ticket 04: Approve or Reject one pending plan or command card of this exact conversation generation. */
   decideAgent(request: DecideAgentRequest): Promise<Result<DecideAgentResponse>>;
+  /** Ticket 07: Settings › AI Agent › External MCP clients. */
+  externalClients(request: ExternalClientsRequest): Promise<Result<ExternalClientsView>>;
+  /** Turn on/off, pair a new client (its one-time token is returned once), revoke one, or set its tool timeout. */
+  updateExternalClients(request: UpdateExternalClientsRequest): Promise<Result<UpdateExternalClientsResponse>>;
+  /** Approve or deny a client's pairing, or bind (or deny) a session for a client's terminal request. */
+  answerExternalRequest(request: AnswerExternalRequest): Promise<Result<AnswerExternalResponse>>;
+  /** The mode of an external binding (same rules as setAgentMode). */
+  setExternalMode(request: SetAgentModeRequest): Promise<Result<SetAgentModeResponse>>;
+  /** Stop: ends the external binding of this session (its running command is interrupted). */
+  stopExternalBinding(request: AgentConversationRequest): Promise<Result<TerminalActionResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -324,6 +335,11 @@ export const channels = Object.freeze({
   cancelAgentTask: "ssterm:cancel-agent-task",
   setAgentMode: "ssterm:set-agent-mode",
   decideAgent: "ssterm:decide-agent",
+  externalClients: "ssterm:external-clients",
+  updateExternalClients: "ssterm:update-external-clients",
+  answerExternalRequest: "ssterm:answer-external-request",
+  setExternalMode: "ssterm:set-external-mode",
+  stopExternalBinding: "ssterm:stop-external-binding",
 });
 
 const messages: Record<ErrorCode, string> = {

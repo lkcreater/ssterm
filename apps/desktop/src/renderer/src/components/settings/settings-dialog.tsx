@@ -4,6 +4,7 @@ import { AlertCircleIcon, FileClockIcon } from "lucide-react";
 import { RECORDING_BOUNDS, type Owner, type RecordingPolicy, type TerminalSettings } from "@ssterm/contracts";
 import { SignInSettings } from "@/components/app-lock/sign-in-settings";
 import { AgentSettings } from "@/components/agent/agent-settings";
+import { ExternalClientsSettings } from "@/components/agent/external-clients";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useRecordings } from "@/hooks/use-recordings";
@@ -187,6 +188,7 @@ export function SettingsDrawer({
         </TabsContent>
         <TabsContent value="agent" keepMounted>
           {owner ? <AgentSettings owner={owner} /> : null}
+          {owner ? <ExternalClientsSettings owner={owner} /> : null}
         </TabsContent>
       </Tabs>
     </Drawer>
