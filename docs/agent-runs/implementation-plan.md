@@ -1640,3 +1640,17 @@ Rules:
 - **Concurrency:** one sub agent per session at a time, because the shell is shared. Further tasks queue.
 
 **Decision A13 — authorization (user: “ข”).** Spec only: ADR 0009, the SST-041 spec and its tickets are written; no implementation until the user says so. `docs/ai-scope.md` stays true for the shipped app (no AI feature exists).
+
+**SST-041 authorization, tickets 01–02 only (2026-10-23, user: “เริ่ม 01, 02 ได้ ส่งให้ agent model opus 5.5 ทำ”).**
+- 01 (CLI isolation spike) and 02 (MCP server and terminal executor, Read only) are authorized. They run in parallel with separate file ownership.
+  - 01 owns `spikes/ai-cli-isolation/` and `docs/spikes/ai-cli-isolation.md`.
+  - 02 owns the app code.
+- Tickets 03–08 stay unauthorized, and ADR 0009 stays Proposed.
+- The spike may send synthetic test prompts to the providers through the user's installed CLIs. No terminal, catalog or user data may be sent, and every attack payload must target harmless canaries in a temporary directory.
+- Loop as before: implement, then TEST, then an independent REVIEW, then a local commit. No push.
+- **SST-041/01 done (2026-10-23): CLI isolation spike** ([report](../spikes/ai-cli-isolation.md), `spikes/ai-cli-isolation/`).
+  - **claude 2.1.309:** passes. It was tested live with argv prompts; stream-json over stdin was capture-tested only. Two env vars are mandatory because relative `@file` mentions still expand with the flags alone.
+  - **codex 0.163.0:** stays disabled. User `$CODEX_HOME/AGENTS.md` is always sent, `apply_patch` cannot be removed (the read-only sandbox blocks it) and the `multi_agent` tools still appear.
+  - **Review:** APPROVED. M1–M4 fixed: inconclusive runs no longer pass, `@file` and stream-mode capture checks added, and each detector reports a distinct result. L1–L6 fixed.
+  - **Follow-ups:** production requirements are recorded in the ADR 0009 "Spike findings" section and in ticket 03.
+  - **Cost:** 29 provider calls in total, all with synthetic prompts.

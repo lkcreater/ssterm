@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent (implementation not yet authorized: A13)
+**Status:** done (claude enabled; codex disabled)
 
 - [ ] A repeatable automated check runs each installed CLI headless with the proposed production flags against a test MCP server.
 - [ ] Asking the agent to read a local file, run a local shell command, fetch a URL, and call a non-ssterm MCP server is refused in every case, and the test fails if any succeeds.

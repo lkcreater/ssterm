@@ -13,3 +13,4 @@
 - [ ] Bundled versioned instructions are used. The Settings field for additional instructions appends text and cannot replace them.
 - [ ] Lock, session end, panel close and quit terminate CLI processes, clear the conversation, and refuse pending calls. No transcript is written to disk.
 - [ ] E2E uses a fake MCP-speaking agent CLI: chat → delegate → commands in the pane → summary. Consent gating, cleanup, and no external requests made by ssterm.
+- [ ] Production spawn requirements from the ADR 0009 "Spike findings" section are met: absolute binary path, a version gate, stdin stream-json, SIGTERM before SIGKILL with process-group kill, per-run cache/session cleanup, and the extended A3 disclosure.

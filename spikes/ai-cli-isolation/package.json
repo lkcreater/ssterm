@@ -1,0 +1,13 @@
+{
+  "name": "ssterm-ai-cli-isolation-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SST-041 ticket 01 isolated CLI isolation spike (not shipped)",
+  "type": "module",
+  "engines": { "node": ">=24.11.1" },
+  "scripts": {
+    "test": "node --test test/detectors.test.mjs",
+    "check": "node scripts/run.mjs",
+    "check:capture": "ISOLATION_CAPTURE_ONLY=1 node scripts/run.mjs"
+  }
+}
