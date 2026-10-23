@@ -57,10 +57,10 @@ import {
   type AnswerHostTrustRequest,
   type PrepareKnownHostRevokeRequest,
   type RevokeKnownHostRequest,
-  isAgentSettingsRequest, isAgentSettingsView, isConfigureAgentRequest, isConfigureAgentResponse, isAgentStateRequest, isAgentState,
+  isAgentSettingsRequest, isAgentSettingsView, isConfigureAgentRequest, isCheckAgentProviderRequest, isConfigureAgentResponse, isAgentStateRequest, isAgentState,
   isOpenAgentRequest, isOpenAgentResponse, isAgentConversationRequest, isSendAgentRequest, isSendAgentResponse,
   isCancelAgentTaskRequest, isCancelAgentTaskResponse, isSetAgentModeRequest, isSetAgentModeResponse, isDecideAgentRequest, isDecideAgentResponse,
-  type AgentSettingsRequest, type ConfigureAgentRequest, type AgentStateRequest, type AgentState, type OpenAgentRequest,
+  type AgentSettingsRequest, type ConfigureAgentRequest, type CheckAgentProviderRequest, type AgentStateRequest, type AgentState, type OpenAgentRequest,
   type AgentConversationRequest, type SendAgentRequest, type CancelAgentTaskRequest, type SetAgentModeRequest, type DecideAgentRequest,
   failure,
   isBootstrapData,
@@ -760,6 +760,10 @@ export function createDesktopBridge(transport: BridgeTransport): {
     configureAgent(request: ConfigureAgentRequest) {
       if (!isConfigureAgentRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.configureAgent, [{ owner: { ...request.owner }, settings: { ...request.settings }, consent: request.consent }], isConfigureAgentResponse);
+    },
+    checkAgentProvider(request: CheckAgentProviderRequest) {
+      if (!isCheckAgentProviderRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.checkAgentProvider, [{ owner: { ...request.owner }, live: request.live }], isAgentSettingsView);
     },
     async agentState(request: AgentStateRequest) {
       if (!isAgentStateRequest(request)) return failure("invalid-request");

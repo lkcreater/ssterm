@@ -58,7 +58,11 @@ import { createSnippetsController, registerSnippetHandlers, type SnippetsControl
 import { createTunnelController, registerTunnelHandlers, type TunnelController } from "./tunnels";
 import { createAgentTerminals, observeBoth, type AgentTerminals } from "./agent-mcp";
 import { createAgentRunner, registerAgentHandlers, type AgentRunner } from "./agent-runner";
-import { claudeCandidates, cliEnv, managedPolicyPaths, resolveClaude, sweepStaleRuns } from "./agent-cli";
+import { sweepCheckSockets } from "./agent-check";
+import {
+  claudeCandidates, cliBaseEnv, cliEnv, CODEX_MANAGED, codexCandidates, managedPolicyPaths, parseCodexVersion, resolveClaude, sweepStaleRuns,
+  VERIFIED_CODEX_VERSIONS,
+} from "./agent-cli";
 import { appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers, summarizeLiveWork, type AppLockController } from "./app-lock";
 
 /** The Google OAuth client compiled in from SSTERM_GOOGLE_CLIENT_FILE at build time (null without one). */
@@ -716,6 +720,8 @@ if (ownsInstance) {
     const profile = app.getPath("userData");
     // Run folders this profile left behind (crash, forced quit) go before any new run starts.
     await sweepStaleRuns({ tmp: runTmp, home: agentHome, profile }).catch(() => 0);
+    // Isolation-check socket folders left by a crash or forced quit (ticket 06 review L4).
+    await sweepCheckSockets().catch(() => 0);
     const runner = createAgentRunner({
       terminals: agents,
       registry: () => desktopSessions?.registry,
@@ -728,7 +734,15 @@ if (ownsInstance) {
         managed: managedPolicyPaths({ home: agentHome, user }),
         ...(testCli ? { native: false } : {}),
       }),
-      env: (tmp) => cliEnv({ home: agentHome, user, tmp }),
+      // Ticket 06: the same gate for codex; no version is verified, so it never resolves ready. A test profile never
+      // runs the host's own codex either.
+      resolveCodex: () => resolveClaude({
+        candidates: testUserData ? [] : codexCandidates(), env: cliBaseEnv({ home: agentHome, user, tmp: tmpdir() }), managed: CODEX_MANAGED,
+        parse: parseCodexVersion, verified: VERIFIED_CODEX_VERSIONS,
+      }),
+      // Review M1: Claude Code run as a custom provider keeps the install-path detection and managed-policy refusal.
+      claudeControls: { candidates: claudeCandidates(homedir()), managed: managedPolicyPaths({ home: agentHome, user }) },
+      env: (tmp) => cliBaseEnv({ home: agentHome, user, tmp }),
       tmp: runTmp,
       home: agentHome,
       profile,

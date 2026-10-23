@@ -1738,3 +1738,26 @@ Rules:
     - typecheck pass, unit 841/842 (1 known skip), build pass.
     - Full E2E 96/96 before the final fix round; the focused agent and terminal specs pass after it.
     - E2E uses a bash `read -s` sudo stand-in, because the image has no sudo.
+- **A14 decision on verification (user: “ก”).**
+  - `claude-opus-5-5` is marked verified for claude 2.1.309. Evidence:
+    - Live isolation 3 pass + 2 inconclusive. Opus safeguards declined the synthetic shell and web-fetch attack prompts, so those two never reached a tool.
+    - The capture check passed, and `init` offered only `mcp__ssterm__ping`.
+    - Isolation is enforced by the CLI flags and tool allowlist, not by the model.
+  - The effective default becomes `claude-opus-5-5` at `xhigh`.
+  - Effort is not gated per verified model/effort pair, because effort does not change isolation.
+- **SST-041/06 done (2026-10-23):**
+  - **Codex adapter:** built and statically disabled (`VERIFIED_CODEX_VERSIONS=[]`), with the spike reasons shown and `codex --version` not run while unverified. Its builders match the spike exports, and the event parser fails closed.
+  - **Custom CLI provider:**
+    - Token args with whitelisted placeholders, and env rules that refuse reserved or secret-like names.
+    - The interpreter list is only a usability guard.
+    - A per-provider tool timeout: cards expire 5 s before it, plus progress heartbeats.
+  - **Isolation check:** runs per role with a poisoned cwd, canaries, the stub MCP server and a loopback Anthropic endpoint.
+    - Its verdict is bound to a fingerprint and re-checked before each spawn.
+    - A live-only pass is a weaker, consented status that Claude Code never gets.
+    - CLI state paths are scanned for the run tag and cleaned.
+  - **Claude Code as custom:** the managed-policy refusal applies, the mandatory flags are required and bypass flags refused, and `CLAUDE_ENV` is merged over the definition.
+  - **Opus 5.5:** verified per the user decision, so the default is now `claude-opus-5-5` at `xhigh`.
+  - **Review:** APPROVED. M1–M3 and L1–L9 fixed.
+  - **Checks:**
+    - typecheck pass, unit 849/850 (1 known skip), build pass, full E2E 97/97.
+    - An earlier run had one `remote-edit:192` timing race, in a spec SST-041 does not touch; it passed on rerun.

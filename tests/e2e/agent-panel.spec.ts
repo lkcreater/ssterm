@@ -100,11 +100,11 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     const owner = await page.evaluate(async () => { const boot = await window.ssterm.bootstrap(); if (!boot.ok) throw new Error("bootstrap"); return boot.value.owner; });
     expect(await page.evaluate(async ({ owner, sessionId }) => (await window.ssterm.openAgent({ owner, sessionId, generation: 1 })), { owner, sessionId }))
       .toEqual({ ok: true, value: { status: "refused", reason: "disabled" } });
-    const settingsFor = (model: string) => ({ enabled: true, provider: "claude" as const, model, effort: "xhigh" as const, instructions: "", allowFullAllowOnProd: false });
+    const settingsFor = (model: string) => ({ enabled: true, provider: "claude" as const, model, effort: "xhigh" as const, instructions: "", allowFullAllowOnProd: false, custom: null });
     expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: false, settings })), { owner, settings: settingsFor("claude-haiku-5-5") }))
       .toEqual({ ok: true, value: { status: "consent-required" } });
-    // A14: only isolation-verified models run (claude-opus-5-5 was inconclusive); a custom ID must be a strict token.
-    expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: true, settings })), { owner, settings: settingsFor("claude-opus-5-5") }))
+    // A14: only isolation-verified models run (claude-sonnet-5-5 is not verified); a custom ID must be a strict token.
+    expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: true, settings })), { owner, settings: settingsFor("claude-sonnet-5-5") }))
       .toEqual({ ok: true, value: { status: "model-unverified" } });
     expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: true, settings })), { owner, settings: settingsFor("--dangerously") }))
       .toMatchObject({ ok: false, error: { code: "invalid-request" } });
@@ -124,9 +124,10 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     await agentSettings.getByRole("checkbox", { name: "I understand what is sent to Anthropic" }).click();
     await turnOn.click();
     await expect(agentSettings.getByRole("switch", { name: "Use the AI agent" })).toBeChecked();
-    // A14: the bundled list with full IDs and aliases; the effective default is the verified model at effort xhigh.
-    await expect(agentSettings.getByRole("combobox", { name: "Model" })).toContainText("Claude Haiku 5.5 (claude-haiku-5-5, haiku)");
-    await expect(agentSettings.getByRole("radio", { name: "xhigh" }).or(agentSettings.getByRole("button", { name: "xhigh" }))).toHaveAttribute("aria-pressed", "true");
+    // A14: the bundled list with full IDs and aliases; the default is Opus 5.5 (verified by user decision) at effort xhigh.
+    await expect(agentSettings.getByRole("combobox", { name: "Model" })).toContainText("Claude Opus 5.5 (claude-opus-5-5, opus)");
+    const effort = agentSettings.getByRole("group", { name: "Effort", exact: true });
+    await expect(effort.getByRole("radio", { name: "xhigh" }).or(effort.getByRole("button", { name: "xhigh" }))).toHaveAttribute("aria-pressed", "true");
     await agentSettings.getByLabel("Custom model ID").fill("-p");
     await expect(agentSettings.getByText("Use letters, digits and . _ : - only, not starting with -.")).toBeVisible();
     await agentSettings.getByLabel("Custom model ID").fill("my-model");
@@ -139,7 +140,7 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     await settings.getByRole("button", { name: "Done" }).click();
     await expect(settings).toHaveCount(0);
     const stored = JSON.parse(readFileSync(join(profile, "agent-settings.json"), "utf8"));
-    expect(stored).toEqual({ version: 2, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "Prefer journalctl over log files.", allowFullAllowOnProd: false, disclosure: 1 });
+    expect(stored).toEqual({ version: 3, enabled: true, provider: "claude", model: "claude-opus-5-5", effort: "xhigh", instructions: "Prefer journalctl over log files.", allowFullAllowOnProd: false, custom: null, customCheck: null, disclosure: 1 });
 
     // 3. The button: Ready SSH panes only, never a local terminal.
     const agentButton = pane.getByRole("button", { name: "AI Agent" });
@@ -160,7 +161,7 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     await expect(panel.getByTestId("agent-target")).toContainText(`${lab.username}@${lab.host}:${lab.port}`);
     await expect(panel.getByTestId("agent-target")).toContainText("PROD");
     await expect(panel.getByTestId("agent-provider-banner")).toContainText("sent to Anthropic");
-    await expect(panel.getByTestId("agent-model")).toHaveText("Claude Haiku 5.5 · effort xhigh");
+    await expect(panel.getByTestId("agent-model")).toHaveText("Claude Opus 5.5 · effort xhigh");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await pane.locator(".xterm-helper-textarea").focus();
     await page.keyboard.type('echo "PANEL-$((40+2))"');
@@ -209,10 +210,10 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     const bridge = process.env.SSTERM_PACKAGED_EXECUTABLE
       ? join(dirname(dirname(process.env.SSTERM_PACKAGED_EXECUTABLE)), "Resources", "ssterm-mcp")
       : resolve("apps/desktop/resources/ssterm-mcp");
-    expect(main).toMatchObject({ role: "main", problems: [], servers: ["ssterm"], server: "ssterm", instructions: true, model: "claude-haiku-5-5", effort: "xhigh", bridge,
+    expect(main).toMatchObject({ role: "main", problems: [], servers: ["ssterm"], server: "ssterm", instructions: true, model: "claude-opus-5-5", effort: "xhigh", bridge,
       tools: ["mcp__ssterm__delegate_task", "mcp__ssterm__get_task_status", "mcp__ssterm__cancel_task"] });
     expect(main.extra).toContain("Prefer journalctl over log files.");
-    expect(sub).toMatchObject({ role: "sub", problems: [], servers: ["ssterm"], instructions: true, model: "claude-haiku-5-5", effort: "xhigh", bridge,
+    expect(sub).toMatchObject({ role: "sub", problems: [], servers: ["ssterm"], instructions: true, model: "claude-opus-5-5", effort: "xhigh", bridge,
       tools: ["mcp__ssterm__propose_plan", "mcp__ssterm__run_command", "mcp__ssterm__read_output", "mcp__ssterm__cancel"] });
     await expect.poll(() => readdirSync(join(home, ".claude/sessions")).filter((name) => name.startsWith(`${sub.pid}.`)).length, { message: "the finished sub agent's residue" }).toBe(0);
 
@@ -348,7 +349,7 @@ test("AI Agent modes: Auto plan and per-command approvals on the fixture, Full a
         return saved.ok ? saved.value.status : saved.error.code; })()`);
     }, { file: secret, identityId })).toBe("saved");
     const owner = await page.evaluate(async () => { const boot = await window.ssterm.bootstrap(); if (!boot.ok) throw new Error("bootstrap"); return boot.value.owner; });
-    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "low" as const, instructions: "", allowFullAllowOnProd: false };
+    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "low" as const, instructions: "", allowFullAllowOnProd: false, custom: null };
     expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: true, settings })).ok, { owner, settings })).toBe(true);
 
     await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${dev}`, exact: true }).click();
@@ -571,7 +572,7 @@ test("AI Agent password handoff: listed programs only, card and banner with the 
         return saved.ok ? saved.value.status : saved.error.code; })()`);
     }, { file: secret, identityId })).toBe("saved");
     const owner = await page.evaluate(async () => { const boot = await window.ssterm.bootstrap(); if (!boot.ok) throw new Error("bootstrap"); return boot.value.owner; });
-    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "low" as const, instructions: "", allowFullAllowOnProd: false };
+    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "low" as const, instructions: "", allowFullAllowOnProd: false, custom: null };
     expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: true, settings })).ok, { owner, settings })).toBe(true);
     // Every agent and terminal state push the renderer receives.
     await page.evaluate(() => {

@@ -158,8 +158,11 @@ export function AgentPanel({
       <p role="note" className="flex shrink-0 gap-2 border-b border-border px-3 py-2 type-caption text-muted-foreground" data-testid="agent-provider-banner">
         <ShieldAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-connection-connecting" />
         <span>
-          Your messages, the agent's commands and their full output are sent to Anthropic through your claude CLI, under your
-          account's terms. Nothing is redacted.
+          {conversation?.provider === "custom"
+            ? "Your messages, the agent's commands and their full output are sent through your custom CLI provider to its provider, under that account's terms. Nothing is redacted."
+            : conversation?.provider === "codex"
+              ? "Your messages, the agent's commands and their full output are sent to OpenAI through your codex CLI, under your account's terms. Nothing is redacted."
+              : "Your messages, the agent's commands and their full output are sent to Anthropic through your claude CLI, under your account's terms. Nothing is redacted."}
         </span>
       </p>
       {conversation && mode ? (

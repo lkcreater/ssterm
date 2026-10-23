@@ -113,6 +113,7 @@ export default defineConfig({
             "team.spec.ts",
             "agent-mcp.spec.ts",
             "agent-panel.spec.ts",
+            "agent-custom.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

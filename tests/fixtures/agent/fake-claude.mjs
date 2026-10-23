@@ -8,7 +8,15 @@
 //   sub agent:   goal "run:<command>;;<command>" runs each command with run_command; with a "plan:<command>;;<command>##"
 //                prefix it first calls propose_plan with those commands (ticket 04) and runs the rest whatever the answer
 // Every launch appends one JSON line to $HOME/fake-claude.log, and every tool call one to $HOME/fake-claude-calls.log.
-import { spawn } from "node:child_process";
+//
+// Ticket 06 (the same fixture as a custom provider): `--system-prompt-file <path>` instead of `--system-prompt`;
+// with ANTHROPIC_BASE_URL set (ssterm's isolation check endpoint) each message goes to that endpoint as an Anthropic
+// Messages request and the scripted model's tool calls are answered; `--fake-extra-tool` makes it an UNISOLATED CLI
+// that offers and really runs local Bash, Read and Write tools; `--fake-tool-timeout-ms <n>` gives the sub agent a
+// short MCP tool-call timeout, after which it cancels the call with notifications/cancelled (like a client timeout);
+// `--fake-openai` sends a non-Anthropic request to the endpoint; `--fake-transcript` saves a transcript under
+// ~/.claude/projects like a CLI without session isolation would.
+import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -26,14 +34,16 @@ const value = (flag) => { const at = argv.indexOf(flag); return at >= 0 ? argv[a
 const problems = [];
 for (const flag of ["-p", "--verbose", "--include-hook-events", "--no-session-persistence", "--restricted", "--strict-mcp-config", "--disable-slash-commands"])
   if (!argv.includes(flag)) problems.push(`missing ${flag}`);
-for (const [flag, expected] of [["--output-format", "stream-json"], ["--input-format", "stream-json"], ["--tools", ""], ["--setting-sources", ""],
+// Without --input-format the prompt is one plain-text message on stdin (ticket 06's one-shot custom provider).
+if (argv.includes("--input-format") && value("--input-format") !== "stream-json") problems.push("--input-format");
+for (const [flag, expected] of [["--output-format", "stream-json"], ["--tools", ""], ["--setting-sources", ""],
   ["--permission-mode", "dontAsk"], ["--permission-prompts", "none"]])
   if (value(flag) !== expected) problems.push(`${flag} is ${JSON.stringify(value(flag))}`);
 const required = { CLAUDE_CODE_DISABLE_FILE_MENTIONS: "1", CLAUDE_CODE_DISABLE_ATTACHMENTS: "1", CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ENABLE_CLAUDEAI_MCP_SERVERS: "false", TERM: "dumb", PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
   MCP_TOOL_TIMEOUT: "1800000" };
 for (const [name, expected] of Object.entries(required)) if (process.env[name] !== expected) problems.push(`env ${name}`);
-const allowedEnv = new Set(["HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "TERM", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+const allowedEnv = new Set(["ANTHROPIC_BASE_URL", "HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "TERM", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
   "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "CLAUDE_CODE_SKIP_PROMPT_HISTORY", "CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING", "ENABLE_CLAUDEAI_MCP_SERVERS",
   "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "CLAUDE_CODE_DISABLE_FILE_MENTIONS", "CLAUDE_CODE_DISABLE_ATTACHMENTS", "MCP_TOOL_TIMEOUT",
   // Set by the OS or Node for any process, never by ssterm.
@@ -45,7 +55,9 @@ const cwdEntries = (await import("node:fs")).readdirSync(cwd);
 if (cwdEntries.length) problems.push("cwd not empty");
 const allowed = (value("--allowedTools") ?? "").split(",");
 const role = allowed.includes("mcp__ssterm__delegate_task") ? "main" : "sub";
-const prompt = value("--system-prompt") ?? "";
+const prompt = value("--system-prompt") ?? (value("--system-prompt-file") ? readFileSync(value("--system-prompt-file"), "utf8") : "");
+const extraTool = argv.includes("--fake-extra-tool");
+const toolTimeout = Number(value("--fake-tool-timeout-ms") ?? 0);
 
 // Residue the real CLI leaves; ssterm must remove it after the run.
 const cache = join(home, "Library", "Caches", "claude-cli-nodejs", cwd.replace(/[^A-Za-z0-9]/gu, "-"), "mcp-logs-ssterm");
@@ -67,20 +79,26 @@ createInterface({ input: child.stdout }).on("line", (line) => {
   waiting.get(message.id)?.(message);
   waiting.delete(message.id);
 });
-const request = (method, params) => new Promise((resolve) => {
+const request = (method, params, timeoutMs = 0) => new Promise((resolve) => {
   const id = nextId++;
   waiting.set(id, resolve);
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+  // A client-side tool timeout: the call is abandoned and cancelled, as MCP clients do.
+  if (timeoutMs > 0) setTimeout(() => {
+    if (!waiting.delete(id)) return;
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id, reason: "timeout" } })}\n`);
+    resolve({ result: { content: [{ type: "text", text: "fake client timeout" }], isError: true, timedOut: true } });
+  }, timeoutMs);
 });
 // Every tool result this CLI receives, so a test can prove what reached the model (ticket 05: never a password).
 const call = async (name, args) => {
-  const { result } = await request("tools/call", { name, arguments: args });
+  const { result } = await request("tools/call", { name, arguments: args }, role === "sub" ? toolTimeout : 0);
   appendFileSync(join(home, "fake-claude-calls.log"), `${JSON.stringify({ pid: process.pid, role, name, args, result })}\n`);
   return result;
 };
 const init = await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fake-claude", version: "2.1.309" } });
 child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-const tools = (await request("tools/list", {})).result.tools.map((tool) => `mcp__ssterm__${tool.name}`);
+const tools = [...(await request("tools/list", {})).result.tools.map((tool) => `mcp__ssterm__${tool.name}`), ...(extraTool ? ["Bash", "Read", "Write"] : [])];
 log({ role, cwd, problems, allowed, tools, servers, server: init.result?.serverInfo?.name, instructions: prompt.includes("ssterm instructions sst-041"),
   model: value("--model"), effort: value("--effort"), bridge: server.args[0],
   extra: prompt.includes("Additional instructions from the user") ? prompt.slice(prompt.indexOf("Additional instructions")) : null });
@@ -123,11 +141,55 @@ async function sub(text) {
   emit({ type: "result", subtype: "success", is_error: false, result: `${plan}Ran ${commands.length} command(s).` });
 }
 
+/** ssterm's isolation check endpoint as the provider: the scripted model's local tool calls are run only if offered. */
+async function viaEndpoint(text) {
+  if (argv.includes("--fake-transcript")) {
+    const folder = join(home, ".claude", "projects", cwd.replace(/[^A-Za-z0-9]/gu, "-"));
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "session.jsonl"), `${JSON.stringify({ cwd, text })}\n`);
+  }
+  if (argv.includes("--fake-openai")) {
+    await fetch(`${process.env.ANTHROPIC_BASE_URL}/v1/responses`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: value("--model"), input: [{ role: "user", content: text }], tools: tools.map((name) => ({ type: "function", name })) }) }).catch(() => undefined);
+    emit({ type: "result", subtype: "success", is_error: false, result: "checked" });
+    return;
+  }
+  const messages = [{ role: "user", content: text }];
+  for (let round = 0; round < 4; round++) {
+    const response = await fetch(`${process.env.ANTHROPIC_BASE_URL}/v1/messages`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: value("--model"), stream: false, system: prompt, tools: tools.map((name) => ({ name, input_schema: { type: "object" } })), messages }) });
+    if (!response.ok) break;
+    const message = await response.json();
+    messages.push({ role: "assistant", content: message.content });
+    const uses = message.content.filter((block) => block.type === "tool_use");
+    if (!uses.length) { say(message.content.filter((block) => block.type === "text").map((block) => block.text).join("")); break; }
+    messages.push({ role: "user", content: uses.map((use) => {
+      let output = `No such tool: ${use.name}`;
+      if (tools.includes(use.name)) try {
+        if (use.name === "Bash") output = execFileSync("/bin/sh", ["-c", use.input.command], { encoding: "utf8" });
+        if (use.name === "Read") output = readFileSync(use.input.file_path, "utf8");
+        if (use.name === "Write") { writeFileSync(use.input.file_path, use.input.content); output = "written"; }
+      } catch (error) { output = String(error); }
+      return { type: "tool_result", tool_use_id: use.id, content: output };
+    }) });
+  }
+  emit({ type: "result", subtype: "success", is_error: false, result: "checked" });
+}
+
 let chain = Promise.resolve();
+const turn = (text) => (process.env.ANTHROPIC_BASE_URL ? viaEndpoint(text) : role === "main" ? main(text) : sub(text));
+// One-shot mode (no --input-format): the whole of stdin is one plain-text prompt.
+if (value("--input-format") !== "stream-json") {
+  let all = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { all += chunk; });
+  process.stdin.on("end", () => { log({ role, oneShot: all }); void turn(all).then(() => { child.kill(); process.exit(0); }); });
+} else {
 const input = createInterface({ input: process.stdin });
 input.on("line", (line) => {
   const message = JSON.parse(line);
   const text = typeof message.message?.content === "string" ? message.message.content : "";
-  chain = chain.then(() => (role === "main" ? main(text) : sub(text)));
+  chain = chain.then(() => turn(text));
 });
 input.on("close", () => { void chain.then(() => { child.kill(); process.exit(0); }); });
+}

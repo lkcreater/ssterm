@@ -146,24 +146,27 @@ test("residue cleanup removes only this run's folder, cache entries and session 
 test("settings: a versioned allowlist record; anything else, or consent to an older disclosure, reads as off", () => {
   const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
   const valid = { version: 1, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "high", instructions: "Prefer journalctl.", disclosure: AGENT_DISCLOSURE_VERSION };
-  assert.deepEqual(parseAgentSettings(encode(valid)), { enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "high", instructions: "Prefer journalctl.", allowFullAllowOnProd: false, disclosure: AGENT_DISCLOSURE_VERSION },
+  assert.deepEqual(parseAgentSettings(encode(valid)), { enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "high", instructions: "Prefer journalctl.", allowFullAllowOnProd: false, custom: null, disclosure: AGENT_DISCLOSURE_VERSION, customCheck: null },
     "a ticket 03 version 1 record reads with Full allow on PROD off");
   const v2 = { ...valid, version: 2, allowFullAllowOnProd: true };
   assert.equal(parseAgentSettings(encode(v2)).allowFullAllowOnProd, true);
-  assert.deepEqual(JSON.parse(new TextDecoder().decode(serializeAgentSettings(parseAgentSettings(encode(v2))))), v2, "written as version 2");
-  assert.equal(parseAgentSettings(encode({ ...valid, model: "claude-opus-5-5" })).model, effectiveDefaultModel("claude"), "an unverified model falls back");
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(serializeAgentSettings(parseAgentSettings(encode(v2))))), { ...v2, version: 3, custom: null, customCheck: null }, "written as version 3");
+  assert.equal(parseAgentSettings(encode({ ...valid, model: "claude-sonnet-5-5" })).model, effectiveDefaultModel("claude"), "an unverified model falls back");
+  assert.equal(parseAgentSettings(encode({ ...valid, model: "claude-opus-5-5" })).model, "claude-opus-5-5", "verified by user decision 2026-10-23");
   assert.equal(AGENT_MODELS.claude.defaultModel, "claude-opus-5-5");
   assert.equal(AGENT_MODELS.claude.defaultEffort, "xhigh");
-  assert.deepEqual([DEFAULT_AGENT_SETTINGS.model, DEFAULT_AGENT_SETTINGS.effort], ["claude-haiku-5-5", "xhigh"], "the user's default applies once verified");
+  assert.deepEqual([DEFAULT_AGENT_SETTINGS.model, DEFAULT_AGENT_SETTINGS.effort], ["claude-opus-5-5", "xhigh"], "the user's default applies (verified)");
+  assert.equal(effectiveDefaultModel("claude"), "claude-opus-5-5");
   assert.deepEqual(parseAgentSettings(serializeAgentSettings({ ...DEFAULT_AGENT_SETTINGS })), DEFAULT_AGENT_SETTINGS);
   assert.equal(parseAgentSettings(encode({ ...valid, disclosure: 0 })).enabled, false);
   for (const bad of [undefined, new Uint8Array([0xff]), encode([]), encode({ ...valid, version: 2 }), encode({ ...valid, allowFullAllowOnProd: true }), encode({ ...v2, allowFullAllowOnProd: "yes" }), encode({ ...v2, version: 3 }), encode({ ...valid, provider: "codex" }),
     encode({ ...valid, apiKey: "x" }), encode({ ...valid, instructions: "a\u0007" }), encode({ ...valid, instructions: "x".repeat(4_001) }),
     encode({ ...valid, model: "-p" }), encode({ ...valid, effort: "ultra" })])
     assert.deepEqual(parseAgentSettings(bad), DEFAULT_AGENT_SETTINGS);
-  const settings = { enabled: true, provider: "claude", model: "claude-custom:v1.2", effort: "max", instructions: "", allowFullAllowOnProd: false };
+  const settings = { enabled: true, provider: "claude", model: "claude-custom:v1.2", effort: "max", instructions: "", allowFullAllowOnProd: false, custom: null };
   assert.ok(isConfigureAgentRequest({ owner, settings, consent: true }));
-  for (const bad of [{ owner, settings: { ...settings, provider: "codex" }, consent: true },
+  for (const bad of [{ owner, settings: { ...settings, provider: "gemini" }, consent: true },
+    { owner, settings: { ...settings, custom: { label: "x" } }, consent: true },
     { owner, settings: { ...settings, path: "/bin/sh" }, consent: true },
     { owner, settings: { ...settings, model: "--model" }, consent: true },
     { owner, settings: { ...settings, model: "a b" }, consent: true },
@@ -182,7 +185,7 @@ test("settings: a versioned allowlist record; anything else, or consent to an ol
 // ---------------------------------------------------------------------------------------------------------------
 // The runner with a scripted CLI and a recording terminal endpoint.
 
-interface FakeCli extends CliProcess { role: "main" | "sub"; args: string[]; env: Record<string, string>; cwd: string; stdin: object[]; emit(event: object): void; exit(): void; stopped: boolean; readonly killed: boolean }
+interface FakeCli extends CliProcess { role: "main" | "sub"; args: string[]; env: Record<string, string>; cwd: string; stdin: (object | string)[]; emit(event: object): void; exit(): void; stopped: boolean; readonly killed: boolean }
 function lab(options: { local?: boolean; team?: boolean; environment?: "DEV" | "PROD"; approvalMs?: number } = {}) {
   const folder = temp();
   const clis: FakeCli[] = [];
@@ -251,7 +254,7 @@ test("consent gating, session eligibility and the version gate decide whether a 
   const team = lab({ team: true });
   try {
     assert.deepEqual(await runner.open(owner, "s1", 1), { status: "refused", reason: "disabled" }, "off by default");
-    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "xhigh" as const, instructions: "", allowFullAllowOnProd: false };
+    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "xhigh" as const, instructions: "", allowFullAllowOnProd: false, custom: null };
     assert.deepEqual(await runner.configure(settings, false), { status: "consent-required" });
     assert.equal(stored(), undefined, "nothing saved without consent");
     setVersion("unsupported-version");
@@ -259,8 +262,8 @@ test("consent gating, session eligibility and the version gate decide whether a 
     setVersion("ready");
     const saved = await runner.configure(settings, true);
     assert.equal(saved.status, "saved");
-    assert.deepEqual(JSON.parse(new TextDecoder().decode(stored())), { version: 2, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false, disclosure: AGENT_DISCLOSURE_VERSION });
-    assert.deepEqual(await runner.configure({ ...settings, model: "claude-opus-5-5" }, true), { status: "model-unverified" }, "A14: unverified models never run");
+    assert.deepEqual(JSON.parse(new TextDecoder().decode(stored())), { version: 3, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false, custom: null, customCheck: null, disclosure: AGENT_DISCLOSURE_VERSION });
+    assert.deepEqual(await runner.configure({ ...settings, model: "claude-sonnet-5-5" }, true), { status: "model-unverified" }, "A14: unverified models never run");
     assert.deepEqual(await runner.configure({ ...settings, model: "my-custom-model" }, true), { status: "model-unverified" }, "custom IDs are never verified");
     assert.equal((await runner.configure({ ...settings, instructions: "Be brief." }, false)).status, "saved", "already consented");
     assert.deepEqual(await runner.open(owner, "s1", 2), { status: "refused", reason: "session" }, "stale generation");
@@ -278,7 +281,7 @@ test("consent gating, session eligibility and the version gate decide whether a 
 test("main agent: delegate tools only; one sub agent at a time with the rest queued; the task record backs cards and get_task_status", async () => {
   const { runner, clis, issued, call, structured, last, cleanup, folder } = lab();
   try {
-    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "max", instructions: "Prefer journalctl.", allowFullAllowOnProd: false }, true);
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "max", instructions: "Prefer journalctl.", allowFullAllowOnProd: false, custom: null }, true);
     await runner.open(owner, "s1", 1);
     assert.deepEqual(await runner.send(owner, "s1", "check disk"), { status: "sent" });
     const main = clis[0]!;
@@ -357,7 +360,7 @@ test("close, lock and session end stop every CLI, revoke credentials, refuse pen
   for (const end of ["close", "lock", "session", "isolation", "owner"] as const) {
     const { runner, clis, issued, call, last, snapshot, cleanup } = lab();
     try {
-      await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false }, true);
+      await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false, custom: null }, true);
       await runner.open(owner, "s1", 1);
       await runner.send(owner, "s1", "hello");
       await call("delegate_task", { goal: "uptime" });
@@ -402,7 +405,7 @@ test("agent IPC: owner-authorized, app-lock gated, exactly one valid argument", 
   const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!(event, ...args);
   const ownerOne = { windowId: 1, generation: 1 };
   assert.deepEqual(await call(channels.openAgent, { owner: ownerOne, sessionId: "s1", generation: 1 }), { ok: true, value: { status: "refused", reason: "disabled" } });
-  assert.deepEqual(await call(channels.configureAgent, { owner: ownerOne, settings: { enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false }, consent: false }), { ok: true, value: { status: "consent-required" } });
+  assert.deepEqual(await call(channels.configureAgent, { owner: ownerOne, settings: { enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false, custom: null }, consent: false }), { ok: true, value: { status: "consent-required" } });
   assert.deepEqual(await call(channels.openAgent, { owner: ownerOne, sessionId: "s1", generation: 1 }, "extra"), failure("invalid-request"));
   assert.deepEqual(await call(channels.sendAgent, { owner: ownerOne, sessionId: "s1", text: "" }), failure("invalid-request"));
   assert.deepEqual(await call(channels.agentState, { owner: { windowId: 1, generation: 9 } }), failure("stale-owner"));
@@ -447,7 +450,7 @@ test("isolation detector mirrors the spike: hooks, extra tools/servers, non-buil
 test("bounded records: a task stops at its command limit unrun; cards show a 4 KiB tail; get_task_status stays under its budget", async () => {
   const { runner, clis, issued, call, structured, last, cleanup } = lab();
   try {
-    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false }, true);
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false, custom: null }, true);
     await runner.open(owner, "s1", 1);
     await runner.send(owner, "s1", "go");
     await call("delegate_task", { goal: "many" });
@@ -476,7 +479,7 @@ test("bounded records: a task stops at its command limit unrun; cards show a 4 K
 test("the conversation limit holds across concurrent opens; one open per session at a time", async () => {
   const { runner, cleanup } = lab();
   try {
-    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false }, true);
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false, custom: null }, true);
     const results = await Promise.all(Array.from({ length: 10 }, (_, i) => runner.open(owner, `s${i + 1}`, 1)));
     assert.equal(results.filter((result) => result.status === "opened").length, 8);
     assert.equal(results.filter((result) => result.status === "refused" && result.reason === "limit").length, 2);
@@ -516,7 +519,7 @@ const verdict = (command: string) => classifyReadOnly(command);
 /** An MCP request that is never cancelled. */
 const live = () => new AbortController().signal;
 async function startTask(fixture: ReturnType<typeof lab>, settings: Partial<{ allowFullAllowOnProd: boolean }> = {}) {
-  await fixture.runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false, ...settings }, true);
+  await fixture.runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false, custom: null, ...settings }, true);
   await fixture.runner.open(owner, "s1", 1);
   await fixture.runner.send(owner, "s1", "go");
   await fixture.call("delegate_task", { goal: "work" });
@@ -663,14 +666,14 @@ test("PROD: Full allow needs the Settings option and still the warning; approvin
     assert.deepEqual(runner.decide(owner, "s1", 1, id("command", 3), "reject", false), { status: "applied" }, "rejecting needs no confirmation");
     assert.match(refusal(await rejected), /rejected/u);
 
-    const saved = await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: true }, false);
+    const saved = await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: true, custom: null }, false);
     assert.equal(saved.status === "saved" && saved.view.settings.allowFullAllowOnProd, true);
     assert.equal(fixture.last().conversations[0]!.fullAllowAvailable, true);
     assert.deepEqual(runner.setMode(owner, "s1", 1, "full-allow", false), { status: "refused", reason: "acknowledge" }, "still the warning step");
     assert.deepEqual(runner.setMode(owner, "s1", 1, "full-allow", true), { status: "set" });
     assert.equal((await gate.authorize("touch /tmp/x", verdict("touch /tmp/x"), live()) as { via: string }).via, "full-allow");
     // Turning the option off returns PROD conversations to Auto at once.
-    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false }, false);
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false, custom: null }, false);
     assert.equal(fixture.last().conversations[0]!.mode, "auto");
     assert.match(fixture.last().conversations[0]!.messages.at(-1)!.text, /back in Auto/u);
     const back = gate.authorize("touch /tmp/x", verdict("touch /tmp/x"), live());

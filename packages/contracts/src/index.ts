@@ -46,7 +46,7 @@ import type {
 } from './recording.ts';
 export * from './recording.ts';
 import type {
-  AgentSettingsRequest, AgentSettingsView, ConfigureAgentRequest, ConfigureAgentResponse, AgentStateRequest, AgentState,
+  AgentSettingsRequest, AgentSettingsView, ConfigureAgentRequest, ConfigureAgentResponse, CheckAgentProviderRequest, AgentStateRequest, AgentState,
   OpenAgentRequest, OpenAgentResponse, AgentConversationRequest, SendAgentRequest, SendAgentResponse, CancelAgentTaskRequest,
   CancelAgentTaskResponse, SetAgentModeRequest, SetAgentModeResponse, DecideAgentRequest, DecideAgentResponse,
 } from "./agent.ts";
@@ -199,6 +199,8 @@ export interface DesktopAPI {
   /** SST-041 ticket 03: Settings › AI Agent (provider availability is detected in main). */
   agentSettings(request: AgentSettingsRequest): Promise<Result<AgentSettingsView>>;
   configureAgent(request: ConfigureAgentRequest): Promise<Result<ConfigureAgentResponse>>;
+  /** Ticket 06: runs the custom provider's isolation check now (`live`: consent to synthetic prompts to its provider). */
+  checkAgentProvider(request: CheckAgentProviderRequest): Promise<Result<AgentSettingsView>>;
   agentState(request: AgentStateRequest): Promise<Result<AgentState>>;
   onAgentState(callback: (state: AgentState) => void): () => void;
   openAgent(request: OpenAgentRequest): Promise<Result<OpenAgentResponse>>;
@@ -313,6 +315,7 @@ export const channels = Object.freeze({
   forgetCommand: "ssterm:forget-command",
   agentSettings: "ssterm:agent-settings",
   configureAgent: "ssterm:configure-agent",
+  checkAgentProvider: "ssterm:check-agent-provider",
   agentState: "ssterm:agent-state",
   agentStateChanged: "ssterm:agent-state-changed",
   openAgent: "ssterm:open-agent",

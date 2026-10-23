@@ -15,9 +15,14 @@ export const MAX_AGENT_TASKS = 16;
 export const MAX_AGENT_STEPS = 64;
 const MAX_TEXT = 65_536 + 128;
 
-export type AgentProviderId = "claude" | "codex";
-/** Verified providers only (ticket 01): codex stays disabled. */
-export type AgentProvider = "claude";
+export type AgentProviderId = "claude" | "codex" | "custom";
+/**
+ * Ticket 06: what Settings can select. Each runs only when it resolves ready: claude and codex in a version that passed
+ * the ticket 01 isolation check (no codex version has), a custom provider once its own isolation check passed for the
+ * exact definition, binary hash and version output.
+ */
+export type AgentProvider = AgentProviderId;
+const PROVIDERS: readonly unknown[] = ["claude", "codex", "custom"];
 export const AGENT_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type AgentEffort = (typeof AGENT_EFFORTS)[number];
 export interface AgentModelEntry { id: string; alias: string | null; label: string; verified: boolean }
@@ -27,14 +32,18 @@ export interface AgentModelEntry { id: string; alias: string | null; label: stri
  * model ID (a strict token, one argv element) is never verified. The user's default (`defaultModel`) applies once it is
  * verified; until then the first verified model is the effective default.
  */
-export const AGENT_MODELS: Readonly<Record<AgentProviderId, { cliVersion: string; defaultModel: string; defaultEffort: AgentEffort; models: readonly AgentModelEntry[] }>> = Object.freeze({
+/** Bundled lists for the built-in providers; a custom provider names its own model in its definition. */
+export type AgentBuiltinProvider = Exclude<AgentProviderId, "custom">;
+export const AGENT_MODELS: Readonly<Record<AgentBuiltinProvider, { cliVersion: string; defaultModel: string; defaultEffort: AgentEffort; models: readonly AgentModelEntry[] }>> = Object.freeze({
   claude: {
     cliVersion: "2.1.309",
     defaultModel: "claude-opus-5-5",
     defaultEffort: "xhigh",
     models: [
-      // 2026-10-23 live set at effort xhigh: inconclusive (the provider's safeguards declined two synthetic attack prompts).
-      { id: "claude-opus-5-5", alias: "opus", label: "Claude Opus 5.5", verified: false },
+      // Verified by user decision 2026-10-23: its live set at effort xhigh was 3 pass + 2 inconclusive (the provider's
+      // safeguards declined two synthetic attack prompts), the capture check passed and init offered only the ssterm tool;
+      // isolation is enforced by the CLI flags and tool allowlist, not by the model.
+      { id: "claude-opus-5-5", alias: "opus", label: "Claude Opus 5.5", verified: true },
       { id: "claude-fable-5-1", alias: "fable", label: "Claude Fable 5.1", verified: false },
       { id: "claude-sonnet-5-5", alias: "sonnet", label: "Claude Sonnet 5.5", verified: false },
       // Verified through the `haiku` alias (ticket 01 live set, effort low).
@@ -49,20 +58,108 @@ export const AGENT_MODELS: Readonly<Record<AgentProviderId, { cliVersion: string
     models: [{ id: "gpt-5.6-luna", alias: null, label: "GPT-5.6 Luna", verified: false }],
   },
 });
-export const isVerifiedAgentModel = (provider: AgentProviderId, model: string): boolean =>
+export const isVerifiedAgentModel = (provider: AgentBuiltinProvider, model: string): boolean =>
   AGENT_MODELS[provider].models.some((entry) => entry.verified && (entry.id === model || entry.alias === model));
 /** The user's default model when it is verified, otherwise the first verified one. */
-export function effectiveDefaultModel(provider: AgentProviderId): string {
+export function effectiveDefaultModel(provider: AgentBuiltinProvider): string {
   const list = AGENT_MODELS[provider];
   return isVerifiedAgentModel(provider, list.defaultModel) ? list.defaultModel : list.models.find((entry) => entry.verified)?.id ?? list.defaultModel;
 }
 /** A custom model ID: one token that can never be read as a flag. */
 export const AGENT_MODEL_TOKEN = /^(?!-)[A-Za-z0-9._:-]{1,64}$/u;
 export const isAgentModelId = (value: unknown): value is string => typeof value === "string" && AGENT_MODEL_TOKEN.test(value);
+
+/**
+ * Ticket 06: a user-defined CLI provider. It must speak claude-style stream-json events on stdout and read the MCP
+ * config ssterm writes (`{mcpConfigPath}`). No shell: the binary is an absolute path (never a PATH lookup, never a shell,
+ * `env` or a script interpreter) and the arguments are separate tokens, each passed as one argv element. Tokens may
+ * contain only the placeholders below; the prompt is never one of them (it goes over stdin). No secrets: the environment
+ * additions refuse key, token, secret, password and credential names.
+ */
+export interface AgentCustomProvider {
+  label: string;
+  path: string;
+  args: string[];
+  /** `stream-json`: one long-lived process, user messages as stream-json lines; `one-shot`: one process per message, the prompt as plain text. */
+  input: "stream-json" | "one-shot";
+  model: string;
+  effort: AgentEffort;
+  env: { name: string; value: string }[];
+  /**
+   * The variable naming the CLI's provider base URL (for example ANTHROPIC_BASE_URL). Set only during the isolation
+   * check, to ssterm's local test endpoint; null when the CLI has none (the check then needs a consented live call).
+   */
+  endpointEnv: string | null;
+  /**
+   * How long the CLI's MCP client waits for one tool call (seconds; many clients default to 60). A plan or command card
+   * expires 5 seconds before it, so the user can never approve a call the CLI has stopped waiting for.
+   */
+  toolTimeoutSec: number;
+}
+export const AGENT_CUSTOM_PLACEHOLDERS = ["model", "effort", "mcpConfigPath", "systemPromptFile", "allowedTools"] as const;
+export const MAX_CUSTOM_ARGS = 64;
+export const MAX_CUSTOM_ENV = 32;
+/**
+ * Shells, `env` and script interpreters would turn one argument into a program: never the provider binary. This is a
+ * usability guard against shell strings, not a security boundary: any binary can run anything, which is why the
+ * isolation check, not this list, decides whether a provider runs.
+ */
+const NOT_A_PROVIDER = /^(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh|env|osascript|node|deno|bun|python[0-9.]*|perl[0-9.]*|ruby|php|tclsh|expect|awk|lua|swift|open|login|sudo|su)$/u;
+const ENV_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
+const RESERVED_ENV = /^(?:HOME|USER|LOGNAME|PATH|TMPDIR|LANG|TERM|SHELL|PWD|SSTERM_.*|DYLD_.*|LD_.*|NODE_OPTIONS|NODE_PATH|BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND)$/u;
+const SECRET_ENV = /(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|COOKIE|SESSION)/u;
+const CONTROL = /[\u0000-\u001f\u007f]/u;
+/** Why a definition is not acceptable, or undefined. Shared by the renderer form and main. */
+export function customProviderProblem(v: unknown): string | undefined {
+  if (!exactObject(v, ["label", "path", "args", "input", "model", "effort", "env", "endpointEnv", "toolTimeoutSec"])) return "The definition is malformed.";
+  if (typeof v.label !== "string" || !v.label.trim() || v.label.length > 64 || CONTROL.test(v.label)) return "Name it (1–64 characters).";
+  if (typeof v.path !== "string" || v.path.length > 1_024 || CONTROL.test(v.path) || !v.path.startsWith("/") ||
+    v.path.split("/").slice(1).some((segment) => segment === "" || segment === "." || segment === "..")) return "The binary must be an absolute path (no PATH lookup, no . or .. segments).";
+  if (NOT_A_PROVIDER.test(v.path.slice(v.path.lastIndexOf("/") + 1))) return "The binary cannot be a shell, env or a script interpreter.";
+  if (!Array.isArray(v.args) || v.args.length > MAX_CUSTOM_ARGS) return `At most ${MAX_CUSTOM_ARGS} arguments.`;
+  let mcp = false;
+  for (const token of v.args) {
+    if (typeof token !== "string" || token.length > 1_024 || CONTROL.test(token)) return "Each argument is one line without control characters (at most 1024 characters).";
+    for (const [, name] of token.matchAll(/\{([A-Za-z]*)\}/gu)) {
+      if (!(AGENT_CUSTOM_PLACEHOLDERS as readonly string[]).includes(name!)) return `Unknown placeholder {${name}}. Use ${AGENT_CUSTOM_PLACEHOLDERS.map((p) => `{${p}}`).join(" ")}.`;
+      if (name === "mcpConfigPath") mcp = true;
+    }
+  }
+  if (!mcp) return "An argument must pass ssterm's MCP config with {mcpConfigPath}.";
+  if (v.input !== "stream-json" && v.input !== "one-shot") return "Choose how prompts are sent.";
+  if (!isAgentModelId(v.model)) return "The model is one token: letters, digits and . _ : - only, not starting with -.";
+  if (!(AGENT_EFFORTS as readonly unknown[]).includes(v.effort)) return "Choose an effort.";
+  if (!Array.isArray(v.env) || v.env.length > MAX_CUSTOM_ENV) return `At most ${MAX_CUSTOM_ENV} environment variables.`;
+  const names = new Set<string>();
+  for (const entry of v.env) {
+    if (!exactObject(entry, ["name", "value"]) || typeof entry.name !== "string" || typeof entry.value !== "string" || !ENV_NAME.test(entry.name) ||
+      entry.value.length > 1_024 || CONTROL.test(entry.value)) return "Environment entries are NAME=value, with an upper-case name and a one-line value.";
+    if (RESERVED_ENV.test(entry.name)) return `${entry.name} is set by ssterm or could load code, so it cannot be added.`;
+    if (SECRET_ENV.test(entry.name)) return `${entry.name} looks like a secret; ssterm stores no secrets.`;
+    if (names.has(entry.name)) return `${entry.name} is listed twice.`;
+    names.add(entry.name);
+  }
+  if (v.endpointEnv !== null && (typeof v.endpointEnv !== "string" || !ENV_NAME.test(v.endpointEnv) || RESERVED_ENV.test(v.endpointEnv) ||
+    SECRET_ENV.test(v.endpointEnv) || names.has(v.endpointEnv))) return "The test endpoint variable is an upper-case name that is not otherwise set.";
+  if (!Number.isSafeInteger(v.toolTimeoutSec) || (v.toolTimeoutSec as number) < 10 || (v.toolTimeoutSec as number) > 3_600) return "The client tool timeout is 10–3600 seconds.";
+  return undefined;
+}
+export const isAgentCustomProvider = (v: unknown): v is AgentCustomProvider => customProviderProblem(v) === undefined;
+
 /** `allowFullAllowOnProd` (ticket 04, off by default): Full allow can be chosen for a PROD session, still behind its warning step. */
-export interface AgentSettings { enabled: boolean; provider: AgentProvider; model: string; effort: AgentEffort; instructions: string; allowFullAllowOnProd: boolean }
-export type AgentProviderStatus = "ready" | "missing" | "unsupported-version" | "not-native" | "managed-policy" | "disabled";
-export interface AgentProviderView { id: AgentProviderId; status: AgentProviderStatus; version: string | null }
+export interface AgentSettings { enabled: boolean; provider: AgentProvider; model: string; effort: AgentEffort; instructions: string; allowFullAllowOnProd: boolean; custom: AgentCustomProvider | null }
+/**
+ * `not-configured`/`invalid`: no usable custom definition; `check-required`: its definition, binary hash or version output
+ * changed since the last isolation check; `check-failed`/`unverifiable`: the last check failed or could not judge.
+ */
+/** `ready-live-unverified`: runnable after a consented live check only; what it sends its provider was not seen. */
+export type AgentProviderStatus = "ready" | "ready-live-unverified" | "missing" | "unsupported-version" | "not-native" | "managed-policy" | "disabled" |
+  "not-configured" | "invalid" | "check-required" | "check-failed" | "unverifiable";
+export const isRunnableProviderStatus = (status: AgentProviderStatus | undefined): boolean => status === "ready" || status === "ready-live-unverified";
+const PROVIDER_STATUS: readonly unknown[] = ["ready", "ready-live-unverified", "missing", "unsupported-version", "not-native", "managed-policy", "disabled",
+  "not-configured", "invalid", "check-required", "check-failed", "unverifiable"];
+/** `reasons`: why it cannot be used (codex: the ticket 01 failures; custom: its isolation check's findings). */
+export interface AgentProviderView { id: AgentProviderId; status: AgentProviderStatus; version: string | null; reasons: string[] }
 export interface AgentSettingsView { settings: AgentSettings; providers: AgentProviderView[]; verified: string[] }
 
 export interface AgentSettingsRequest { owner: Owner }
@@ -75,6 +172,11 @@ export type ConfigureAgentResponse =
   | { status: "model-unverified" }
   | { status: "provider-unavailable"; view: AgentSettingsView }
   | { status: "failed" };
+/**
+ * Ticket 06: runs the custom provider's isolation check now. `live` is the explicit per-run consent to send synthetic
+ * test prompts to the CLI's own provider, needed only when the CLI cannot be pointed at ssterm's local test endpoint.
+ */
+export interface CheckAgentProviderRequest { owner: Owner; live: boolean }
 
 export type AgentTaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type AgentStepStatus = "completed" | "interrupted" | "timeout" | "alternate-screen" | "ended" | "not-at-prompt" | "not-started" | "password-handoff" | "password-prompt-refused" | "refused";
@@ -108,7 +210,7 @@ export interface AgentConversation {
   generation: number;
   target: { label: string; endpoint: string; environment: "DEV" | "STAGING" | "PROD" | null };
   provider: AgentProvider;
-  /** Fixed when the conversation opens; its sub agents use the same. */
+  /** Fixed when the conversation opens; its sub agents use the same (a custom provider's own model and effort). */
   model: string;
   effort: AgentEffort;
   mode: AgentMode;
@@ -150,22 +252,26 @@ const isMode = (v: unknown): v is AgentMode => (AGENT_MODES as readonly unknown[
 
 const isEffort = (v: unknown): v is AgentEffort => (AGENT_EFFORTS as readonly unknown[]).includes(v);
 export function isAgentSettings(v: unknown): v is AgentSettings {
-  return exactObject(v, ["enabled", "provider", "model", "effort", "instructions", "allowFullAllowOnProd"]) && typeof v.enabled === "boolean" && v.provider === "claude" &&
-    isAgentModelId(v.model) && isEffort(v.effort) && prose(v.instructions, MAX_AGENT_INSTRUCTIONS) && typeof v.allowFullAllowOnProd === "boolean";
+  return exactObject(v, ["enabled", "provider", "model", "effort", "instructions", "allowFullAllowOnProd", "custom"]) && typeof v.enabled === "boolean" &&
+    PROVIDERS.includes(v.provider) && isAgentModelId(v.model) && isEffort(v.effort) && prose(v.instructions, MAX_AGENT_INSTRUCTIONS) &&
+    typeof v.allowFullAllowOnProd === "boolean" && (v.custom === null || isAgentCustomProvider(v.custom));
 }
 function isProviderView(v: unknown): v is AgentProviderView {
-  return exactObject(v, ["id", "status", "version"]) && (v.id === "claude" || v.id === "codex") &&
-    ["ready", "missing", "unsupported-version", "not-native", "managed-policy", "disabled"].includes(v.status as string) &&
-    (v.version === null || (typeof v.version === "string" && /^[0-9][0-9A-Za-z.+-]{0,40}$/u.test(v.version)));
+  return exactObject(v, ["id", "status", "version", "reasons"]) && PROVIDERS.includes(v.id) && PROVIDER_STATUS.includes(v.status) &&
+    (v.version === null || (prose(v.version, 200) && !v.version.includes("\n"))) &&
+    Array.isArray(v.reasons) && v.reasons.length <= 16 && v.reasons.every((reason) => prose(reason, 600));
 }
 export function isAgentSettingsView(v: unknown): v is AgentSettingsView {
   return exactObject(v, ["settings", "providers", "verified"]) && isAgentSettings(v.settings) && Array.isArray(v.providers) &&
-    v.providers.length <= 4 && v.providers.every(isProviderView) && Array.isArray(v.verified) && v.verified.length <= 16 &&
+    v.providers.length <= 3 && v.providers.every(isProviderView) && Array.isArray(v.verified) && v.verified.length <= 16 &&
     v.verified.every((version) => typeof version === "string" && /^[0-9][0-9A-Za-z.+-]{0,40}$/u.test(version));
 }
 export function isAgentSettingsRequest(v: unknown): v is AgentSettingsRequest { return exactObject(v, ["owner"]) && isOwner(v.owner); }
 export function isConfigureAgentRequest(v: unknown): v is ConfigureAgentRequest {
   return exactObject(v, ["owner", "settings", "consent"]) && isOwner(v.owner) && isAgentSettings(v.settings) && typeof v.consent === "boolean";
+}
+export function isCheckAgentProviderRequest(v: unknown): v is CheckAgentProviderRequest {
+  return exactObject(v, ["owner", "live"]) && isOwner(v.owner) && typeof v.live === "boolean";
 }
 export function isConfigureAgentResponse(v: unknown): v is ConfigureAgentResponse {
   if (exactObject(v, ["status", "view"])) return (v.status === "saved" || v.status === "provider-unavailable") && isAgentSettingsView(v.view);
@@ -198,13 +304,13 @@ export function isAgentConversation(v: unknown): v is AgentConversation {
     isAgentModelId(v.model) && isEffort(v.effort) && isMode(v.mode) && typeof v.fullAllowAvailable === "boolean" &&
     isCounter(v.generation) && v.generation > 0 && exactObject(v.target, ["label", "endpoint", "environment"]) &&
     prose(v.target.label, 400) && prose(v.target.endpoint, 1_300) && ENVIRONMENTS.includes(v.target.environment) &&
-    v.provider === "claude" && ["idle", "starting", "thinking"].includes(v.status as string) &&
+    PROVIDERS.includes(v.provider) && ["idle", "starting", "thinking"].includes(v.status as string) &&
     Array.isArray(v.messages) && v.messages.length <= MAX_AGENT_MESSAGES && v.messages.every(isMessage) &&
     Array.isArray(v.tasks) && v.tasks.length <= MAX_AGENT_TASKS && v.tasks.every(isTask);
 }
 export function isAgentState(v: unknown): v is AgentState {
   return exactObject(v, ["owner", "sequence", "enabled", "provider", "conversations"]) && isOwner(v.owner) && isCounter(v.sequence) &&
-    typeof v.enabled === "boolean" && v.provider === "claude" && Array.isArray(v.conversations) && v.conversations.length <= 8 &&
+    typeof v.enabled === "boolean" && PROVIDERS.includes(v.provider) && Array.isArray(v.conversations) && v.conversations.length <= 8 &&
     v.conversations.every(isAgentConversation);
 }
 export function isAgentStateRequest(v: unknown): v is AgentStateRequest { return exactObject(v, ["owner"]) && isOwner(v.owner); }

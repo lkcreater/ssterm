@@ -13,19 +13,23 @@ import {
   AGENT_DISCLOSURE_VERSION, AGENT_EFFORTS, AGENT_MODELS, effectiveDefaultModel, isAgentModelId, isVerifiedAgentModel, MAX_AGENT_INSTRUCTIONS, MAX_AGENT_MESSAGES, MAX_AGENT_STEPS, MAX_AGENT_TASKS, channels, exactObject,
   failure, isAgentConversationRequest, isAgentSettingsRequest, isAgentStateRequest, isCancelAgentTaskRequest,
   isConfigureAgentRequest, isDecideAgentRequest, isOpenAgentRequest, isSendAgentRequest, isSetAgentModeRequest,
-  type AgentConversation, type AgentEffort, type AgentMessage, type AgentMode, type AgentPlan, type AgentSettings, type AgentSettingsView, type AgentState,
+  isCheckAgentProviderRequest, isAgentCustomProvider,
+  type AgentConversation, type AgentCustomProvider, type AgentEffort, type AgentMessage, type AgentMode, type AgentPlan, type AgentProvider, type AgentProviderStatus,
+  type AgentProviderView, type AgentSettings, type AgentSettingsView, type AgentState,
   type AgentStep, type AgentTask, type ConfigureAgentResponse, type DecideAgentResponse, type OpenAgentResponse, type Owner, type Result,
   type SendAgentResponse, type SetAgentModeResponse,
 } from "@ssterm/contracts";
 import type { ObservedTerminal, TerminalObserver } from "@ssterm/domain";
 import type { SessionRegistry } from "@ssterm/services";
 import type { AgentGate, AgentTerminals, AgentToolRole, ToolDefinition, ToolResult } from "./agent-mcp";
-import { readOnlyRefusal, text } from "./agent-mcp";
+import { readOnlyRefusal, text, TOOLS } from "./agent-mcp";
 import { APPROVAL_WAIT_MS, MAX_PLANS_PER_TASK, normalizeCommand, parsePlan, takePlanCommand, unshowable } from "./agent-policy";
 import {
-  agentInstructions, claudeArgs, mcpConfig, removeRunResidue, RUN_PROFILE_FILE, spawnCli, VERIFIED_CLAUDE_VERSIONS,
-  type AgentTarget, type CliProcess, type ProviderResolution,
+  agentInstructions, CLAUDE_ENV, claudeArgs, cleanStateResidue, CODEX_FAILURES, VERIFIED_CODEX_VERSIONS, codexArgs, codexViolation, customArgs, customEnv, isolationViolation, mcpConfig, removeRunResidue,
+  resolveCustom, RUN_PROFILE_FILE, spawnCli, VERIFIED_CLAUDE_VERSIONS, type AgentTarget, type CliProcess, type CustomResolution, type ProviderResolution,
 } from "./agent-cli";
+import { checkCustomProvider, sanitizeReasons } from "./agent-check";
+export { isolationViolation } from "./agent-cli";
 import type { WindowBoundary } from "./boundary";
 import { sessionOwnerId } from "./session-runtime";
 
@@ -33,35 +37,51 @@ import { sessionOwnerId } from "./session-runtime";
 // Settings: a versioned allowlist record in the profile (`agent-settings.json`, 0600), separate from the catalog
 // schema like the SST-034 recording policy. No secrets: the CLI keeps its own login.
 
-export interface StoredAgentSettings extends AgentSettings { disclosure: number }
+/** Ticket 06: the last isolation check of the custom provider, bound to the fingerprint it ran against. */
+export interface CustomCheckRecord { fingerprint: string; status: "passed" | "passed-live-unverified-requests" | "failed" | "unverifiable"; reasons: string[]; version: string | null }
+export interface StoredAgentSettings extends AgentSettings { disclosure: number; customCheck: CustomCheckRecord | null }
 export const DEFAULT_AGENT_SETTINGS: Readonly<StoredAgentSettings> = Object.freeze({
   enabled: false, provider: "claude", model: effectiveDefaultModel("claude"), effort: AGENT_MODELS.claude.defaultEffort, instructions: "",
-  allowFullAllowOnProd: false, disclosure: 0,
+  allowFullAllowOnProd: false, custom: null, disclosure: 0, customCheck: null,
 });
+const isCheckRecord = (v: unknown): v is CustomCheckRecord => exactObject(v, ["fingerprint", "status", "reasons", "version"]) &&
+  typeof v.fingerprint === "string" && /^[0-9a-f]{64}$/u.test(v.fingerprint) && ["passed", "passed-live-unverified-requests", "failed", "unverifiable"].includes(v.status as string) &&
+  Array.isArray(v.reasons) && v.reasons.length <= 16 && v.reasons.every((reason) => typeof reason === "string" && reason.length <= 600 && !/[\u0000-\u001f\u007f]/u.test(reason)) &&
+  (v.version === null || (typeof v.version === "string" && v.version.length <= 200 && !/[\u0000-\u001f\u007f]/u.test(v.version)));
 /**
- * Anything but an exact version 2 record, or a version 1 record (ticket 03, read with "Allow Full allow on PROD" off),
- * or a consent to an older disclosure, reads as off.
+ * Anything but an exact version 3 record, a version 2 record (ticket 04) or a version 1 record (ticket 03, read with
+ * "Allow Full allow on PROD" off), or a consent to an older disclosure, reads as off. Versions 1 and 2 knew claude only.
  */
 export function parseAgentSettings(bytes: Uint8Array | undefined): StoredAgentSettings {
   try {
-    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    const parsed: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     const fields = ["version", "enabled", "provider", "model", "effort", "instructions", "disclosure"];
-    const v1 = exactObject(value, fields) && value.version === 1;
-    if (!v1 && !(exactObject(value, [...fields, "allowFullAllowOnProd"]) && value.version === 2 && typeof value.allowFullAllowOnProd === "boolean")) return { ...DEFAULT_AGENT_SETTINGS };
-    if (typeof value.enabled !== "boolean" || value.provider !== "claude" || typeof value.instructions !== "string" ||
+    const v1 = exactObject(parsed, fields) && parsed.version === 1;
+    const v2 = exactObject(parsed, [...fields, "allowFullAllowOnProd"]) && parsed.version === 2;
+    const v3 = exactObject(parsed, [...fields, "allowFullAllowOnProd", "custom", "customCheck"]) && parsed.version === 3 &&
+      (parsed.custom === null || isAgentCustomProvider(parsed.custom)) && (parsed.customCheck === null || isCheckRecord(parsed.customCheck)) &&
+      ["claude", "codex", "custom"].includes(parsed.provider as string);
+    if (!v1 && !v2 && !v3) return { ...DEFAULT_AGENT_SETTINGS };
+    const value = parsed as Record<string, unknown>;
+    if (!v1 && typeof value.allowFullAllowOnProd !== "boolean") return { ...DEFAULT_AGENT_SETTINGS };
+    if (typeof value.enabled !== "boolean" || (!v3 && value.provider !== "claude") || typeof value.instructions !== "string" ||
       !isAgentModelId(value.model) || !(AGENT_EFFORTS as readonly unknown[]).includes(value.effort) ||
       value.instructions.length > MAX_AGENT_INSTRUCTIONS || /[\u0000-\u0008\u000b-\u001f\u007f]/u.test(value.instructions) ||
       !Number.isSafeInteger(value.disclosure)) return { ...DEFAULT_AGENT_SETTINGS };
     const disclosure = value.disclosure as number;
-    // A model that is (no longer) verified for this CLI version falls back to the effective default.
-    const model = isVerifiedAgentModel("claude", value.model) ? value.model : effectiveDefaultModel("claude");
-    return { enabled: value.enabled && disclosure === AGENT_DISCLOSURE_VERSION, provider: "claude", model, effort: value.effort as AgentEffort, instructions: value.instructions,
-      allowFullAllowOnProd: value.allowFullAllowOnProd === true, disclosure };
+    // A model that is (no longer) verified for this CLI version falls back to the effective default (per built-in provider;
+    // a custom provider names its model in its definition, and this field stays the claude choice).
+    const builtin = value.provider === "codex" ? "codex" : "claude";
+    const model = isVerifiedAgentModel(builtin, value.model as string) ? value.model as string : effectiveDefaultModel(builtin);
+    return { enabled: value.enabled && disclosure === AGENT_DISCLOSURE_VERSION, provider: value.provider as AgentProvider, model, effort: value.effort as AgentEffort, instructions: value.instructions,
+      allowFullAllowOnProd: value.allowFullAllowOnProd === true, custom: v3 ? value.custom as AgentCustomProvider | null : null, disclosure,
+      customCheck: v3 ? value.customCheck as CustomCheckRecord | null : null };
   } catch { return { ...DEFAULT_AGENT_SETTINGS }; }
 }
 export const serializeAgentSettings = (settings: StoredAgentSettings): Uint8Array =>
-  new TextEncoder().encode(JSON.stringify({ version: 2, enabled: settings.enabled, provider: settings.provider, model: settings.model,
-    effort: settings.effort, instructions: settings.instructions, allowFullAllowOnProd: settings.allowFullAllowOnProd, disclosure: settings.disclosure }));
+  new TextEncoder().encode(JSON.stringify({ version: 3, enabled: settings.enabled, provider: settings.provider, model: settings.model,
+    effort: settings.effort, instructions: settings.instructions, allowFullAllowOnProd: settings.allowFullAllowOnProd, custom: settings.custom,
+    customCheck: settings.customCheck, disclosure: settings.disclosure }));
 export interface AgentSettingsStore {
   read(): Promise<{ status: "present"; value: Uint8Array } | { status: "missing" } | { status: "error" }>;
   write(value: Uint8Array): Promise<"confirmed" | "unknown" | "invalid">;
@@ -105,12 +125,66 @@ const outcomeText: Record<Exclude<Outcome, "approved">, string> = {
   cancelled: "The approval was withdrawn: the request was cancelled, the mode changed, the task ended or the session closed.",
 };
 
-interface Run { process: CliProcess; credential: string; root: string; allowed: readonly string[] }
+/**
+ * Ticket 06: how one provider is launched, resolved again before every spawn. `input`: a long-lived process reading
+ * stream-json messages, or one process per message reading its prompt as text. `dialect`: the events it prints.
+ */
+interface Launcher {
+  path: string;
+  input: "stream-json" | "one-shot";
+  dialect: "claude" | "codex";
+  build(run: { config: string; promptFile: string; cwd: string; tmp: string; tools: readonly string[]; systemPrompt: string; model: string; effort: AgentEffort;
+    credential: { credential: string; socketPath: string } }): { args: string[]; env: Record<string, string> };
+}
+/** One provider's state for Settings, and its launcher when it can run. `record`: the custom check that applies now. */
+interface ProviderState { status: AgentProviderStatus; version: string | null; reasons: string[]; launcher?: Launcher; record?: CustomCheckRecord }
+/** What one CLI event means, whichever dialect printed it. */
+interface Reading { violation?: string; texts: string[]; result?: { error: boolean; text?: string } }
+function read(dialect: Launcher["dialect"], event: Record<string, unknown>, allowed: readonly string[]): Reading {
+  if (dialect === "codex") {
+    const item = event.item as { type?: unknown; text?: unknown } | undefined;
+    return {
+      violation: codexViolation(event, allowed),
+      texts: event.type === "item.completed" && item?.type === "agent_message" && typeof item.text === "string" && item.text.trim() ? [item.text] : [],
+      ...(event.type === "turn.completed" ? { result: { error: false } } : event.type === "turn.failed" || event.type === "error" ? { result: { error: true } } : {}),
+    };
+  }
+  const message = event.message as { content?: unknown } | undefined;
+  const content = event.type === "assistant" && Array.isArray(message?.content) ? message.content : [];
+  return {
+    violation: isolationViolation(event, allowed),
+    texts: content.flatMap((block) => block && typeof block === "object" && (block as { type?: unknown }).type === "text" &&
+      typeof (block as { text?: unknown }).text === "string" && (block as { text: string }).text.trim() ? [(block as { text: string }).text] : []),
+    ...(event.type === "result" ? { result: { error: event.is_error === true, ...(typeof event.result === "string" ? { text: event.result } : {}) } } : {}),
+  };
+}
+const PROVIDER_NAMES: Record<AgentProvider, string> = { claude: "The claude CLI", codex: "The codex CLI", custom: "The custom CLI provider" };
+/** A one-shot provider keeps no memory between processes: each prompt carries the conversation so far (memory only). */
+const ONE_SHOT_HISTORY = 49_152;
+function oneShotPrompt(history: readonly AgentMessage[], latest: string): string {
+  const lines: string[] = [];
+  let budget = ONE_SHOT_HISTORY;
+  for (const message of history.filter((entry) => entry.role !== "notice").reverse()) {
+    const line = `${message.role === "user" ? "User" : "Agent"}: ${message.text}`;
+    if (line.length > budget) break;
+    budget -= line.length;
+    lines.unshift(line);
+  }
+  return lines.length ? `The conversation so far (kept by ssterm):\n\n${lines.join("\n\n")}\n\nThe user's new message:\n${latest}` : latest;
+}
+/** The target shown to a custom provider during its isolation check: nothing is bound. */
+const CHECK_TARGET: AgentTarget = { label: "isolation check", endpoint: "check@localhost:22", environment: null };
+
+interface Run { process: CliProcess; credential: string; root: string; allowed: readonly string[]; input: Launcher["input"]; dialect: Launcher["dialect"]; answered: boolean }
 interface Conversation {
   ownerId: string;
+  /** How long a card waits: 5 minutes, or less when the CLI's client stops waiting for a tool call sooner (custom). */
+  approvalMs: number;
   sessionId: string;
   generation: number;
   target: AgentTarget;
+  /** Ticket 06: fixed at open, and resolved again (version gate, custom fingerprint) before every spawn. */
+  provider: AgentProvider;
   /** A14: fixed at open; the conversation's sub agents use the same. */
   model: string;
   effort: AgentEffort;
@@ -154,37 +228,24 @@ export function taskRecord(task: AgentTask) {
   return { taskId: task.id, goal: task.goal, status: task.status, limitReached: task.limitReached, subAgentReport: task.subAgentReport,
     plan: task.plan, commands };
 }
-/** Built-in agent definitions reported by the verified claude 2.1.309 run (inert: the Agent tool is not offered). */
-const BUILTIN_AGENTS = ["claude", "Explore", "general-purpose", "Plan", "statusline-setup"];
-const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
-/**
- * A2/A6 defence in depth, mirroring the ticket 01 detector: hook events, or an init that reports anything beyond ssterm's
- * server and the allowed tools, built-in plugins, no skills or slash commands and only the built-in agent definitions,
- * fail closed. An init without those fields fails too.
- */
-export function isolationViolation(event: Record<string, unknown>, allowed: readonly string[]): string | undefined {
-  if (typeof event.subtype === "string" && event.subtype.startsWith("hook_")) return "a hook ran";
-  if (event.type !== "system" || event.subtype !== "init") return undefined;
-  const { tools, mcp_servers: servers, plugins, skills, slash_commands: commands, agents } = event;
-  if (!strings(tools) || !Array.isArray(servers) || !Array.isArray(plugins) || !strings(skills) || !strings(commands) || !strings(agents))
-    return "the CLI did not report its tools, servers, plugins, skills, commands and agents";
-  if (tools.some((tool) => !allowed.includes(tool))) return "tools outside ssterm's allowlist";
-  if (servers.some((server) => !server || typeof server !== "object" || (server as { name?: unknown }).name !== "ssterm")) return "another MCP server";
-  if (plugins.some((plugin) => !plugin || typeof plugin !== "object" || (plugin as { path?: unknown }).path !== "builtin")) return "a non-builtin plugin";
-  if (skills.length || commands.length) return "skills or slash commands";
-  if (agents.some((agent) => !BUILTIN_AGENTS.includes(agent))) return "a non-builtin agent definition";
-  return undefined;
-}
-
 export function createAgentRunner(options: {
   terminals: Pick<AgentTerminals, "issue" | "revoke">;
   registry: () => Pick<SessionRegistry, "snapshot"> | undefined;
   store: AgentSettingsStore;
   /** Absolute path of the bundled `ssterm-mcp` bridge. */
   bridge: string;
-  /** The version gate, run before every spawn. */
+  /** The claude version gate, run before every spawn. */
   resolve(): Promise<ProviderResolution>;
-  /** The CLI's environment (allowlisted) for one run's private temporary folder. */
+  /** Ticket 06: the codex version gate (no version is verified, so it never resolves ready today). */
+  resolveCodex?(): Promise<ProviderResolution>;
+  /** Ticket 06: the custom binary's real path, version output and fingerprint. */
+  resolveCustom?: typeof resolveCustom;
+  /** Ticket 06: the custom provider's isolation check. */
+  check?: typeof checkCustomProvider;
+  /** Ticket 06 review M1: Claude Code run as a custom provider keeps claude's controls (install paths, managed policy). */
+  claudeControls?: { candidates: readonly string[]; managed: readonly string[] };
+  checkTimeoutMs?: number;
+  /** The CLI's allowlisted base environment for one run's private temporary folder (claude adds its own variables). */
   env(tmp: string): Record<string, string>;
   /** Where each run's folder is created (outside any repository). */
   tmp: string;
@@ -211,9 +272,99 @@ export function createAgentRunner(options: {
   const key = (ownerId: string, sessionId: string) => `${ownerId}\n${sessionId}`;
 
   const ready = options.store.read().then((stored) => { settings = parseAgentSettings(stored.status === "present" ? stored.value : undefined); }, () => undefined);
+  /** One isolation check at a time per fingerprint and mode. */
+  const checking = new Map<string, Promise<CustomCheckRecord>>();
+  /** In-flight checks: lock and quit stop their CLI process groups. */
+  const checks = new Set<AbortController>();
+  const stopChecks = () => { for (const controller of checks) controller.abort(); };
+
+  // ------------------------------------------------------------------ providers (ticket 06)
+
+  const claudeLauncher = (path: string): Launcher => ({
+    path, input: "stream-json", dialect: "claude",
+    build: (run) => ({
+      args: claudeArgs({ mcpConfig: run.config, tools: run.tools, model: run.model, effort: run.effort, systemPrompt: run.systemPrompt }),
+      env: { ...options.env(run.tmp), ...CLAUDE_ENV },
+    }),
+  });
+  const codexLauncher = (path: string): Launcher => ({
+    path, input: "one-shot", dialect: "codex",
+    build: (run) => ({
+      args: codexArgs({ cwd: run.cwd, bridge: options.bridge, tools: run.tools, model: run.model, effort: run.effort, systemPrompt: run.systemPrompt }),
+      env: { ...options.env(run.tmp), SSTERM_MCP_SOCKET: run.credential.socketPath, SSTERM_MCP_CREDENTIAL: run.credential.credential },
+    }),
+  });
+  const customLauncher = (definition: AgentCustomProvider, path: string, claude: boolean): Launcher => ({
+    path, input: definition.input, dialect: "claude",
+    build: (run) => ({
+      args: customArgs(definition, { mcpConfigPath: run.config, systemPromptFile: run.promptFile, tools: run.tools }),
+      env: customEnv(definition, options.env(run.tmp), claude),
+    }),
+  });
+  const resolveDefinition = (definition: AgentCustomProvider) =>
+    (options.resolveCustom ?? resolveCustom)(definition, options.env(options.tmp), options.claudeControls ?? { candidates: [], managed: [] });
+  /** Runs the custom provider's isolation check and keeps its record while the definition is still the one checked. */
+  function runCheck(definition: AgentCustomProvider, found: Extract<CustomResolution, { status: "found" }>, live: boolean): Promise<CustomCheckRecord> {
+    const slot = `${found.fingerprint}:${live}`;
+    const pending = checking.get(slot);
+    if (pending) return pending;
+    const controller = new AbortController();
+    checks.add(controller);
+    const started = (async () => {
+      // The user's additional instructions are never part of a check (nothing about them is verified by it).
+      const result = await (options.check ?? checkCustomProvider)({
+        definition, path: found.path, bridge: options.bridge, tmp: options.tmp, home: options.home, profile: options.profile, env: options.env, live,
+        claude: found.claude, signal: controller.signal,
+        roles: [
+          { name: "main", tools: DELEGATE_TOOLS, systemPrompt: agentInstructions("main", CHECK_TARGET, "") },
+          { name: "sub", tools: TOOLS, systemPrompt: agentInstructions("sub", CHECK_TARGET, "") },
+        ],
+        ...(options.checkTimeoutMs ? { timeoutMs: options.checkTimeoutMs } : {}),
+      }).catch(() => ({ status: "unverifiable" as const, reasons: ["The check could not run."] }));
+      const record: CustomCheckRecord = { fingerprint: found.fingerprint, status: result.status, reasons: sanitizeReasons(result.reasons), version: found.version };
+      if (settings.custom === definition) {
+        settings = { ...settings, customCheck: record };
+        await options.store.write(serializeAgentSettings(settings)).catch(() => undefined);
+        // A provider that no longer passes (also on a re-check of the same binary) ends its conversations at once.
+        if (record.status !== "passed" && record.status !== "passed-live-unverified-requests") await closeWhere((conversation) => conversation.provider === "custom");
+      }
+      return record;
+    })().finally(() => { checking.delete(slot); checks.delete(controller); });
+    checking.set(slot, started);
+    return started;
+  }
+  /**
+   * A provider as it is now. claude and codex: the version gate. Custom: its definition, real binary and the isolation
+   * check bound to its fingerprint; with `check`, a missing or stale check runs now (never live: that needs consent).
+   */
+  async function providerState(provider: AgentProvider, check = false, definition = settings.custom): Promise<ProviderState> {
+    if (provider === "claude") {
+      const found = await options.resolve();
+      return { status: found.status, version: found.version, reasons: [], ...(found.status === "ready" ? { launcher: claudeLauncher(found.path) } : {}) };
+    }
+    if (provider === "codex") {
+      const reasons = ["No codex version has passed ssterm's isolation check.", ...CODEX_FAILURES];
+      // Review L5: while no version is verified, codex is not even asked for its version.
+      if (!VERIFIED_CODEX_VERSIONS.length) return { status: "disabled", version: null, reasons };
+      const found: ProviderResolution = await (options.resolveCodex?.() ?? Promise.resolve({ status: "missing" as const, version: null }));
+      if (found.status === "ready") return { status: "ready", version: found.version, reasons: [], launcher: codexLauncher(found.path) };
+      return { status: found.status, version: found.version, reasons };
+    }
+    if (!definition) return { status: "not-configured", version: null, reasons: [] };
+    const found = await resolveDefinition(definition);
+    if (found.status !== "found") return { status: found.status, version: null, reasons: [found.reason] };
+    let record = settings.customCheck?.fingerprint === found.fingerprint ? settings.customCheck : undefined;
+    if (!record && check) record = await runCheck(definition, found, false);
+    if (!record) return { status: "check-required", version: found.version, reasons: [settings.customCheck
+      ? "Its definition, binary or version output changed since its last isolation check." : "It has not passed an isolation check yet."] };
+    if (record.status === "passed") return { status: "ready", version: found.version, reasons: [], launcher: customLauncher(definition, found.path, found.claude), record };
+    if (record.status === "passed-live-unverified-requests")
+      return { status: "ready-live-unverified", version: found.version, reasons: [...record.reasons], launcher: customLauncher(definition, found.path, found.claude), record };
+    return { status: record.status === "failed" ? "check-failed" : "unverifiable", version: found.version, reasons: [...record.reasons], record };
+  }
 
   const view = (conversation: Conversation): AgentConversation => ({
-    sessionId: conversation.sessionId, generation: conversation.generation, target: { ...conversation.target }, provider: "claude",
+    sessionId: conversation.sessionId, generation: conversation.generation, target: { ...conversation.target }, provider: conversation.provider,
     model: conversation.model, effort: conversation.effort, mode: conversation.mode, fullAllowAvailable: fullAllowAvailable(conversation),
     status: conversation.status, messages: conversation.messages.map((message) => ({ ...message })),
     tasks: conversation.tasks.map((task) => ({
@@ -227,7 +378,7 @@ export function createAgentRunner(options: {
     const listener = owners.get(ownerId);
     if (!listener) return undefined;
     return {
-      owner: { ...listener.owner }, sequence: listener.sequence, enabled: settings.enabled, provider: "claude",
+      owner: { ...listener.owner }, sequence: listener.sequence, enabled: settings.enabled, provider: settings.provider,
       conversations: [...conversations.values()].filter((conversation) => conversation.ownerId === ownerId).map(view),
     };
   };
@@ -254,9 +405,13 @@ export function createAgentRunner(options: {
     } catch { return undefined; }
   };
 
-  /** Starts one CLI with its own credential, folder and MCP config. The folder and residue go when it exits. */
+  /**
+   * Starts one CLI with its own credential, folder, MCP config and system prompt file. The folder and residue go when it
+   * exits. Each event is read in the launcher's dialect; an isolation violation revokes the credential first, then the
+   * whole process group is killed at once (no grace), before `onEvent` sees it.
+   */
   async function launch(conversation: Conversation, role: "main" | "sub", credential: { credential: string; socketPath: string },
-    path: string, onEvent: (event: Record<string, unknown>, run: Run) => void, onExit: (run: Run) => void): Promise<Run | undefined> {
+    launcher: Launcher, onEvent: (reading: Reading, run: Run) => void, onExit: (run: Run) => void): Promise<Run | undefined> {
     const root = join(options.tmp, `ssterm-agent-${randomBytes(8).toString("hex")}`);
     const allowed = role === "main" ? MAIN_TOOLS : SUB_TOOLS;
     try {
@@ -267,20 +422,35 @@ export function createAgentRunner(options: {
       await writeFile(join(root, RUN_PROFILE_FILE), options.profile, { mode: 0o600, flag: "wx" });
       const config = join(root, "mcp.json");
       await writeFile(config, mcpConfig({ bridge: options.bridge, ...credential }), { mode: 0o600, flag: "wx" });
+      const systemPrompt = agentInstructions(role, conversation.target, settings.instructions);
+      const promptFile = join(root, "system-prompt.txt");
+      await writeFile(promptFile, systemPrompt, { mode: 0o600, flag: "wx" });
       if (conversation.closed || disposed) throw new Error("closed");
+      const { args, env } = launcher.build({ config, promptFile, cwd: join(root, "cwd"), tmp: join(root, "tmp"), tools: allowed, systemPrompt,
+        model: conversation.model, effort: conversation.effort, credential });
       let run: Run | undefined;
       const process = spawn({
-        path, cwd: join(root, "cwd"), env: options.env(join(root, "tmp")),
-        args: claudeArgs({ mcpConfig: config, tools: allowed, model: conversation.model, effort: conversation.effort,
-          systemPrompt: agentInstructions(role, conversation.target, settings.instructions) }),
-        onEvent: (event) => { if (run) onEvent(event, run); },
+        path: launcher.path, cwd: join(root, "cwd"), env, args,
+        onEvent: (event) => {
+          if (!run) return;
+          const reading = read(run.dialect, event, run.allowed);
+          if (reading.violation) { options.terminals.revoke(run.credential); run.process.kill(); }
+          onEvent(reading, run);
+        },
         ...(options.graceMs ? { graceMs: options.graceMs } : {}),
       });
-      run = { process, credential: credential.credential, root, allowed };
+      run = { process, credential: credential.credential, root, allowed, input: launcher.input, dialect: launcher.dialect, answered: false };
       const finishedRun = run;
+      const launched = Date.now();
       const exit = process.exited.then(async () => {
         options.terminals.revoke(finishedRun.credential);
         await removeRunResidue({ home: options.home, root, pid: process.pid }).catch(() => undefined);
+        // Review M1: a transcript or history entry naming this run is removed and reported.
+        const saved = await cleanStateResidue({ home: options.home, tags: [root.slice(root.lastIndexOf("/") + 1)], since: launched }).catch(() => [] as string[]);
+        if (saved.length && !conversation.closed) {
+          say(conversation, "notice", `The agent CLI saved conversation state (${saved.slice(0, 2).map((path) => path.replace(options.home, "~")).join(", ")}); ssterm removed it.`);
+          publish(conversation.ownerId);
+        }
         onExit(finishedRun);
       });
       exits.add(exit);
@@ -292,26 +462,14 @@ export function createAgentRunner(options: {
       return undefined;
     }
   }
-  /** An isolation violation: the credential goes first, then the whole process group is killed at once (no grace). */
-  const violated = (event: Record<string, unknown>, run: Run): string | undefined => {
-    const reason = isolationViolation(event, run.allowed);
-    if (reason) { options.terminals.revoke(run.credential); run.process.kill(); }
-    return reason;
-  };
-  const textOf = (event: Record<string, unknown>): string[] => {
-    const message = event.message as { content?: unknown } | undefined;
-    const content = Array.isArray(message?.content) ? message.content : [];
-    return content.flatMap((block) => block && typeof block === "object" && (block as { type?: unknown }).type === "text" &&
-      typeof (block as { text?: unknown }).text === "string" && (block as { text: string }).text.trim() ? [(block as { text: string }).text] : []);
-  };
 
   // ------------------------------------------------------------------ the main agent
 
   async function startMain(conversation: Conversation): Promise<boolean> {
-    const provider = await options.resolve();
+    const provider = await providerState(conversation.provider);
     if (conversation.closed) return false;
-    if (provider.status !== "ready") {
-      say(conversation, "notice", "The claude CLI is no longer available in a verified version, so nothing was sent. Check Settings › AI Agent.");
+    if (!provider.launcher) {
+      say(conversation, "notice", `${PROVIDER_NAMES[conversation.provider]} is no longer available in a verified version, so nothing was sent. Check Settings › AI Agent.`);
       return false;
     }
     const role: AgentToolRole = { tools: DELEGATE_TOOLS, call: (name, args) => delegate(conversation, name, args) };
@@ -321,27 +479,34 @@ export function createAgentRunner(options: {
       else say(conversation, "notice", "The session is no longer Ready, so nothing was sent.");
       return false;
     }
-    const run = await launch(conversation, "main", issued, provider.path, (event, current) => {
-      const reason = violated(event, current);
+    const run = await launch(conversation, "main", issued, provider.launcher, (reading, current) => {
       if (conversation.closed) return;
-      if (reason) {
-        say(conversation, "notice", `The CLI reported ${reason}, outside ssterm's isolation rules, so ssterm stopped it.`);
+      if (reading.violation) {
+        say(conversation, "notice", `The CLI reported ${reading.violation}, outside ssterm's isolation rules, so ssterm stopped it.`);
         void close(conversation);
         return;
       }
-      if (conversation.main !== current) return;
-      if (event.type === "assistant") for (const value of textOf(event)) say(conversation, "assistant", value);
-      else if (event.type === "result") {
-        conversation.status = "idle";
-        if (event.is_error === true) say(conversation, "notice", "The agent ended this turn with an error.");
-      } else return;
+      if (conversation.main !== current || (!reading.texts.length && !reading.result)) return;
+      for (const value of reading.texts) say(conversation, "assistant", value);
+      if (reading.result) {
+        current.answered = true;
+        // A one-shot turn ends when its process exits.
+        if (current.input === "stream-json") conversation.status = "idle";
+        if (reading.result.error) say(conversation, "notice", "The agent ended this turn with an error.");
+      }
       publish(conversation.ownerId);
     }, (current) => {
       if (conversation.main !== current) return;
       conversation.main = undefined;
       if (conversation.closed) return;
-      say(conversation, "notice", "The agent CLI stopped. Close the panel and open it again to start a new conversation.");
       conversation.status = "idle";
+      if (current.input === "one-shot") {
+        // Tasks outlive a one-shot turn: the next turn's process asks about them.
+        if (!current.answered) say(conversation, "notice", "The agent CLI ended this turn without finishing it.");
+        publish(conversation.ownerId);
+        return;
+      }
+      say(conversation, "notice", "The agent CLI stopped. Close the panel and open it again to start a new conversation.");
       // Without session persistence a new process would not remember this conversation.
       endTasks(conversation);
       publish(conversation.ownerId);
@@ -410,13 +575,17 @@ export function createAgentRunner(options: {
         signal.removeEventListener("abort", aborted);
         resolve(outcome);
       };
-      const timer = setTimeout(() => finish("expired"), approvalMs);
+      const timer = setTimeout(() => finish("expired"), conversation.approvalMs);
       conversation.decisions.set(id, { taskId: task.id, finish });
       // The MCP request that raised the card was cancelled or its connection closed.
       if (signal.aborted) finish("cancelled");
       else signal.addEventListener("abort", aborted, { once: true });
     });
   }
+  /** A card that expired because the CLI stops waiting sooner than 5 minutes says so (the agent stopped waiting). */
+  const explain = (conversation: Conversation, outcome: Exclude<Outcome, "approved">) => outcome === "expired" && conversation.approvalMs < approvalMs
+    ? `The agent's CLI stops waiting for a tool call after ${Math.round((conversation.approvalMs + 5_000) / 1_000)} seconds, so the card expired just before that (the agent stopped waiting).`
+    : outcomeText[outcome];
   /** L4: ids carry a per-conversation nonce, so a stale renderer decision can never land on another conversation's card. */
   const approvalId = (conversation: Conversation, kind: "plan" | "command") => `${kind}-${conversation.nonce}-${++conversation.nextApproval}`;
   const withdraw = (conversation: Conversation, taskId?: string) => {
@@ -451,7 +620,7 @@ export function createAgentRunner(options: {
         if (task.approval === approval) task.approval = null;
         if (!conversation.closed) publish(conversation.ownerId);
         if (outcome === "approved" && !gone()) return { run: approval.command, via: "approval" };
-        return { refuse: `Not run: this command is outside the approved plan and needed the user's approval. ${outcome === "approved" ? ended : outcomeText[outcome]} Nothing was sent to the terminal. Do not work around it; continue without it or finish with your report.` };
+        return { refuse: `Not run: this command is outside the approved plan and needed the user's approval. ${outcome === "approved" ? ended : explain(conversation, outcome)} Nothing was sent to the terminal. Do not work around it; continue without it or finish with your report.` };
       },
       async propose(args, signal) {
         if (gone()) return text(ended, true);
@@ -472,7 +641,7 @@ export function createAgentRunner(options: {
         if (!conversation.closed) publish(conversation.ownerId);
         return text(outcome === "approved"
           ? { planId: plan.id, status: plan.status, note: "Approved. Each listed command runs once when run_command is called with exactly that text; anything else asks the user." }
-          : { planId: plan.id, status: plan.status, note: `${outcomeText[outcome]} Commands that are not read-only will each ask the user. Do not work around the decision; stop and report.` });
+          : { planId: plan.id, status: plan.status, note: `${explain(conversation, outcome)} Commands that are not read-only will each ask the user. Do not work around the decision; stop and report.` });
       },
     };
   }
@@ -501,9 +670,9 @@ export function createAgentRunner(options: {
     // Cancelled or closed while starting.
     const gone = () => conversation.sub !== sub || conversation.closed || finished(next);
     void (async () => {
-      const provider = await options.resolve();
+      const provider = await providerState(conversation.provider);
       if (gone()) return settle("cancelled");
-      if (provider.status !== "ready") { next.subAgentReport = "The claude CLI is not available in a verified version."; return settle("failed"); }
+      if (!provider.launcher) { next.subAgentReport = `${PROVIDER_NAMES[conversation.provider]} is not available in a verified version.`; return settle("failed"); }
       const issued = await options.terminals.issue(conversation.ownerId, conversation.sessionId, {
         // Every admitted call records exactly once into its slot, also after the task ended (an interrupted command).
         record: (step) => {
@@ -525,17 +694,20 @@ export function createAgentRunner(options: {
       });
       if (!issued) { next.subAgentReport = "The session is no longer Ready."; return settle("failed"); }
       if (gone()) { options.terminals.revoke(issued.credential); return settle("cancelled"); }
-      const run = await launch(conversation, "sub", issued, provider.path, (event, current) => {
-        const reason = violated(event, current);
-        if (reason) {
-          next.subAgentReport = `ssterm stopped the sub agent: the CLI reported ${reason}, outside ssterm's isolation rules.`;
+      /** codex reports its final message as an item, not in the result. */
+      let lastText: string | undefined;
+      const run = await launch(conversation, "sub", issued, provider.launcher, (reading, current) => {
+        if (reading.violation) {
+          next.subAgentReport = `ssterm stopped the sub agent: the CLI reported ${reading.violation}, outside ssterm's isolation rules.`;
           next.status = "failed";
           publish(conversation.ownerId);
           return;
         }
-        if (event.type !== "result" || finished(next)) return;
-        if (typeof event.result === "string") next.subAgentReport = clip(event.result);
-        next.status = event.is_error === true ? "failed" : "completed";
+        lastText = reading.texts.at(-1) ?? lastText;
+        if (!reading.result || finished(next)) return;
+        const report = reading.result.text ?? lastText;
+        if (report !== undefined) next.subAgentReport = clip(report);
+        next.status = reading.result.error ? "failed" : "completed";
         current.process.endInput();
         publish(conversation.ownerId);
       }, () => settle("failed"));
@@ -543,7 +715,8 @@ export function createAgentRunner(options: {
       // The credential goes before the process: no call can start in between.
       if (gone()) { options.terminals.revoke(run.credential); void run.process.stop(); return; }
       sub.run = run;
-      run.process.write({ type: "user", message: { role: "user", content: `Task ${next.id}: ${next.goal}` } });
+      const task = `Task ${next.id}: ${next.goal}`;
+      run.process.write(run.input === "stream-json" ? { type: "user", message: { role: "user", content: task } } : task);
       run.process.endInput();
     })();
   }
@@ -591,38 +764,61 @@ export function createAgentRunner(options: {
 
   return {
     ready,
-    async settingsView(resolution?: ProviderResolution): Promise<AgentSettingsView> {
+    /** Settings › AI Agent: every provider as it is now (no isolation check runs here). */
+    async settingsView(): Promise<AgentSettingsView> {
       await ready;
-      const provider = resolution ?? await options.resolve();
+      const providers = await Promise.all((["claude", "codex", "custom"] as const).map(async (id): Promise<AgentProviderView> => {
+        const { status, version, reasons } = await providerState(id).catch(() => ({ status: "missing" as const, version: null, reasons: [] }));
+        return { id, status, version, reasons };
+      }));
       return {
         settings: { enabled: settings.enabled, provider: settings.provider, model: settings.model, effort: settings.effort, instructions: settings.instructions,
-          allowFullAllowOnProd: settings.allowFullAllowOnProd },
-        providers: [
-          { id: "claude", status: provider.status, version: provider.version },
-          { id: "codex", status: "disabled", version: null },
-        ],
+          allowFullAllowOnProd: settings.allowFullAllowOnProd, custom: settings.custom },
+        providers,
         verified: [...VERIFIED_CLAUDE_VERSIONS],
       };
     },
     async configure(next: AgentSettings, consent: boolean): Promise<ConfigureAgentResponse> {
       await ready;
-      const turningOn = next.enabled && !(settings.enabled && settings.provider === next.provider && settings.disclosure === AGENT_DISCLOSURE_VERSION);
+      const customChanged = JSON.stringify(next.custom) !== JSON.stringify(settings.custom);
+      // A changed custom definition in use is a different CLI: its disclosure is acknowledged again.
+      const turningOn = next.enabled && !(settings.enabled && settings.provider === next.provider && settings.disclosure === AGENT_DISCLOSURE_VERSION &&
+        !(next.provider === "custom" && customChanged));
       if (turningOn && !consent) return { status: "consent-required" };
-      if (!isVerifiedAgentModel(next.provider, next.model)) return { status: "model-unverified" };
-      const provider = next.enabled ? await options.resolve() : undefined;
-      if (provider && provider.status !== "ready") return { status: "provider-unavailable", view: await this.settingsView(provider) };
+      // The claude model stays the claude choice; a custom provider names its own model in its definition.
+      if (!isVerifiedAgentModel(next.provider === "codex" ? "codex" : "claude", next.model)) return { status: "model-unverified" };
+      // Ticket 06: a custom provider is checked before its first use (and after any change), never with a live call here.
+      const provider = next.enabled ? await providerState(next.provider, true, next.custom) : undefined;
+      if (provider && !provider.launcher) return { status: "provider-unavailable", view: await this.settingsView() };
       // Turning the agent off withdraws the consent; turning it on again shows the disclosure again.
-      const stored: StoredAgentSettings = { ...next, disclosure: next.enabled ? AGENT_DISCLOSURE_VERSION : 0 };
+      const stored: StoredAgentSettings = { ...next, disclosure: next.enabled ? AGENT_DISCLOSURE_VERSION : 0,
+        customCheck: provider?.record ?? settings.customCheck };
       if (await options.store.write(serializeAgentSettings(stored)) !== "confirmed") return { status: "failed" };
       settings = stored;
       if (!stored.enabled) await closeWhere(() => true);
+      // A changed definition is not the one those conversations were checked with.
+      else if (customChanged) await closeWhere((conversation) => conversation.provider === "custom");
       // Turning the PROD option off ends Full allow on PROD conversations at once.
       for (const conversation of conversations.values()) if (conversation.mode === "full-allow" && !fullAllowAvailable(conversation)) {
         conversation.mode = "auto";
         say(conversation, "notice", "Full allow on PROD was turned off in Settings, so this conversation is back in Auto.");
       }
       publishAll();
-      return { status: "saved", view: await this.settingsView(provider) };
+      return { status: "saved", view: await this.settingsView() };
+    },
+    /**
+     * Ticket 06: runs the custom provider's isolation check now and keeps the result. `live` is the user's consent, for
+     * this run only, to send synthetic test prompts to the CLI's own provider.
+     */
+    async checkProvider(live: boolean): Promise<AgentSettingsView> {
+      await ready;
+      const definition = settings.custom;
+      if (definition) {
+        const found = await resolveDefinition(definition);
+        // A CLI with a test endpoint is always checked locally.
+        if (found.status === "found") await runCheck(definition, found, live && !definition.endpointEnv);
+      }
+      return this.settingsView();
     },
     register(owner: Owner, send: (state: AgentState) => void) {
       const ownerId = sessionOwnerId(owner);
@@ -631,7 +827,7 @@ export function createAgentRunner(options: {
     async state(owner: Owner): Promise<AgentState> {
       await ready;
       const ownerId = sessionOwnerId(owner);
-      return stateFor(ownerId) ?? { owner: { ...owner }, sequence: 0, enabled: settings.enabled, provider: "claude",
+      return stateFor(ownerId) ?? { owner: { ...owner }, sequence: 0, enabled: settings.enabled, provider: settings.provider,
         conversations: [...conversations.values()].filter((conversation) => conversation.ownerId === ownerId).map(view) };
     },
     async open(owner: Owner, sessionId: string, generation: number): Promise<OpenAgentResponse> {
@@ -650,14 +846,21 @@ export function createAgentRunner(options: {
       if (held >= MAX_CONVERSATIONS) return { status: "refused", reason: "limit" };
       opening.add(slot);
       try {
-        if ((await options.resolve()).status !== "ready") return { status: "refused", reason: "provider" };
+        const provider = settings.provider;
+        const definition = settings.custom;
+        // Before the first use (or after a change) a custom provider's isolation check runs here.
+        if (!(await providerState(provider, true, definition)).launcher) return { status: "refused", reason: "provider" };
         // The session may have ended or the agent been turned off during the version check.
         if (disposed || !settings.enabled || !bindable(ownerId, sessionId, generation) || conversations.has(slot)) return { status: "refused", reason: "session" };
+        if (settings.provider !== provider || settings.custom !== definition) return { status: "refused", reason: "provider" };
         const { label, address, port, username, environment } = snapshot.target;
         conversations.set(slot, {
           ownerId, sessionId, generation, status: "idle", messages: [], tasks: [], nextMessage: 1, nextTask: 0, waiters: new Set(), closed: false,
           target: { label, environment, endpoint: `${username ? `${username}@` : ""}${address}:${port}` },
-          model: settings.model, effort: settings.effort, mode: "auto", decisions: new Map(), nextApproval: 0, nonce: randomBytes(4).toString("hex"),
+          approvalMs: provider === "custom" && definition ? Math.min(approvalMs, (definition.toolTimeoutSec - 5) * 1_000) : approvalMs,
+          provider, model: provider === "custom" && definition ? definition.model : settings.model,
+          effort: provider === "custom" && definition ? definition.effort : settings.effort,
+          mode: "auto", decisions: new Map(), nextApproval: 0, nonce: randomBytes(4).toString("hex"),
         });
       } finally { opening.delete(slot); }
       publish(ownerId);
@@ -683,7 +886,11 @@ export function createAgentRunner(options: {
         conversation.status = "thinking";
         publish(conversation.ownerId);
       }
-      if (!conversation.main?.process.write({ type: "user", message: { role: "user", content: message } })) {
+      const main = conversation.main;
+      const written = main?.input === "one-shot"
+        ? main.process.write(oneShotPrompt(conversation.messages.slice(0, -1), message)) && (main.process.endInput(), true)
+        : main?.process.write({ type: "user", message: { role: "user", content: message } });
+      if (!written) {
         conversation.status = "idle";
         publish(conversation.ownerId);
       }
@@ -729,10 +936,12 @@ export function createAgentRunner(options: {
       void closeWhere((conversation) => conversation.ownerId === ownerId);
       owners.delete(ownerId);
     },
-    lock(): Promise<void> { return closeWhere(() => true); },
+    lock(): Promise<void> { stopChecks(); return closeWhere(() => true); },
     /** Quit: every CLI group gets SIGTERM, then SIGKILL; resolves when they and their cleanup are done. */
     async dispose(): Promise<void> {
       disposed = true;
+      stopChecks();
+      await Promise.all([...checking.values()].map((check) => check.catch(() => undefined)));
       await closeWhere(() => true);
       await Promise.all([...exits]);
       owners.clear();
@@ -750,7 +959,7 @@ export type AgentRunner = ReturnType<typeof createAgentRunner>;
 // IPC: owner-authorized (the app lock answers `unauthorized` first), one validated argument each.
 
 export const agentChannels = Object.freeze([
-  channels.agentSettings, channels.configureAgent, channels.agentState, channels.openAgent, channels.closeAgent,
+  channels.agentSettings, channels.configureAgent, channels.checkAgentProvider, channels.agentState, channels.openAgent, channels.closeAgent,
   channels.sendAgent, channels.cancelAgentTask, channels.setAgentMode, channels.decideAgent,
 ]);
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
@@ -775,6 +984,7 @@ export function registerAgentHandlers(options: {
   };
   handle(channels.agentSettings, isAgentSettingsRequest, async (runner) => ok(await runner.settingsView()));
   handle(channels.configureAgent, isConfigureAgentRequest, async (runner, request) => ok(await runner.configure({ ...request.settings }, request.consent)));
+  handle(channels.checkAgentProvider, isCheckAgentProviderRequest, async (runner, request) => ok(await runner.checkProvider(request.live)));
   handle(channels.agentState, isAgentStateRequest, async (runner, _request, owner) => ok(await runner.state(owner)));
   handle(channels.openAgent, isOpenAgentRequest, async (runner, request, owner) => ok(await runner.open(owner, request.sessionId, request.generation)));
   handle(channels.closeAgent, isAgentConversationRequest, async (runner, request, owner) => {

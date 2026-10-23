@@ -78,11 +78,14 @@ const MAX_PENDING = 4;
 /** Replies a client does not read are not buffered without bound. */
 const MAX_BUFFERED = 1_048_576;
 const AUTH_TIMEOUT_MS = 5_000;
+/** Progress notifications while a tool call waits, for clients that sent a progressToken. */
+const PROGRESS_MS = 15_000;
 /** sun_path on macOS. */
 const MAX_SOCKET_PATH = 103;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/u;
 
-const TOOLS = [
+/** The terminal tools (sub agents and external clients). */
+export const TOOLS = [
   {
     name: "propose_plan",
     description: "Proposes a plan: the goal and the exact commands you will run that are not read-only. ssterm shows it to the " +
@@ -339,10 +342,18 @@ export function createAgentTerminals(options: {
           pending += 1;
           const controller = new AbortController();
           inFlight.set(id, controller);
+          // Ticket 06 review L2: a client that asked for progress hears from a call that waits (a card, a long command),
+          // so one that resets its tool timeout on progress does not give up while the user decides.
+          const token = (request._meta as { progressToken?: unknown } | undefined)?.progressToken;
+          let beat = 0;
+          const progress = (typeof token === "string" && token.length <= 256) || (typeof token === "number" && Number.isSafeInteger(token))
+            ? setInterval(() => reply({ method: "notifications/progress", params: { progressToken: token, progress: ++beat, message: "waiting" } }), PROGRESS_MS)
+            : undefined;
           void call(bound, request.name, request.arguments, controller.signal).then(
             (result) => reply({ id, result }),
             () => reply({ id, error: { code: -32603, message: "Internal error" } }),
           ).finally(() => {
+            clearInterval(progress);
             pending -= 1;
             if (inFlight.get(id) === controller) inFlight.delete(id);
           });
