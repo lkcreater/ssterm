@@ -1,6 +1,7 @@
 /**
  * SST-041 ticket 02: the MCP endpoint in main (ADR 0009 A8) over a 0600 Unix socket in a 0700 profile folder, with
- * per-conversation ephemeral credentials bound to one Ready SSH terminal generation, and its Read only tools.
+ * per-conversation ephemeral credentials bound to one Ready SSH terminal generation, and its terminal tools. Ticket 04: a
+ * binding's gate decides each run_command (mode, plan, approval); a binding without one stays Read only.
  *
  * Wire format: newline-delimited JSON-RPC 2.0, the MCP stdio framing, so a stdio bridge can pipe bytes verbatim.
  * The first line on a connection is the credential, `{"credential":"<token>"}`; there is no reply to it, and a
@@ -13,6 +14,8 @@ import { chmodSync, lstatSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { exactObject } from "@ssterm/contracts";
 import type { ObservedTerminal, TerminalObserver } from "@ssterm/domain";
+import type { AgentStepVia } from "@ssterm/contracts";
+import { MAX_PLAN_COMMANDS, MAX_PLAN_GOAL } from "./agent-policy";
 import { classifyReadOnly, MAX_AGENT_COMMAND, ScreenTracker, TerminalExecutor, type AgentRunRefusal, type AgentRunResult, type SessionRegistry } from "@ssterm/services";
 
 type Registry = Pick<SessionRegistry, "snapshot" | "terminal">;
@@ -25,7 +28,28 @@ export interface AgentStepRecord {
   exitCode: number | null;
   output: string;
   truncated: boolean;
+  /** Why it was allowed to run; null when refused. */
+  via: AgentStepVia | null;
 }
+/** `run` is what is typed (the approved plan text for a plan match); `undo` gives a plan entry back when nothing reached the shell. */
+export type GateDecision = { run: string; via: AgentStepVia; undo?: () => void } | { refuse: string };
+/**
+ * Ticket 04: the policy for one binding (A1, A2). It may wait for the user; it never types anything itself. `signal`
+ * aborts when the MCP request that asked is cancelled (`notifications/cancelled`) or its connection closes: a card it
+ * raised must then be withdrawn.
+ */
+export interface AgentGate {
+  authorize(command: string, readOnly: { readOnly: true } | { readOnly: false; reason: string }, signal: AbortSignal): Promise<GateDecision>;
+  propose(args: unknown, signal: AbortSignal): Promise<ToolResult>;
+}
+const CANCELLED = "The request was cancelled (or its connection closed) before the command ran; nothing was sent to the terminal.";
+export const readOnlyRefusal = (reason: string) =>
+  `Refused in Read only mode: ${reason}. Nothing was sent to the terminal. Use a read-only command, or ask the user to change the mode.`;
+/** The 02 behaviour: Read only, no plans. */
+const READ_ONLY_GATE: AgentGate = {
+  authorize: async (command, verdict) => verdict.readOnly ? { run: command, via: "read-only" } : { refuse: readOnlyRefusal(verdict.reason) },
+  propose: async () => text("This session is in Read only mode: plans are not used and only read-only commands run. Ask the user to change the mode.", true),
+};
 export interface ToolResult { content: { type: "text"; text: string }[]; structuredContent?: Record<string, unknown>; isError: boolean }
 export interface ToolDefinition { name: string; description: string; inputSchema: Record<string, unknown> }
 /** A tool set other than the terminal tools (the main agent's delegate tools); still bound to one Ready generation. */
@@ -36,8 +60,12 @@ interface Binding {
   sockets: Set<Socket>;
   role?: AgentToolRole;
   record?: (step: AgentStepRecord) => void;
-  /** Asked before a run_command executes; a string refuses it unrun (e.g. the task's command limit). */
-  admit?: () => string | undefined;
+  /**
+   * Asked before a run_command is authorized (`reserve` true: it takes a step slot, and exactly one record follows) and
+   * again just before it is typed (`reserve` false); a string refuses it unrun (the task's command limit, or its end).
+   */
+  admit?: (reserve: boolean) => string | undefined;
+  gate?: AgentGate;
   /** A run_command of this binding is in the executor: revoking it interrupts that command. */
   running: boolean;
 }
@@ -56,10 +84,25 @@ const TOKEN = /^[A-Za-z0-9_-]{43}$/u;
 
 const TOOLS = [
   {
+    name: "propose_plan",
+    description: "Proposes a plan: the goal and the exact commands you will run that are not read-only. ssterm shows it to the " +
+      "user with Approve and Reject and waits for the decision. In Auto mode an approved command then runs without asking when " +
+      "run_command is called with exactly that text (surrounding spaces aside); each listed command runs once. Returns the planId and its status.",
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["goal", "commands"],
+      properties: {
+        goal: { type: "string", minLength: 1, maxLength: MAX_PLAN_GOAL },
+        commands: { type: "array", minItems: 1, maxItems: MAX_PLAN_COMMANDS, items: { type: "string", minLength: 1, maxLength: MAX_AGENT_COMMAND, description: "One line." } },
+      },
+    },
+  },
+  {
     name: "run_command",
-    description: "Runs one read-only shell command in the bound ssterm terminal, visibly, and returns its exit code and output " +
-      "(the last 64 KiB). Read only mode: only allowlisted commands run; chaining, redirects, subshells, substitution and " +
-      "heredocs are refused. Use non-interactive flags (for example --no-pager); full-screen programs are refused.",
+    description: "Runs one shell command in the bound ssterm terminal, visibly, and returns its exit code and output (the last " +
+      "64 KiB). ssterm applies the session's mode: allowlisted read-only commands always run (chaining, redirects, subshells, " +
+      "substitution and heredocs are not read-only); in Auto other commands run only when they match an approved plan command, " +
+      "otherwise the user is asked and the call waits; Read only refuses them; Full allow runs them. A refused or rejected " +
+      "command was not run. Use non-interactive flags (for example --no-pager); full-screen programs are refused.",
     inputSchema: {
       type: "object", additionalProperties: false, required: ["command"],
       properties: { command: { type: "string", minLength: 1, maxLength: MAX_AGENT_COMMAND, description: "One line." } },
@@ -160,7 +203,7 @@ export function createAgentTerminals(options: {
     listening = undefined;
   };
 
-  async function call(binding: Binding, name: unknown, args: unknown): Promise<ToolResult> {
+  async function call(binding: Binding, name: unknown, args: unknown, signal: AbortSignal): Promise<ToolResult> {
     const live = current(binding);
     const executor = live?.executor;
     if (!executor) {
@@ -172,27 +215,40 @@ export function createAgentTerminals(options: {
     // The record is shown in the renderer: a control character in a refused command must not break its view.
     const shown = (command: string) => command.replace(/[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/gu, "\ufffd");
     const refuse = (command: string, message: string) => {
-      binding.record?.({ command: shown(command), status: "refused", exitCode: null, output: message, truncated: false });
+      binding.record?.({ command: shown(command), status: "refused", exitCode: null, output: message, truncated: false, via: null });
       return text(message, true);
     };
     switch (name) {
       case "run_command": {
         if (!exactObject(args, ["command"]) || typeof args.command !== "string" || args.command.length > MAX_AGENT_COMMAND)
           return text("run_command takes exactly one string argument, `command`.", true);
-        const command = args.command;
-        const limit = binding.admit?.();
+        const limit = binding.admit?.(true);
         if (limit !== undefined) return text(limit, true);
-        const verdict = classifyReadOnly(command);
-        if (!verdict.readOnly)
-          return refuse(command, `Refused in Read only mode: ${verdict.reason}. Nothing was sent to the terminal. Use a read-only command, or ask the user to change the mode.`);
-        const started = executor.run(command);
-        if (typeof started === "string") return refuse(command, refusals[started]);
+        // From here every path records exactly one step (the slot admit reserved).
+        let decision: GateDecision;
+        try { decision = await (binding.gate ?? READ_ONLY_GATE).authorize(args.command, classifyReadOnly(args.command), signal); }
+        catch { decision = { refuse: "ssterm could not decide on this command; nothing was sent to the terminal." }; }
+        if ("refuse" in decision) return refuse(args.command, decision.refuse);
+        const command = decision.run;
+        // An approval may have waited past the request, the task, the session, a reconnect or a lock.
+        const late = signal.aborted ? CANCELLED : binding.admit?.(false);
+        if (late !== undefined) { decision.undo?.(); return refuse(command, late); }
+        const still = current(binding)?.executor;
+        if (!still) {
+          decision.undo?.();
+          revoke(binding);
+          return refuse(command, "This binding is no longer valid: the session ended or reconnected, or the workspace locked. Nothing was sent.");
+        }
+        const started = still.run(command);
+        if (typeof started === "string") { decision.undo?.(); return refuse(command, refusals[started]); }
         binding.running = true;
         const result = await started.finally(() => { binding.running = false; });
-        binding.record?.({ command: shown(command), status: result.status, exitCode: result.exitCode, output: result.output, truncated: result.truncated });
+        if (result.status === "not-at-prompt") decision.undo?.();
+        binding.record?.({ command: shown(command), status: result.status, exitCode: result.exitCode, output: result.output, truncated: result.truncated, via: decision.via });
         const note = notes[result.status];
         return text(note ? { ...result, note } : result, UNRUN.includes(result.status));
       }
+      case "propose_plan": return (binding.gate ?? READ_ONLY_GATE).propose(args, signal);
       case "read_output": {
         if (!none) return text("read_output takes no arguments.", true);
         const running = executor.peek();
@@ -213,8 +269,16 @@ export function createAgentTerminals(options: {
     let binding: Binding | undefined;
     let buffered = "";
     let pending = 0;
+    /** In-flight tools/call requests of this connection, aborted by `notifications/cancelled` or the connection closing. */
+    const inFlight = new Map<string | number, AbortController>();
     const timer = setTimeout(() => { if (!binding) socket.destroy(); }, AUTH_TIMEOUT_MS);
-    socket.on("close", () => { clearTimeout(timer); sockets.delete(socket); binding?.sockets.delete(socket); });
+    socket.on("close", () => {
+      clearTimeout(timer);
+      sockets.delete(socket);
+      binding?.sockets.delete(socket);
+      for (const controller of inFlight.values()) controller.abort();
+      inFlight.clear();
+    });
     socket.on("error", () => socket.destroy());
     socket.setEncoding("utf8");
     const reply = (message: object) => {
@@ -241,7 +305,11 @@ export function createAgentTerminals(options: {
       if (!message || typeof message !== "object" || Array.isArray(message)) { reply({ id: null, error: { code: -32600, message: "Invalid Request" } }); return; }
       const { id, method, params } = message as { id?: unknown; method?: unknown; params?: unknown };
       // Notifications (no id) need no answer; `notifications/initialized` is one.
-      if (id === undefined) return;
+      if (id === undefined) {
+        const requestId = (params as { requestId?: unknown } | undefined)?.requestId;
+        if (method === "notifications/cancelled" && (typeof requestId === "string" || typeof requestId === "number")) inFlight.get(requestId)?.abort();
+        return;
+      }
       if ((typeof id !== "string" && typeof id !== "number") || (message as { jsonrpc?: unknown }).jsonrpc !== "2.0" || typeof method !== "string") {
         reply({ id: null, error: { code: -32600, message: "Invalid Request" } });
         return;
@@ -261,11 +329,17 @@ export function createAgentTerminals(options: {
         case "tools/list": reply({ id, result: { tools: bound.role?.tools ?? TOOLS } }); return;
         case "tools/call": {
           if (pending >= MAX_PENDING) { reply({ id, error: { code: -32000, message: "Too many calls in progress." } }); return; }
+          if (inFlight.has(id)) { reply({ id, error: { code: -32600, message: "A request with this id is in progress." } }); return; }
           pending += 1;
-          void call(bound, request.name, request.arguments).then(
+          const controller = new AbortController();
+          inFlight.set(id, controller);
+          void call(bound, request.name, request.arguments, controller.signal).then(
             (result) => reply({ id, result }),
             () => reply({ id, error: { code: -32603, message: "Internal error" } }),
-          ).finally(() => { pending -= 1; });
+          ).finally(() => {
+            pending -= 1;
+            if (inFlight.get(id) === controller) inFlight.delete(id);
+          });
           return;
         }
         default: reply({ id, error: { code: -32601, message: "Method not found" } });
@@ -352,7 +426,7 @@ export function createAgentTerminals(options: {
      * the terminal tools, reporting each call to `record`; with a `role` it serves that tool set instead (ticket 03's
      * main agent), under the same generation and Ready checks.
      */
-    async issue(ownerId: string, sessionId: string, use: { role?: AgentToolRole; record?: (step: AgentStepRecord) => void; admit?: () => string | undefined } = {}): Promise<{ credential: string; socketPath: string } | undefined> {
+    async issue(ownerId: string, sessionId: string, use: { role?: AgentToolRole; record?: (step: AgentStepRecord) => void; admit?: (reserve: boolean) => string | undefined; gate?: AgentGate } = {}): Promise<{ credential: string; socketPath: string } | undefined> {
       if (disposed || credentials.size >= MAX_CREDENTIALS) return undefined;
       const since = epoch;
       const bindable = () => {
@@ -382,7 +456,7 @@ export function createAgentTerminals(options: {
       });
       const credential = randomBytes(32).toString("base64url");
       const hash = digest(credential);
-      credentials.set(hash, { hash, live, sockets: new Set(), running: false, ...(use.role ? { role: use.role } : {}), ...(use.record ? { record: use.record } : {}), ...(use.admit ? { admit: use.admit } : {}) });
+      credentials.set(hash, { hash, live, sockets: new Set(), running: false, ...(use.role ? { role: use.role } : {}), ...(use.record ? { record: use.record } : {}), ...(use.admit ? { admit: use.admit } : {}), ...(use.gate ? { gate: use.gate } : {}) });
       return { credential, socketPath: options.socketPath };
     },
     /**

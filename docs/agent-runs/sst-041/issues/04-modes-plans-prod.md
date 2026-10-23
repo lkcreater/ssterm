@@ -4,7 +4,7 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent (authorized 2026-10-23)
+**Status:** done
 
 - [ ] `propose_plan` shows a plan card (goal and commands). Approve or Reject; in Auto, nothing outside read-only runs before approval.
 - [ ] Each in-plan command runs. An out-of-plan command shows a per-command approval card, and a rejection is returned to the agent.

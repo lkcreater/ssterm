@@ -99,7 +99,7 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     const owner = await page.evaluate(async () => { const boot = await window.ssterm.bootstrap(); if (!boot.ok) throw new Error("bootstrap"); return boot.value.owner; });
     expect(await page.evaluate(async ({ owner, sessionId }) => (await window.ssterm.openAgent({ owner, sessionId, generation: 1 })), { owner, sessionId }))
       .toEqual({ ok: true, value: { status: "refused", reason: "disabled" } });
-    const settingsFor = (model: string) => ({ enabled: true, provider: "claude" as const, model, effort: "xhigh" as const, instructions: "" });
+    const settingsFor = (model: string) => ({ enabled: true, provider: "claude" as const, model, effort: "xhigh" as const, instructions: "", allowFullAllowOnProd: false });
     expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: false, settings })), { owner, settings: settingsFor("claude-haiku-5-5") }))
       .toEqual({ ok: true, value: { status: "consent-required" } });
     // A14: only isolation-verified models run (claude-opus-5-5 was inconclusive); a custom ID must be a strict token.
@@ -138,7 +138,7 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     await settings.getByRole("button", { name: "Done" }).click();
     await expect(settings).toHaveCount(0);
     const stored = JSON.parse(readFileSync(join(profile, "agent-settings.json"), "utf8"));
-    expect(stored).toEqual({ version: 1, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "Prefer journalctl over log files.", disclosure: 1 });
+    expect(stored).toEqual({ version: 2, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "Prefer journalctl over log files.", allowFullAllowOnProd: false, disclosure: 1 });
 
     // 3. The button: Ready SSH panes only, never a local terminal.
     const agentButton = pane.getByRole("button", { name: "AI Agent" });
@@ -169,7 +169,15 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     const paneBox = (await pane.boundingBox())!;
     expect(paneBox.x + paneBox.width, "the panel sits beside the terminal, not over it").toBeLessThanOrEqual(panelBox.x + 1);
 
-    // 5. Chat → delegate_task → sub agent commands typed in the pane → summary from ssterm's record.
+    // Ticket 04: every conversation starts in Auto; classification is labelled best effort. This one is switched to Read only.
+    const modes = panel.getByTestId("agent-mode");
+    await expect(modes).toHaveAttribute("data-mode", "auto");
+    await expect(panel.getByTestId("agent-mode-note")).toContainText("Read-only classification is best effort");
+    await modes.getByRole("button", { name: "Read only", exact: true }).click();
+    await expect(modes).toHaveAttribute("data-mode", "read-only");
+    await expect(modes.getByRole("button", { name: "Read only", exact: true })).toHaveAttribute("aria-pressed", "true");
+
+    // 5. Chat → delegate_task → sub agent commands typed in the pane → summary from ssterm's record. Read only refuses touch.
     const composer = panel.getByLabel("Message to the agent");
     const messages = panel.getByTestId("agent-messages");
     await composer.fill("delegate:run:cat /home/fixture/agent/note.txt;;touch /tmp/agent-canary");
@@ -187,6 +195,7 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     await expect(record.locator("li").nth(0)).toContainText("cat /home/fixture/agent/note.txt");
     await expect(record.locator("li").nth(0)).toContainText("Exit 0");
     await expect(record.locator("li").nth(0)).toContainText("AGENT-NOTE-42");
+    await expect(record.locator("li").nth(0).locator("[data-via]")).toHaveAttribute("data-via", "read-only");
     await expect(record.locator("li").nth(1)).toContainText("Refused, not run");
     await expect(card).toContainText("Sub agent report (unverified): Ran 2 command(s).");
     // Rendered contrast, names and overflow with the panel, a finished card and its record open.
@@ -203,7 +212,7 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
       tools: ["mcp__ssterm__delegate_task", "mcp__ssterm__get_task_status", "mcp__ssterm__cancel_task"] });
     expect(main.extra).toContain("Prefer journalctl over log files.");
     expect(sub).toMatchObject({ role: "sub", problems: [], servers: ["ssterm"], instructions: true, model: "claude-haiku-5-5", effort: "xhigh", bridge,
-      tools: ["mcp__ssterm__run_command", "mcp__ssterm__read_output", "mcp__ssterm__cancel"] });
+      tools: ["mcp__ssterm__propose_plan", "mcp__ssterm__run_command", "mcp__ssterm__read_output", "mcp__ssterm__cancel"] });
     await expect.poll(() => readdirSync(join(home, ".claude/sessions")).filter((name) => name.startsWith(`${sub.pid}.`)).length, { message: "the finished sub agent's residue" }).toBe(0);
 
     // 6. One sub agent per session: the second task waits in the queue.
@@ -297,6 +306,199 @@ test("AI Agent: consent gating, Ready SSH only, delegate → commands in the pan
     expect(desktop.forcedKill(), "the quit finished on its own").toBe(false);
     await expectCleaned("quit");
     testInfo.annotations.push({ type: "evidence", description: `Docker OpenSSH ${lab.container.slice(0, 12)}; ${launches().length} fake CLI launches` });
+  } finally {
+    await desktop?.close();
+    await lab.dispose();
+    await rm(profile, { recursive: true, force: true });
+  }
+});
+
+test("AI Agent modes: Auto plan and per-command approvals on the fixture, Full allow opt-in and reset, PROD confirmations and the Settings gate, lock withdraws a pending card", async ({}, testInfo) => {
+  test.setTimeout(420_000);
+  const profile = await mkdtemp(join(tmpdir(), "ssterm-e2e-agent-modes-"));
+  const home = join(profile, "agent-home");
+  await mkdir(home);
+  const cli = join(profile, "claude");
+  await writeFile(cli, `#!/bin/sh\nexec '${process.execPath}' '${resolve("tests/fixtures/agent/fake-claude.mjs")}' "$@"\n`, { mode: 0o755 });
+  const lab = await startFixture();
+  /** What the fixture actually has: the evidence that a command did or did not run. */
+  const exists = async (path: string) => (await runFile("docker", ["exec", lab.container, "sh", "-c", `test -e ${path} && echo present || echo absent`])).stdout.trim();
+  const dev = "โหมด DEV";
+  const prod = "โหมด PROD";
+  let desktop: Desktop | undefined;
+  try {
+    desktop = await launchDesktop(profile, { env: { SSTERM_TEST_AGENT_CLI: cli, SSTERM_TEST_AGENT_HOME: home } });
+    const { app, page } = desktop;
+    const secret = join(lab.directory, "password");
+    await writeFile(secret, lab.password, { mode: 0o600 });
+    const [identityId] = await changeCatalog(app, [
+      { type: "create-identity", data: { label: "Agent modes lab", username: lab.username, method: "password" } },
+      { type: "create-host", data: { label: dev, address: lab.host, environment: "DEV", port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId: "$0" } } },
+      { type: "create-host", data: { label: prod, address: lab.host, environment: "PROD", port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId: "$0" } } },
+    ]);
+    await page.reload();
+    await expect(page.getByTestId("hosts-page")).toContainText(prod);
+    expect(await app.evaluate(async ({ BrowserWindow }, { file, identityId }) => {
+      const value = process.getBuiltinModule("node:fs").readFileSync(file, "utf8");
+      return BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScript(`(async () => {
+        const boot = await window.ssterm.bootstrap();
+        const saved = await window.ssterm.setIdentityPassword({ owner: boot.value.owner, identityId: ${JSON.stringify(identityId)},
+          expectedRevision: 1, value: new TextEncoder().encode(${JSON.stringify(value)}) });
+        return saved.ok ? saved.value.status : saved.error.code; })()`);
+    }, { file: secret, identityId })).toBe("saved");
+    const owner = await page.evaluate(async () => { const boot = await window.ssterm.bootstrap(); if (!boot.ok) throw new Error("bootstrap"); return boot.value.owner; });
+    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "low" as const, instructions: "", allowFullAllowOnProd: false };
+    expect(await page.evaluate(async ({ owner, settings }) => (await window.ssterm.configureAgent({ owner, consent: true, settings })).ok, { owner, settings })).toBe(true);
+
+    await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${dev}`, exact: true }).click();
+    await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
+    const pane = page.locator("section[data-terminal-kind=ssh]").first();
+    const rows = pane.locator(".xterm-rows");
+    await expect(pane).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+    await expect(rows).toContainText("fixture@", { timeout: 20_000 });
+    const devId = (await pane.getAttribute("data-session-id"))!;
+
+    // 1. Auto is the default. A plan card shows the goal, exact commands and the target; nothing outside read-only runs before approval.
+    await pane.getByRole("button", { name: "AI Agent" }).click();
+    const panel = page.getByTestId("agent-panel");
+    const modes = panel.getByTestId("agent-mode");
+    const composer = panel.getByLabel("Message to the agent");
+    const messages = panel.getByTestId("agent-messages");
+    await expect(modes).toHaveAttribute("data-mode", "auto");
+    await expect(panel.getByTestId("agent-mode-note")).toContainText("Read-only classification is best effort");
+    await composer.fill("delegate:plan:touch /tmp/agent-plan-a##run:touch /tmp/agent-plan-a;;touch /tmp/agent-out-a;;touch /tmp/agent-out-b");
+    await composer.press("Enter");
+    const plan = panel.getByTestId("agent-plan");
+    await expect(plan).toHaveAttribute("data-status", "pending", { timeout: 30_000 });
+    await expect(plan).toContainText("Fake plan");
+    await expect(plan.getByRole("list", { name: "Plan commands" })).toHaveText("touch /tmp/agent-plan-a");
+    await expect(plan).toContainText(`${lab.username}@${lab.host}:${lab.port}`);
+    await expect(plan).toContainText("DEV");
+    expect(await exists("/tmp/agent-plan-a")).toBe("absent");
+    await expect(rows).not.toContainText("agent-plan-a");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await plan.getByRole("button", { name: "Approve plan" }).click();
+    await expect(plan).toHaveAttribute("data-status", "approved");
+
+    // 2. The in-plan command runs; an out-of-plan one asks: Run runs it, Reject returns a refusal and sends nothing.
+    const approval = panel.getByTestId("agent-approval");
+    await expect(approval).toContainText("touch /tmp/agent-out-a", { timeout: 30_000 });
+    expect(await exists("/tmp/agent-plan-a")).toBe("present");
+    expect(await exists("/tmp/agent-out-a")).toBe("absent");
+    await approval.getByRole("button", { name: "Run", exact: true }).click();
+    await expect(approval).toContainText("touch /tmp/agent-out-b", { timeout: 30_000 });
+    expect(await exists("/tmp/agent-out-a")).toBe("present");
+    await approval.getByRole("button", { name: "Reject", exact: true }).click();
+    await expect(messages).toContainText("touch /tmp/agent-out-b -> refused: Not run", { timeout: 30_000 });
+    await expect(messages).toContainText("touch /tmp/agent-plan-a -> exit 0");
+    await expect(messages).toContainText("touch /tmp/agent-out-a -> exit 0");
+    expect(await exists("/tmp/agent-out-b")).toBe("absent");
+    await expect(rows).not.toContainText("agent-out-b");
+    const card = panel.locator('[data-testid="agent-task"][data-task-id="task-1"]');
+    await card.getByRole("button", { name: /^Record \(3 commands\)/u }).click();
+    await expect(card).toContainText("Sub agent report (unverified): Plan approved. Ran 3 command(s).");
+    const record = card.getByTestId("agent-task-record").locator("li");
+    await expect(record.nth(0).locator("[data-via]")).toHaveAttribute("data-via", "plan");
+    await expect(record.nth(1).locator("[data-via]")).toHaveAttribute("data-via", "approval");
+    await expect(record.nth(2)).toHaveAttribute("data-step-status", "refused");
+    await expect(record.nth(2).locator("[data-via]")).toHaveCount(0);
+    expect((await audit(page)).findings).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath("agent-modes-auto.png") });
+
+    // 3. Full allow: an explicit warning step, then commands run without cards; a new conversation starts in Auto again.
+    await modes.getByRole("button", { name: "Full allow", exact: true }).click();
+    const warning = panel.getByTestId("agent-full-allow-step");
+    await expect(warning).toContainText(`Allow every command on ${dev}?`);
+    await expect(warning).not.toContainText("This is a PROD server.");
+    await warning.getByRole("button", { name: "Cancel" }).click();
+    await expect(warning).toHaveCount(0);
+    await expect(modes).toHaveAttribute("data-mode", "auto");
+    await modes.getByRole("button", { name: "Full allow", exact: true }).click();
+    await warning.getByRole("button", { name: "Allow every command" }).click();
+    await expect(modes).toHaveAttribute("data-mode", "full-allow");
+    await composer.fill("delegate:run:touch /tmp/agent-full");
+    await composer.press("Enter");
+    await expect(messages).toContainText("touch /tmp/agent-full -> exit 0", { timeout: 30_000 });
+    await expect(approval).toHaveCount(0);
+    expect(await exists("/tmp/agent-full")).toBe("present");
+    const fullCard = panel.locator('[data-testid="agent-task"][data-task-id="task-2"]');
+    await fullCard.getByRole("button", { name: /^Record/u }).click();
+    await expect(fullCard.getByTestId("agent-task-record").locator("[data-via]")).toHaveAttribute("data-via", "full-allow");
+    await panel.getByRole("button", { name: "Close AI Agent" }).click();
+    await pane.getByRole("button", { name: "AI Agent" }).click();
+    await expect(modes).toHaveAttribute("data-mode", "auto");
+    await panel.getByRole("button", { name: "Close AI Agent" }).click();
+
+    // 4. PROD: Full allow unavailable until Settings allows it; plan and command approvals need the PROD confirmation step.
+    await page.locator("#app-sidebar").getByRole("button", { name: /^Servers/u }).click();
+    await page.getByTestId("hosts-page").getByRole("button", { name: `Connect ${prod}`, exact: true }).click();
+    const prodPane = page.locator(`section[data-terminal-kind=ssh]:not([data-session-id="${devId}"])`);
+    const trust = page.getByTestId("host-trust-dialog");
+    await expect(trust.or(prodPane.and(page.locator("[data-phase=ready]")))).toBeVisible({ timeout: 30_000 });
+    if (await trust.isVisible()) await trust.getByRole("button", { name: "Remember", exact: true }).click();
+    await expect(prodPane).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+    await expect(prodPane.locator(".xterm-rows")).toContainText("fixture@", { timeout: 20_000 });
+    const prodId = (await prodPane.getAttribute("data-session-id"))!;
+    await prodPane.getByRole("button", { name: "AI Agent" }).click();
+    await expect(panel).toHaveAttribute("data-session-id", prodId);
+    await expect(modes).toHaveAttribute("data-mode", "auto");
+    await expect(modes.getByRole("button", { name: "Full allow", exact: true })).toBeDisabled();
+    await expect(panel.getByTestId("agent-full-allow-off")).toContainText("Settings › AI Agent");
+    const generation = Number(await prodPane.getAttribute("data-generation") ?? 1);
+    expect(await page.evaluate(async (request) => (await window.ssterm.setAgentMode(request)), { owner, sessionId: prodId, generation, mode: "full-allow" as const, acknowledged: true }))
+      .toEqual({ ok: true, value: { status: "refused", reason: "production" } });
+    await composer.fill("delegate:plan:touch /tmp/agent-prod-a##run:touch /tmp/agent-prod-a;;touch /tmp/agent-prod-b");
+    await composer.press("Enter");
+    await expect(plan).toHaveAttribute("data-status", "pending", { timeout: 30_000 });
+    await expect(plan).toContainText("PROD");
+    const planId = (await plan.getAttribute("data-plan-id"))!;
+    expect(await page.evaluate(async (request) => (await window.ssterm.decideAgent(request)), { owner, sessionId: prodId, generation, approvalId: planId, decision: "approve" as const, production: false }))
+      .toEqual({ ok: true, value: { status: "refused", reason: "production" } });
+    await plan.getByRole("button", { name: "Approve plan" }).click();
+    const confirm = panel.getByTestId("agent-prod-confirm");
+    await expect(confirm).toContainText(`Approve this plan on ${prod}?`);
+    await expect(confirm).toContainText("This is a PROD server.");
+    await expect(plan).toHaveAttribute("data-status", "pending");
+    expect(await exists("/tmp/agent-prod-a")).toBe("absent");
+    await confirm.getByRole("button", { name: "Approve plan on PROD" }).click();
+    await expect(plan).toHaveAttribute("data-status", "approved");
+    await expect(approval).toContainText("touch /tmp/agent-prod-b", { timeout: 30_000 });
+    expect(await exists("/tmp/agent-prod-a")).toBe("present");
+    await approval.getByRole("button", { name: "Run", exact: true }).click();
+    await expect(confirm).toContainText(`Run this command on ${prod}?`);
+    await expect(confirm).toContainText("This is a PROD server.");
+    expect(await exists("/tmp/agent-prod-b")).toBe("absent");
+    await confirm.getByRole("button", { name: "Run on PROD" }).click();
+    await expect(messages).toContainText("touch /tmp/agent-prod-b -> exit 0", { timeout: 30_000 });
+    expect(await exists("/tmp/agent-prod-b")).toBe("present");
+
+    const dialog = await openSettings(page);
+    const prodSwitch = dialog.getByRole("switch", { name: "Allow Full allow on PROD" });
+    await expect(prodSwitch).not.toBeChecked();
+    await prodSwitch.click();
+    await expect(prodSwitch).toBeChecked();
+    await dialog.getByRole("button", { name: "Done" }).click();
+    expect(JSON.parse(readFileSync(join(profile, "agent-settings.json"), "utf8")).allowFullAllowOnProd).toBe(true);
+    await modes.getByRole("button", { name: "Full allow", exact: true }).click();
+    await expect(warning).toContainText(`Allow every command on ${prod}?`);
+    await expect(warning).toContainText("This is a PROD server.");
+    await warning.getByRole("button", { name: "Allow every command" }).click();
+    await expect(modes).toHaveAttribute("data-mode", "full-allow");
+
+    // 5. Lock while a command card waits: the card is withdrawn and nothing reaches the server.
+    await modes.getByRole("button", { name: "Auto", exact: true }).click();
+    await expect(modes).toHaveAttribute("data-mode", "auto");
+    await composer.fill("delegate:run:touch /tmp/agent-lock");
+    await composer.press("Enter");
+    await expect(approval).toContainText("touch /tmp/agent-lock", { timeout: 30_000 });
+    await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("lock-screen"); });
+    await expect(panel.getByTestId("agent-ended")).toBeVisible();
+    await expect(approval).toHaveCount(0);
+    await expect.poll(() => pgrep("fake-claude.mjs")).toBe(0);
+    expect(await exists("/tmp/agent-lock")).toBe("absent");
+    expect(desktop.externalRequests).toEqual([]);
+    expect(desktop.errors).toEqual([]);
+    testInfo.annotations.push({ type: "evidence", description: `Docker OpenSSH ${lab.container.slice(0, 12)}; DEV and PROD hosts on one fixture` });
   } finally {
     await desktop?.close();
     await lab.dispose();

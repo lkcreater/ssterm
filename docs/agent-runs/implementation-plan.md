@@ -1702,3 +1702,24 @@ Rules:
   - **Checks:**
     - typecheck pass, unit 811/812 (1 known skip), build pass, full E2E 94/94.
     - Packaged agent-panel/package-artifact/desktop: 7/8 on the first run, with one unrecorded agent-panel assertion failure, then 8/8 twice on rerun.
+- **SST-041/04 done (2026-10-23):**
+  - **Modes:** Read only, Auto (default for every new conversation) and Full allow, enforced in main through the `AgentGate`.
+  - **`propose_plan` and plan cards:**
+    - A plan command matches exactly after trimming surrounding spaces and tabs, and the approved text is what gets typed.
+    - Each entry runs once and is given back only if nothing reached the shell.
+    - The task has one pending plan and one pending command card, with a 5-minute bounded wait. Out-of-plan commands get per-command cards.
+  - **PROD:**
+    - Approving needs `production:true` plus the in-panel step.
+    - Full allow on PROD needs the Settings option, which is off by default and stored in settings v2.
+  - **IPC:** `set-agent-mode` and `decide-agent`, owner-checked.
+  - **Review:** APPROVED. Fixed:
+    - M1: a pending card is bound to its MCP request, so abort on cancel or socket close withdraws it and nothing is typed later. `MCP_TOOL_TIMEOUT=1800000` is pinned.
+    - L1: default-ignorable code points and runs of 3+ marks are refused.
+    - L2: Full allow types the normalized command.
+    - L3: step slots are reserved, so no record is dropped silently.
+    - L4: approval ids carry a per-conversation nonce.
+  - **Checks:**
+    - typecheck, build and unit 822/823 (1 known skip) pass.
+    - Full E2E was 94/95 before the fixes; the one failure, the `desktop.spec` allowlist, is fixed.
+    - Focused agent specs pass after the fixes.
+  - **Recurring:** `npm test` hung a second time, now pinpointed in `tests/unit/local-pty.test.ts` ("cancellation waits for actual in-flight native input"), a file untouched by SST-041. Investigate in ticket 08.

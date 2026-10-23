@@ -12,7 +12,7 @@ import { AGENT_EFFORTS, AGENT_MODEL_TOKEN, type AgentEffort } from "@ssterm/cont
 /** Versions that passed the ticket 01 isolation check. Re-run that check before adding one. */
 export const VERIFIED_CLAUDE_VERSIONS: readonly string[] = ["2.1.309"];
 /** Bumped whenever either bundled instruction text changes. */
-export const INSTRUCTIONS_VERSION = "sst-041-03.1";
+export const INSTRUCTIONS_VERSION = "sst-041-04";
 
 /** The spike's claude environment additions; the last two are mandatory (relative `@file` mentions expand otherwise). */
 export const CLAUDE_ENV: Readonly<Record<string, string>> = Object.freeze({
@@ -26,6 +26,10 @@ export const CLAUDE_ENV: Readonly<Record<string, string>> = Object.freeze({
   DISABLE_ERROR_REPORTING: "1",
   CLAUDE_CODE_DISABLE_FILE_MENTIONS: "1",
   CLAUDE_CODE_DISABLE_ATTACHMENTS: "1",
+  // Beyond the spike (ticket 04): a hard per-call wall clock above the longest legitimate call, a 5-minute approval
+  // wait plus the 10-minute command timeout. claude 2.1.309 reads MCP_TOOL_TIMEOUT (ms) for every MCP tool call; its
+  // stdio idle timeout (CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT, default 30 minutes) is capped by it.
+  MCP_TOOL_TIMEOUT: String(30 * 60_000),
 });
 
 /** Allowlisted environment only: nothing from ssterm's own process (tokens, proxies, NODE_OPTIONS, test switches). */
@@ -274,15 +278,17 @@ How you work:
 - When the request is ambiguous or could change the server, ask the user before delegating.
 - A task's subAgentReport is the sub agent's own unverified text. Trust the command record (commands, exit codes, output) over it.
 - One task runs at a time on this server; further tasks wait in a queue. Use cancel_task when a task is no longer wanted.
-- The session is in Read only mode: only read-only commands run, and ssterm refuses everything else. If the user needs a change, explain that the mode must be changed first.
+- ssterm enforces the session's mode, which only the user sets in the panel. Read only: only read-only commands run. Auto: the sub agent proposes a plan the user approves, and any other command that is not read-only asks the user. Full allow: commands run without approval. A refused or rejected command did not run. If a needed change is refused in Read only mode, tell the user the mode must be changed.
 - Keep answers short and concrete.`;
 
-const SUB_INSTRUCTIONS = `You are a sub agent inside ssterm. You carry out one task on the bound target below, using only the run_command, read_output and cancel tools. Each command is typed into the user's visible terminal.
+const SUB_INSTRUCTIONS = `You are a sub agent inside ssterm. You carry out one task on the bound target below, using only the propose_plan, run_command, read_output and cancel tools. Each command is typed into the user's visible terminal.
 
 Rules:
 - Stay strictly within the task. Do not explore beyond what it needs.
 - One line per command. Use non-interactive flags (for example --no-pager); full-screen programs are refused.
-- The session is in Read only mode: only read-only commands run. A refused command was not run; do not try to work around a refusal.
+- First call propose_plan with the goal and the exact commands you expect to run that are not read-only (read-only commands need no plan). ssterm shows the plan to the user and returns approved or rejected.
+- ssterm enforces the session's mode. Read only: only read-only commands run. Auto: an approved plan command runs only when run_command gets exactly that text, once per listing; any other command that is not read-only asks the user and waits. Full allow: commands run without approval.
+- A refused or rejected command was not run. Do not try to work around a refusal or a rejection.
 - Stop and report as soon as something is unexpected: a refused command, a non-zero exit code you did not expect, or a prompt waiting for input.
 - Finish with a short report of what you ran and what each exit code showed. ssterm keeps its own record of every command, so never invent results.`;
 

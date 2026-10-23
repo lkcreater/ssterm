@@ -5,7 +5,8 @@
 //   main agent:  "delegate:<goal>||<goal>"  delegate each goal, wait for each record, summarize from it
 //                "start:<goal>"              delegate without waiting
 //                anything else              echoed
-//   sub agent:   goal "run:<command>;;<command>" runs each command with run_command
+//   sub agent:   goal "run:<command>;;<command>" runs each command with run_command; with a "plan:<command>;;<command>##"
+//                prefix it first calls propose_plan with those commands (ticket 04) and runs the rest whatever the answer
 // Every launch appends one JSON line to $HOME/fake-claude.log.
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -29,11 +30,12 @@ for (const [flag, expected] of [["--output-format", "stream-json"], ["--input-fo
   ["--permission-mode", "dontAsk"], ["--permission-prompts", "none"]])
   if (value(flag) !== expected) problems.push(`${flag} is ${JSON.stringify(value(flag))}`);
 const required = { CLAUDE_CODE_DISABLE_FILE_MENTIONS: "1", CLAUDE_CODE_DISABLE_ATTACHMENTS: "1", CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ENABLE_CLAUDEAI_MCP_SERVERS: "false", TERM: "dumb", PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ENABLE_CLAUDEAI_MCP_SERVERS: "false", TERM: "dumb", PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+  MCP_TOOL_TIMEOUT: "1800000" };
 for (const [name, expected] of Object.entries(required)) if (process.env[name] !== expected) problems.push(`env ${name}`);
 const allowedEnv = new Set(["HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "TERM", "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
   "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "CLAUDE_CODE_SKIP_PROMPT_HISTORY", "CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING", "ENABLE_CLAUDEAI_MCP_SERVERS",
-  "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "CLAUDE_CODE_DISABLE_FILE_MENTIONS", "CLAUDE_CODE_DISABLE_ATTACHMENTS",
+  "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "CLAUDE_CODE_DISABLE_FILE_MENTIONS", "CLAUDE_CODE_DISABLE_ATTACHMENTS", "MCP_TOOL_TIMEOUT",
   // Set by the OS or Node for any process, never by ssterm.
   "__CF_USER_TEXT_ENCODING", "PWD", "SHLVL", "_", "OLDPWD"]);
 const extraEnv = Object.keys(process.env).filter((name) => !allowedEnv.has(name));
@@ -90,7 +92,10 @@ async function main(text) {
     for (const goal of text.slice(9).split("||")) ids.push((await call("delegate_task", { goal })).structuredContent.taskId);
     say(`Delegated ${ids.join(", ")}.`);
     for (const taskId of ids) {
-      const record = (await call("get_task_status", { taskId, wait: true })).structuredContent;
+      let record;
+      // Approvals can keep a task running past one wait.
+      do record = (await call("get_task_status", { taskId, wait: true })).structuredContent;
+      while (record.status === "queued" || record.status === "running");
       const lines = record.commands.map((step) => `${step.command} -> ${step.status === "completed" ? `exit ${step.exitCode}` : step.status}: ${step.output.split("\n")[0]}`);
       say(`Summary ${taskId} (${record.status}): ${lines.join(" | ") || "no commands"}`);
     }
@@ -100,10 +105,17 @@ async function main(text) {
   emit({ type: "result", subtype: "success", is_error: false, result: "done" });
 }
 async function sub(text) {
-  const goal = text.replace(/^Task task-\d+: /u, "");
+  let goal = text.replace(/^Task task-\d+: /u, "");
+  let plan = "";
+  if (goal.startsWith("plan:")) {
+    const at = goal.indexOf("##");
+    const proposed = await call("propose_plan", { goal: "Fake plan", commands: goal.slice(5, at).split(";;") });
+    plan = `Plan ${proposed.structuredContent?.status ?? `error: ${proposed.content[0].text}`}. `;
+    goal = goal.slice(at + 2);
+  }
   const commands = goal.startsWith("run:") ? goal.slice(4).split(";;") : [];
   for (const command of commands) await call("run_command", { command });
-  emit({ type: "result", subtype: "success", is_error: false, result: `Ran ${commands.length} command(s).` });
+  emit({ type: "result", subtype: "success", is_error: false, result: `${plan}Ran ${commands.length} command(s).` });
 }
 
 let chain = Promise.resolve();

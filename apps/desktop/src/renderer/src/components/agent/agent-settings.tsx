@@ -104,8 +104,9 @@ export function AgentSettings({ owner }: { owner: Owner }) {
     <FieldSet data-testid="agent-settings">
       <FieldLegend>AI Agent</FieldLegend>
       <FieldDescription>
-        Off by default. When on, a connected SSH terminal shows AI Agent, which opens a chat beside the terminal. The agent
-        works in Read only mode: ssterm runs only commands it classifies as read-only (best effort) and refuses the rest.
+        Off by default. When on, a connected SSH terminal shows AI Agent, which opens a chat beside the terminal. Each
+        conversation starts in Auto: read-only commands run, and anything else runs only from a plan you approve or after
+        you approve that command. Read-only classification is best effort.
       </FieldDescription>
       {problem || unavailable ? (
         <Alert variant="destructive">
@@ -160,6 +161,22 @@ export function AgentSettings({ owner }: { owner: Owner }) {
             </div>
           ) : null}
           {enabled ? <AgentDisclosure /> : null}
+          <Field orientation="horizontal" data-disabled={busy || undefined}>
+            <Switch
+              id={`${id}-prod-full-allow`}
+              aria-describedby={`${id}-prod-full-allow-note`}
+              disabled={busy}
+              checked={view.settings.allowFullAllowOnProd}
+              onCheckedChange={(checked) => void save({ allowFullAllowOnProd: checked })}
+            />
+            <FieldContent>
+              <FieldLabel htmlFor={`${id}-prod-full-allow`}>Allow Full allow on PROD</FieldLabel>
+              <FieldDescription id={`${id}-prod-full-allow-note`}>
+                Off by default: Full allow cannot be chosen for a PROD server. When on, it still needs the PROD warning in each
+                conversation. Turning it off returns PROD conversations in Full allow to Auto.
+              </FieldDescription>
+            </FieldContent>
+          </Field>
           <ModelSettings id={id} view={view} busy={busy} custom={custom} onCustom={setCustom} onSave={(changes) => void save(changes)} />
           <Field data-disabled={busy || undefined}>
             <FieldLabel htmlFor={`${id}-instructions`}>Additional instructions</FieldLabel>

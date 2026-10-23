@@ -48,7 +48,7 @@ export * from './recording.ts';
 import type {
   AgentSettingsRequest, AgentSettingsView, ConfigureAgentRequest, ConfigureAgentResponse, AgentStateRequest, AgentState,
   OpenAgentRequest, OpenAgentResponse, AgentConversationRequest, SendAgentRequest, SendAgentResponse, CancelAgentTaskRequest,
-  CancelAgentTaskResponse,
+  CancelAgentTaskResponse, SetAgentModeRequest, SetAgentModeResponse, DecideAgentRequest, DecideAgentResponse,
 } from "./agent.ts";
 export * from "./agent.ts";
 /** Serializable values crossing the isolated preload boundary. */
@@ -204,6 +204,10 @@ export interface DesktopAPI {
   closeAgent(request: AgentConversationRequest): Promise<Result<TerminalActionResponse>>;
   sendAgent(request: SendAgentRequest): Promise<Result<SendAgentResponse>>;
   cancelAgentTask(request: CancelAgentTaskRequest): Promise<Result<CancelAgentTaskResponse>>;
+  /** Ticket 04: the conversation's mode (Full allow needs the warning step; on PROD also the Settings option). */
+  setAgentMode(request: SetAgentModeRequest): Promise<Result<SetAgentModeResponse>>;
+  /** Ticket 04: Approve or Reject one pending plan or command card of this exact conversation generation. */
+  decideAgent(request: DecideAgentRequest): Promise<Result<DecideAgentResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -313,6 +317,8 @@ export const channels = Object.freeze({
   closeAgent: "ssterm:close-agent",
   sendAgent: "ssterm:send-agent",
   cancelAgentTask: "ssterm:cancel-agent-task",
+  setAgentMode: "ssterm:set-agent-mode",
+  decideAgent: "ssterm:decide-agent",
 });
 
 const messages: Record<ErrorCode, string> = {

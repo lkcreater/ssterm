@@ -12,14 +12,16 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import {
   AGENT_DISCLOSURE_VERSION, AGENT_EFFORTS, AGENT_MODELS, effectiveDefaultModel, isAgentModelId, isVerifiedAgentModel, MAX_AGENT_INSTRUCTIONS, MAX_AGENT_MESSAGES, MAX_AGENT_STEPS, MAX_AGENT_TASKS, channels, exactObject,
   failure, isAgentConversationRequest, isAgentSettingsRequest, isAgentStateRequest, isCancelAgentTaskRequest,
-  isConfigureAgentRequest, isOpenAgentRequest, isSendAgentRequest,
-  type AgentConversation, type AgentEffort, type AgentMessage, type AgentSettings, type AgentSettingsView, type AgentState, type AgentStep, type AgentTask,
-  type ConfigureAgentResponse, type OpenAgentResponse, type Owner, type Result, type SendAgentResponse,
+  isConfigureAgentRequest, isDecideAgentRequest, isOpenAgentRequest, isSendAgentRequest, isSetAgentModeRequest,
+  type AgentConversation, type AgentEffort, type AgentMessage, type AgentMode, type AgentPlan, type AgentSettings, type AgentSettingsView, type AgentState,
+  type AgentStep, type AgentTask, type ConfigureAgentResponse, type DecideAgentResponse, type OpenAgentResponse, type Owner, type Result,
+  type SendAgentResponse, type SetAgentModeResponse,
 } from "@ssterm/contracts";
 import type { ObservedTerminal, TerminalObserver } from "@ssterm/domain";
 import type { SessionRegistry } from "@ssterm/services";
-import type { AgentTerminals, AgentToolRole, ToolDefinition, ToolResult } from "./agent-mcp";
-import { text } from "./agent-mcp";
+import type { AgentGate, AgentTerminals, AgentToolRole, ToolDefinition, ToolResult } from "./agent-mcp";
+import { readOnlyRefusal, text } from "./agent-mcp";
+import { APPROVAL_WAIT_MS, MAX_PLANS_PER_TASK, normalizeCommand, parsePlan, takePlanCommand, unshowable } from "./agent-policy";
 import {
   agentInstructions, claudeArgs, mcpConfig, removeRunResidue, RUN_PROFILE_FILE, spawnCli, VERIFIED_CLAUDE_VERSIONS,
   type AgentTarget, type CliProcess, type ProviderResolution,
@@ -33,13 +35,19 @@ import { sessionOwnerId } from "./session-runtime";
 
 export interface StoredAgentSettings extends AgentSettings { disclosure: number }
 export const DEFAULT_AGENT_SETTINGS: Readonly<StoredAgentSettings> = Object.freeze({
-  enabled: false, provider: "claude", model: effectiveDefaultModel("claude"), effort: AGENT_MODELS.claude.defaultEffort, instructions: "", disclosure: 0,
+  enabled: false, provider: "claude", model: effectiveDefaultModel("claude"), effort: AGENT_MODELS.claude.defaultEffort, instructions: "",
+  allowFullAllowOnProd: false, disclosure: 0,
 });
-/** Anything but an exact version 1 record (or a consent to an older disclosure) reads as off. */
+/**
+ * Anything but an exact version 2 record, or a version 1 record (ticket 03, read with "Allow Full allow on PROD" off),
+ * or a consent to an older disclosure, reads as off.
+ */
 export function parseAgentSettings(bytes: Uint8Array | undefined): StoredAgentSettings {
   try {
     const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-    if (!exactObject(value, ["version", "enabled", "provider", "model", "effort", "instructions", "disclosure"]) || value.version !== 1) return { ...DEFAULT_AGENT_SETTINGS };
+    const fields = ["version", "enabled", "provider", "model", "effort", "instructions", "disclosure"];
+    const v1 = exactObject(value, fields) && value.version === 1;
+    if (!v1 && !(exactObject(value, [...fields, "allowFullAllowOnProd"]) && value.version === 2 && typeof value.allowFullAllowOnProd === "boolean")) return { ...DEFAULT_AGENT_SETTINGS };
     if (typeof value.enabled !== "boolean" || value.provider !== "claude" || typeof value.instructions !== "string" ||
       !isAgentModelId(value.model) || !(AGENT_EFFORTS as readonly unknown[]).includes(value.effort) ||
       value.instructions.length > MAX_AGENT_INSTRUCTIONS || /[\u0000-\u0008\u000b-\u001f\u007f]/u.test(value.instructions) ||
@@ -47,12 +55,13 @@ export function parseAgentSettings(bytes: Uint8Array | undefined): StoredAgentSe
     const disclosure = value.disclosure as number;
     // A model that is (no longer) verified for this CLI version falls back to the effective default.
     const model = isVerifiedAgentModel("claude", value.model) ? value.model : effectiveDefaultModel("claude");
-    return { enabled: value.enabled && disclosure === AGENT_DISCLOSURE_VERSION, provider: "claude", model, effort: value.effort as AgentEffort, instructions: value.instructions, disclosure };
+    return { enabled: value.enabled && disclosure === AGENT_DISCLOSURE_VERSION, provider: "claude", model, effort: value.effort as AgentEffort, instructions: value.instructions,
+      allowFullAllowOnProd: value.allowFullAllowOnProd === true, disclosure };
   } catch { return { ...DEFAULT_AGENT_SETTINGS }; }
 }
 export const serializeAgentSettings = (settings: StoredAgentSettings): Uint8Array =>
-  new TextEncoder().encode(JSON.stringify({ version: 1, enabled: settings.enabled, provider: settings.provider, model: settings.model,
-    effort: settings.effort, instructions: settings.instructions, disclosure: settings.disclosure }));
+  new TextEncoder().encode(JSON.stringify({ version: 2, enabled: settings.enabled, provider: settings.provider, model: settings.model,
+    effort: settings.effort, instructions: settings.instructions, allowFullAllowOnProd: settings.allowFullAllowOnProd, disclosure: settings.disclosure }));
 export interface AgentSettingsStore {
   read(): Promise<{ status: "present"; value: Uint8Array } | { status: "missing" } | { status: "error" }>;
   write(value: Uint8Array): Promise<"confirmed" | "unknown" | "invalid">;
@@ -88,7 +97,13 @@ export const DELEGATE_TOOLS: readonly ToolDefinition[] = [
   },
 ];
 const MAIN_TOOLS = DELEGATE_TOOLS.map((tool) => `mcp__ssterm__${tool.name}`);
-const SUB_TOOLS = ["run_command", "read_output", "cancel"].map((tool) => `mcp__ssterm__${tool}`);
+const SUB_TOOLS = ["propose_plan", "run_command", "read_output", "cancel"].map((tool) => `mcp__ssterm__${tool}`);
+type Outcome = "approved" | "rejected" | "expired" | "cancelled";
+const outcomeText: Record<Exclude<Outcome, "approved">, string> = {
+  rejected: "The user rejected it.",
+  expired: `No decision came within ${APPROVAL_WAIT_MS / 60_000} minutes, so it expired.`,
+  cancelled: "The approval was withdrawn: the request was cancelled, the mode changed, the task ended or the session closed.",
+};
 
 interface Run { process: CliProcess; credential: string; root: string; allowed: readonly string[] }
 interface Conversation {
@@ -99,6 +114,13 @@ interface Conversation {
   /** A14: fixed at open; the conversation's sub agents use the same. */
   model: string;
   effort: AgentEffort;
+  /** Ticket 04: Auto for every new conversation. */
+  mode: AgentMode;
+  /** Pending plan and command cards of this conversation, by approval id. */
+  decisions: Map<string, { taskId: string; finish(outcome: Outcome): void }>;
+  nextApproval: number;
+  /** Part of every approval id of this conversation (L4). */
+  nonce: string;
   status: AgentConversation["status"];
   messages: AgentMessage[];
   tasks: AgentTask[];
@@ -129,7 +151,8 @@ export function taskRecord(task: AgentTask) {
     budget = Math.max(0, budget - kept.output.length);
     return kept;
   }).reverse();
-  return { taskId: task.id, goal: task.goal, status: task.status, limitReached: task.limitReached, subAgentReport: task.subAgentReport, commands };
+  return { taskId: task.id, goal: task.goal, status: task.status, limitReached: task.limitReached, subAgentReport: task.subAgentReport,
+    plan: task.plan, commands };
 }
 /** Built-in agent definitions reported by the verified claude 2.1.309 run (inert: the Agent tool is not offered). */
 const BUILTIN_AGENTS = ["claude", "Explore", "general-purpose", "Plan", "statusline-setup"];
@@ -172,9 +195,12 @@ export function createAgentRunner(options: {
   spawn?: typeof spawnCli;
   waitMs?: number;
   graceMs?: number;
+  /** How long a plan or command card waits for the user (default 5 minutes). */
+  approvalMs?: number;
 }) {
   const spawn = options.spawn ?? spawnCli;
   const waitMs = options.waitMs ?? 60_000;
+  const approvalMs = options.approvalMs ?? APPROVAL_WAIT_MS;
   const conversations = new Map<string, Conversation>();
   const owners = new Map<string, { owner: Owner; send(state: AgentState): void; sequence: number }>();
   const exits = new Set<Promise<void>>();
@@ -188,10 +214,15 @@ export function createAgentRunner(options: {
 
   const view = (conversation: Conversation): AgentConversation => ({
     sessionId: conversation.sessionId, generation: conversation.generation, target: { ...conversation.target }, provider: "claude",
-    model: conversation.model, effort: conversation.effort,
+    model: conversation.model, effort: conversation.effort, mode: conversation.mode, fullAllowAvailable: fullAllowAvailable(conversation),
     status: conversation.status, messages: conversation.messages.map((message) => ({ ...message })),
-    tasks: conversation.tasks.map((task) => ({ ...task, steps: task.steps.map((step) => tail(step, VIEW_OUTPUT, VIEW_NOTE)) })),
+    tasks: conversation.tasks.map((task) => ({
+      ...task, steps: task.steps.map((step) => tail(step, VIEW_OUTPUT, VIEW_NOTE)),
+      plan: task.plan && { ...task.plan, commands: task.plan.commands.map((entry) => ({ ...entry })) }, approval: task.approval && { ...task.approval },
+    })),
   });
+  const production = (conversation: Conversation) => conversation.target.environment === "PROD";
+  const fullAllowAvailable = (conversation: Conversation) => !production(conversation) || settings.allowFullAllowOnProd;
   const stateFor = (ownerId: string): AgentState | undefined => {
     const listener = owners.get(ownerId);
     if (!listener) return undefined;
@@ -330,7 +361,7 @@ export function createAgentRunner(options: {
           return text("delegate_task takes exactly one string argument, `goal` (1–4000 characters).", true);
         if (conversation.tasks.filter((candidate) => !finished(candidate)).length >= MAX_OPEN_TASKS)
           return text(`At most ${MAX_OPEN_TASKS} tasks can wait at once. Wait for a task to finish or cancel one.`, true);
-        const created: AgentTask = { id: `task-${++conversation.nextTask}`, goal: args.goal.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, " ").trim(), status: "queued", subAgentReport: null, limitReached: false, steps: [] };
+        const created: AgentTask = { id: `task-${++conversation.nextTask}`, goal: args.goal.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, " ").trim(), status: "queued", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null };
         conversation.tasks.push(created);
         // Finished tasks are dropped oldest first; queued and running ones always stay.
         while (conversation.tasks.length > MAX_AGENT_TASKS) {
@@ -367,6 +398,85 @@ export function createAgentRunner(options: {
     }
   }
 
+  // ------------------------------------------------------------------ approvals (ticket 04)
+
+  /** One pending card; settled by the user, the bounded wait, a mode change, the task's end or the conversation's. */
+  function ask(conversation: Conversation, task: AgentTask, id: string, signal: AbortSignal): Promise<Outcome> {
+    return new Promise((resolve) => {
+      const aborted = () => finish("cancelled");
+      const finish = (outcome: Outcome) => {
+        if (!conversation.decisions.delete(id)) return;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", aborted);
+        resolve(outcome);
+      };
+      const timer = setTimeout(() => finish("expired"), approvalMs);
+      conversation.decisions.set(id, { taskId: task.id, finish });
+      // The MCP request that raised the card was cancelled or its connection closed.
+      if (signal.aborted) finish("cancelled");
+      else signal.addEventListener("abort", aborted, { once: true });
+    });
+  }
+  /** L4: ids carry a per-conversation nonce, so a stale renderer decision can never land on another conversation's card. */
+  const approvalId = (conversation: Conversation, kind: "plan" | "command") => `${kind}-${conversation.nonce}-${++conversation.nextApproval}`;
+  const withdraw = (conversation: Conversation, taskId?: string) => {
+    for (const decision of [...conversation.decisions.values()]) if (taskId === undefined || decision.taskId === taskId) decision.finish("cancelled");
+  };
+
+  /** A1/A2 for one task's sub agent: enforced here, whatever its instructions say. */
+  function gate(conversation: Conversation, task: AgentTask, gone: () => boolean): AgentGate {
+    let proposals = 0;
+    const ended = "This task has ended; nothing was sent to the terminal.";
+    return {
+      async authorize(command, verdict, signal) {
+        if (gone()) return { refuse: ended };
+        if (verdict.readOnly) return { run: command, via: "read-only" };
+        if (conversation.mode === "read-only") return { refuse: readOnlyRefusal(verdict.reason) };
+        const problem = unshowable(command);
+        if (problem) return { refuse: `Refused: ${problem}. Nothing was sent to the terminal. Send one plain line.` };
+        if (conversation.mode === "full-allow") return { run: normalizeCommand(command), via: "full-allow" };
+        const plan = task.plan?.status === "approved" ? task.plan : undefined;
+        const entry = plan && takePlanCommand(plan.commands, command);
+        if (entry) {
+          publish(conversation.ownerId);
+          return { run: entry.command, via: "plan", undo: () => { entry.ran = false; publish(conversation.ownerId); } };
+        }
+        if (task.approval) return { refuse: "Another command is already waiting for the user's approval; nothing was sent. Wait for that decision first." };
+        if (signal.aborted) return { refuse: outcomeText.cancelled };
+        const id = approvalId(conversation, "command");
+        const approval = { id, command: normalizeCommand(command) };
+        task.approval = approval;
+        publish(conversation.ownerId);
+        const outcome = await ask(conversation, task, id, signal);
+        if (task.approval === approval) task.approval = null;
+        if (!conversation.closed) publish(conversation.ownerId);
+        if (outcome === "approved" && !gone()) return { run: approval.command, via: "approval" };
+        return { refuse: `Not run: this command is outside the approved plan and needed the user's approval. ${outcome === "approved" ? ended : outcomeText[outcome]} Nothing was sent to the terminal. Do not work around it; continue without it or finish with your report.` };
+      },
+      async propose(args, signal) {
+        if (gone()) return text(ended, true);
+        const parsed = parsePlan(args);
+        if (typeof parsed === "string") return text(parsed, true);
+        if (conversation.mode === "read-only") return text("This session is in Read only mode: plans are not used and only read-only commands run. Ask the user to change the mode.", true);
+        if (conversation.mode === "full-allow") return text({ planId: null, status: "not-needed", note: "Full allow mode: every command runs without approval." });
+        if (task.plan?.status === "pending") return text("A plan is already waiting for the user's decision.", true);
+        if (proposals >= MAX_PLANS_PER_TASK) return text(`This task already proposed ${MAX_PLANS_PER_TASK} plans; no more can be proposed.`, true);
+        if (signal.aborted) return text(outcomeText.cancelled, true);
+        proposals += 1;
+        // The latest plan is the only one that applies.
+        const plan: AgentPlan = { id: approvalId(conversation, "plan"), goal: parsed.goal, status: "pending", commands: parsed.commands.map((command) => ({ command, ran: false })) };
+        task.plan = plan;
+        publish(conversation.ownerId);
+        const outcome = await ask(conversation, task, plan.id, signal);
+        plan.status = outcome;
+        if (!conversation.closed) publish(conversation.ownerId);
+        return text(outcome === "approved"
+          ? { planId: plan.id, status: plan.status, note: "Approved. Each listed command runs once when run_command is called with exactly that text; anything else asks the user." }
+          : { planId: plan.id, status: plan.status, note: `${outcomeText[outcome]} Commands that are not read-only will each ask the user. Do not work around the decision; stop and report.` });
+      },
+    };
+  }
+
   // ------------------------------------------------------------------ sub agents, one per session at a time (A12)
 
   function pump(conversation: Conversation) {
@@ -375,11 +485,14 @@ export function createAgentRunner(options: {
     if (!next) return;
     next.status = "running";
     const sub: NonNullable<Conversation["sub"]> = { task: next };
+    /** Step slots taken by admitted calls whose record has not arrived yet. */
+    let reserved = 0;
     conversation.sub = sub;
     const settle = (status: AgentTask["status"]) => {
       if (conversation.sub !== sub) return;
       conversation.sub = undefined;
       if (!finished(next)) next.status = status;
+      withdraw(conversation, next.id);
       wake(conversation);
       if (conversation.closed) return;
       pump(conversation);
@@ -392,18 +505,23 @@ export function createAgentRunner(options: {
       if (gone()) return settle("cancelled");
       if (provider.status !== "ready") { next.subAgentReport = "The claude CLI is not available in a verified version."; return settle("failed"); }
       const issued = await options.terminals.issue(conversation.ownerId, conversation.sessionId, {
+        // Every admitted call records exactly once into its slot, also after the task ended (an interrupted command).
         record: (step) => {
-          if (conversation.sub !== sub || next.steps.length >= MAX_AGENT_STEPS) return;
-          next.steps.push({ ...step } satisfies AgentStep);
-          publish(conversation.ownerId);
+          reserved = Math.max(0, reserved - 1);
+          if (next.steps.length < MAX_AGENT_STEPS) next.steps.push({ ...step } satisfies AgentStep);
+          else next.limitReached = true;
+          if (!conversation.closed) publish(conversation.ownerId);
         },
-        // Checked before a command runs: past the limit nothing is typed, and the record says so.
-        admit: () => {
+        // Checked before a command is authorized (taking a slot) and again before it is typed: past the limit or the
+        // task's end nothing is typed, and the record says so.
+        admit: (reserve) => {
           if (conversation.sub !== sub || finished(next)) return "This task has ended; nothing was sent to the terminal.";
-          if (next.steps.length < MAX_AGENT_STEPS) return undefined;
+          if (!reserve) return undefined;
+          if (next.steps.length + reserved < MAX_AGENT_STEPS) { reserved += 1; return undefined; }
           if (!next.limitReached) { next.limitReached = true; publish(conversation.ownerId); }
           return `This task reached its limit of ${MAX_AGENT_STEPS} commands; nothing more was sent to the terminal. Finish with your report.`;
         },
+        gate: gate(conversation, next, gone),
       });
       if (!issued) { next.subAgentReport = "The session is no longer Ready."; return settle("failed"); }
       if (gone()) { options.terminals.revoke(issued.credential); return settle("cancelled"); }
@@ -433,6 +551,7 @@ export function createAgentRunner(options: {
   function cancel(conversation: Conversation, task: AgentTask): boolean {
     if (finished(task)) return false;
     task.status = "cancelled";
+    withdraw(conversation, task.id);
     const sub = conversation.sub;
     if (sub?.task === task && sub.run) {
       // Revoking interrupts its running command first; then the CLI's process group goes.
@@ -459,6 +578,7 @@ export function createAgentRunner(options: {
     const runs = [conversation.main, conversation.sub?.run].filter((run): run is Run => !!run);
     for (const run of runs) options.terminals.revoke(run.credential);
     for (const task of conversation.tasks) if (!finished(task)) task.status = "cancelled";
+    withdraw(conversation);
     wake(conversation);
     // Memory only: the conversation is dropped here.
     conversation.messages = [];
@@ -475,7 +595,8 @@ export function createAgentRunner(options: {
       await ready;
       const provider = resolution ?? await options.resolve();
       return {
-        settings: { enabled: settings.enabled, provider: settings.provider, model: settings.model, effort: settings.effort, instructions: settings.instructions },
+        settings: { enabled: settings.enabled, provider: settings.provider, model: settings.model, effort: settings.effort, instructions: settings.instructions,
+          allowFullAllowOnProd: settings.allowFullAllowOnProd },
         providers: [
           { id: "claude", status: provider.status, version: provider.version },
           { id: "codex", status: "disabled", version: null },
@@ -495,6 +616,11 @@ export function createAgentRunner(options: {
       if (await options.store.write(serializeAgentSettings(stored)) !== "confirmed") return { status: "failed" };
       settings = stored;
       if (!stored.enabled) await closeWhere(() => true);
+      // Turning the PROD option off ends Full allow on PROD conversations at once.
+      for (const conversation of conversations.values()) if (conversation.mode === "full-allow" && !fullAllowAvailable(conversation)) {
+        conversation.mode = "auto";
+        say(conversation, "notice", "Full allow on PROD was turned off in Settings, so this conversation is back in Auto.");
+      }
       publishAll();
       return { status: "saved", view: await this.settingsView(provider) };
     },
@@ -531,7 +657,7 @@ export function createAgentRunner(options: {
         conversations.set(slot, {
           ownerId, sessionId, generation, status: "idle", messages: [], tasks: [], nextMessage: 1, nextTask: 0, waiters: new Set(), closed: false,
           target: { label, environment, endpoint: `${username ? `${username}@` : ""}${address}:${port}` },
-          model: settings.model, effort: settings.effort,
+          model: settings.model, effort: settings.effort, mode: "auto", decisions: new Map(), nextApproval: 0, nonce: randomBytes(4).toString("hex"),
         });
       } finally { opening.delete(slot); }
       publish(ownerId);
@@ -562,6 +688,28 @@ export function createAgentRunner(options: {
         publish(conversation.ownerId);
       }
       return { status: "sent" };
+    },
+    /** Ticket 04: Full allow needs the warning acknowledged, and on PROD the Settings option; a change withdraws pending cards. */
+    setMode(owner: Owner, sessionId: string, generation: number, mode: AgentMode, acknowledged: boolean): SetAgentModeResponse {
+      const conversation = conversations.get(key(sessionOwnerId(owner), sessionId));
+      if (!conversation || conversation.closed || conversation.generation !== generation) return { status: "refused", reason: "ended" };
+      if (mode === "full-allow" && !fullAllowAvailable(conversation)) return { status: "refused", reason: "production" };
+      if (mode === "full-allow" && !acknowledged) return { status: "refused", reason: "acknowledge" };
+      if (conversation.mode !== mode) {
+        conversation.mode = mode;
+        withdraw(conversation);
+        publish(conversation.ownerId);
+      }
+      return { status: "set" };
+    },
+    /** Ticket 04: one pending card of this exact conversation generation; approving on PROD needs the confirmation step. */
+    decide(owner: Owner, sessionId: string, generation: number, approvalId: string, decision: "approve" | "reject", confirmedProduction: boolean): DecideAgentResponse {
+      const conversation = conversations.get(key(sessionOwnerId(owner), sessionId));
+      const pending = conversation && !conversation.closed && conversation.generation === generation ? conversation.decisions.get(approvalId) : undefined;
+      if (!conversation || !pending) return { status: "refused", reason: "stale" };
+      if (decision === "approve" && production(conversation) && !confirmedProduction) return { status: "refused", reason: "production" };
+      pending.finish(decision === "approve" ? "approved" : "rejected");
+      return { status: "applied" };
     },
     cancelTask(owner: Owner, sessionId: string, taskId: string): boolean {
       const conversation = conversations.get(key(sessionOwnerId(owner), sessionId));
@@ -603,7 +751,7 @@ export type AgentRunner = ReturnType<typeof createAgentRunner>;
 
 export const agentChannels = Object.freeze([
   channels.agentSettings, channels.configureAgent, channels.agentState, channels.openAgent, channels.closeAgent,
-  channels.sendAgent, channels.cancelAgentTask,
+  channels.sendAgent, channels.cancelAgentTask, channels.setAgentMode, channels.decideAgent,
 ]);
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 
@@ -636,5 +784,9 @@ export function registerAgentHandlers(options: {
   handle(channels.sendAgent, isSendAgentRequest, async (runner, request, owner) => ok(await runner.send(owner, request.sessionId, request.text)));
   handle(channels.cancelAgentTask, isCancelAgentTaskRequest, async (runner, request, owner) =>
     ok({ cancelled: runner.cancelTask(owner, request.sessionId, request.taskId) }));
+  handle(channels.setAgentMode, isSetAgentModeRequest, async (runner, request, owner) =>
+    ok(runner.setMode(owner, request.sessionId, request.generation, request.mode, request.acknowledged)));
+  handle(channels.decideAgent, isDecideAgentRequest, async (runner, request, owner) =>
+    ok(runner.decide(owner, request.sessionId, request.generation, request.approvalId, request.decision, request.production)));
   return () => { for (const channel of agentChannels) options.ipc.removeHandler(channel); };
 }

@@ -5,7 +5,7 @@ import { once } from "node:events";
 import { mkdtempSync, rmSync, statSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAgentTerminals, observeBoth } from "../../apps/desktop/src/main/agent-mcp.ts";
+import { createAgentTerminals, observeBoth, type AgentGate, type GateDecision } from "../../apps/desktop/src/main/agent-mcp.ts";
 import { createTerminalController } from "../../apps/desktop/src/main/terminals.ts";
 import { sessionOwnerId } from "../../apps/desktop/src/main/session-runtime.ts";
 import { SessionRegistry, TransientSecrets, type SessionContext } from "../../packages/services/src/index.ts";
@@ -120,7 +120,7 @@ test("a credential binds one Ready SSH generation over a 0600 socket in a 0700 f
     const init = await good.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } });
     assert.equal(init.result.protocolVersion, "2025-06-18");
     assert.equal(init.result.serverInfo.name, "ssterm");
-    assert.deepEqual((await good.request("tools/list")).result.tools.map((tool: { name: string }) => tool.name), ["run_command", "read_output", "cancel"]);
+    assert.deepEqual((await good.request("tools/list")).result.tools.map((tool: { name: string }) => tool.name), ["propose_plan", "run_command", "read_output", "cancel"]);
     assert.equal((await good.request("resources/list")).error.code, -32601);
     assert.deepEqual(await good.call("read_output"), { content: [{ type: "text", text: '{"status":"none"}' }], structuredContent: { status: "none" }, isError: false });
     assert.equal((await good.call("run_command", { command: "ls", extra: 1 })).isError, true);
@@ -278,11 +278,116 @@ test("ticket 03: a role binding serves its own tools; terminal calls are recorde
     emit("^C\r\n$ ");
     await new Promise((done) => setTimeout(done, 60));
     assert.deepEqual(steps, [
-      { command: "touch /tmp/x", status: "refused", exitCode: null, output: steps.length ? (steps[0] as { output: string }).output : "", truncated: false },
-      { command: "sleep 30", status: "interrupted", exitCode: null, output: "^C\n$ ", truncated: false },
+      { command: "touch /tmp/x", status: "refused", exitCode: null, output: steps.length ? (steps[0] as { output: string }).output : "", truncated: false, via: null },
+      { command: "sleep 30", status: "interrupted", exitCode: null, output: "^C\n$ ", truncated: false, via: "read-only" },
     ]);
     assert.match((steps[0] as { output: string }).output, /^Refused in Read only mode/u);
     void running;
     mainClient.socket.destroy();
+  } finally { cleanup(); }
+});
+
+test("ticket 04: a binding's gate decides each run_command; what it approves is typed; a refusal or a wait past the session types nothing", async () => {
+  const { agents, registry, target, writes, emit, cleanup } = await lab();
+  try {
+    const steps: { command: string; status: string; via: string | null }[] = [];
+    const undone: string[] = [];
+    let release: ((decision: GateDecision) => void) | undefined;
+    const gate: AgentGate = {
+      authorize: async (command, verdict) => {
+        if (command === "wait for me") return new Promise((resolve) => { release = resolve; });
+        if (verdict.readOnly) return { run: command, via: "read-only" };
+        if (command === " touch /tmp/planned ") return { run: "touch /tmp/planned", via: "plan", undo: () => undone.push(command) };
+        return { refuse: "NO: not approved" };
+      },
+      propose: async (args) => ({ content: [{ type: "text", text: `proposed ${JSON.stringify(args)}` }], isError: false }),
+    };
+    const issued = (await agents.issue(ownerId, target.sessionId, { record: (step) => steps.push(step), gate }))!;
+    const agent = await client(issued.socketPath, issued.credential);
+    assert.equal((await agent.call("propose_plan", { goal: "g", commands: ["x"] })).content[0].text, 'proposed {"goal":"g","commands":["x"]}');
+    const refused = await agent.call("run_command", { command: "rm -rf /" });
+    assert.deepEqual([refused.isError, refused.content[0].text, writes.length], [true, "NO: not approved", 0]);
+
+    const planned = agent.call("run_command", { command: " touch /tmp/planned " });
+    await settle();
+    const nonce = nonceOf(writes.at(-1)!);
+    emit(`\x1b]ssterm;ready;${nonce}\x07$ `);
+    assert.ok(writes.at(-1)!.includes("; touch /tmp/planned; "), "the gate's text is typed");
+    // While it runs, a second plan command meets a busy executor: nothing typed, the plan entry is given back.
+    const typed = writes.length;
+    assert.match((await agent.call("run_command", { command: " touch /tmp/planned " })).content[0].text, /one runs at a time/u);
+    assert.deepEqual([writes.length, undone], [typed, [" touch /tmp/planned "]]);
+    emit(`\x1b]ssterm;start;${nonce}\x07\x1b]ssterm;done;${nonce};0\x07$ `);
+    assert.equal((await planned).structuredContent.status, "completed");
+    assert.deepEqual(steps.map((step) => [step.command, step.status, step.via]), [
+      ["rm -rf /", "refused", null], ["touch /tmp/planned", "refused", null], ["touch /tmp/planned", "completed", "plan"],
+    ]);
+
+    // An approval that outlives the session: nothing is typed when it finally arrives.
+    const waiting = agent.call("run_command", { command: "wait for me" });
+    await settle();
+    const before = writes.length;
+    assert.ok((await registry.close(ownerId, target.sessionId, target.generation)).ok);
+    await agent.ended;
+    release!({ run: "touch /tmp/late", via: "approval", undo: () => undone.push("late") });
+    await settle();
+    assert.equal(writes.length, before, "nothing reaches a closed session");
+    assert.deepEqual(undone.at(-1), "late");
+    void waiting;
+
+    // Without a gate a binding stays Read only and has no plans.
+    const readOnly = await lab();
+    try {
+      const plain = (await readOnly.agents.issue(ownerId, readOnly.target.sessionId))!;
+      const other = await client(plain.socketPath, plain.credential);
+      const proposal = await other.call("propose_plan", { goal: "g", commands: ["touch /tmp/a"] });
+      assert.deepEqual([proposal.isError, /Read only mode/u.test(proposal.content[0].text)], [true, true]);
+      assert.match((await other.call("run_command", { command: "touch /tmp/a" })).content[0].text, /^Refused in Read only mode/u);
+      assert.equal(readOnly.writes.length, 0);
+      other.socket.destroy();
+    } finally { readOnly.cleanup(); }
+  } finally { cleanup(); }
+});
+
+test("M1: a card belongs to the MCP request that raised it; notifications/cancelled and a closed connection abort it and nothing is typed after a later approve", async () => {
+  const { agents, target, writes, cleanup } = await lab();
+  try {
+    const steps: { command: string; status: string; output: string }[] = [];
+    const pending: { signal: AbortSignal; approve(): void }[] = [];
+    const gate: AgentGate = {
+      authorize: (command, _verdict, signal) => new Promise((resolve) => pending.push({ signal, approve: () => resolve({ run: command, via: "approval" }) })),
+      propose: async () => ({ content: [{ type: "text", text: "x" }], isError: false }),
+    };
+    const issued = (await agents.issue(ownerId, target.sessionId, { record: (step) => steps.push(step), gate }))!;
+    const first = await client(issued.socketPath, issued.credential);
+    const answers: unknown[] = [];
+    first.socket.on("data", (chunk: string) => answers.push(chunk));
+    first.socket.write(`${JSON.stringify({ jsonrpc: "2.0", id: "call-7", method: "tools/call", params: { name: "run_command", arguments: { command: "touch /tmp/x" } } })}\n`);
+    await settle();
+    assert.equal(pending.length, 1);
+    first.socket.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: "call-8" } })}\n`);
+    await settle();
+    assert.equal(pending[0]!.signal.aborted, false, "another request id cancels nothing");
+    first.socket.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: "call-7", reason: "user" } })}\n`);
+    await settle();
+    assert.equal(pending[0]!.signal.aborted, true);
+    pending[0]!.approve();
+    await settle();
+    assert.equal(writes.length, 0, "approved after the cancel: nothing typed");
+    assert.deepEqual([steps.at(-1)!.status, /cancelled/u.test(steps.at(-1)!.output)], ["refused", true], "and the record says so");
+
+    const second = await client(issued.socketPath, issued.credential);
+    void second.call("run_command", { command: "touch /tmp/y" });
+    await settle();
+    assert.equal(pending.length, 2);
+    second.socket.destroy();
+    await second.ended;
+    await settle();
+    assert.equal(pending[1]!.signal.aborted, true, "the requesting connection closed");
+    pending[1]!.approve();
+    await settle();
+    assert.equal(writes.length, 0);
+    assert.equal(steps.length, 2, "one record per admitted call");
+    first.socket.destroy();
   } finally { cleanup(); }
 });

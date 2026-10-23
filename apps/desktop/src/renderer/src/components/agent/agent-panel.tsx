@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { BotIcon, ChevronRightIcon, SendIcon, ShieldAlertIcon, XIcon } from "lucide-react";
-import type { AgentConversation, AgentStep, AgentTask, Owner } from "@ssterm/contracts";
-import { AGENT_MODELS, MAX_AGENT_MESSAGE } from "@ssterm/contracts";
+import type { AgentConversation, AgentMode, AgentPlan, AgentStep, AgentTask, Owner } from "@ssterm/contracts";
+import { AGENT_MODELS, AGENT_MODES, MAX_AGENT_MESSAGE } from "@ssterm/contracts";
 import { EnvironmentBadge } from "@/components/connection/host-identity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toast";
 
 const taskStatus: Record<AgentTask["status"], string> = {
@@ -30,6 +31,38 @@ const stepStatus = (step: AgentStep): string => {
   }
 };
 
+const via: Record<NonNullable<AgentStep["via"]>, string> = {
+  "read-only": "read-only",
+  plan: "from the approved plan",
+  approval: "you approved it",
+  "full-allow": "Full allow",
+};
+const planStatus: Record<AgentPlan["status"], string> = {
+  pending: "Waiting for you",
+  approved: "Approved",
+  rejected: "Rejected",
+  expired: "Expired",
+  cancelled: "Withdrawn",
+};
+const modeLabels: Record<AgentMode, string> = { "read-only": "Read only", auto: "Auto", "full-allow": "Full allow" };
+const modeNotes: Record<AgentMode, string> = {
+  "read-only": "Only commands classified read-only run; everything else is refused.",
+  auto: "Read-only commands run. Anything else runs only from a plan you approve, or after you approve that command.",
+  "full-allow": "Every command the agent asks for runs without approval in this conversation.",
+};
+type Target = AgentConversation["target"];
+type Decide = (approvalId: string, decision: "approve" | "reject", production: boolean) => void;
+
+function TargetLine({ target }: { target: Target }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 type-caption text-muted-foreground">
+      <span className="truncate text-foreground" title={target.label}>{target.label}</span>
+      <span className="truncate" title={target.endpoint}>{target.endpoint}</span>
+      <EnvironmentBadge environment={target.environment} />
+    </span>
+  );
+}
+
 /**
  * SST-041 ticket 03: the non-modal AI Agent panel on the Terminals page (ADR 0009 exception to the drawer contract).
  * Bound to the session it was opened from; tab switches never move it. The conversation lives in main, in memory.
@@ -51,9 +84,14 @@ export function AgentPanel({
   const ended = seen && !conversation;
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [fullAllowStep, setFullAllowStep] = useState(false);
   const log = useRef<HTMLDivElement>(null);
   const busy = sending || !conversation || conversation.status !== "idle";
-  const count = (conversation?.messages.length ?? 0) + (conversation?.tasks.reduce((sum, task) => sum + task.steps.length + 1, 0) ?? 0);
+  const count = (conversation?.messages.length ?? 0) + (conversation?.tasks.reduce((sum, task) =>
+    sum + task.steps.length + 1 + (task.plan ? task.plan.commands.length + 1 : 0) + (task.approval ? 1 : 0), 0) ?? 0);
+  const mode = conversation?.mode;
+  // The warning step only stands while Full allow can still be chosen.
+  if (fullAllowStep && (!conversation || mode === "full-allow" || !conversation.fullAllowAvailable)) setFullAllowStep(false);
   useEffect(() => {
     const element = log.current;
     if (element) element.scrollTop = element.scrollHeight;
@@ -71,6 +109,20 @@ export function AgentPanel({
   };
   const cancelTask = (taskId: string) => {
     void window.ssterm?.cancelAgentTask({ owner, sessionId, taskId }).catch(() => undefined);
+  };
+  const setMode = async (next: AgentMode, acknowledged: boolean) => {
+    const bridge = window.ssterm;
+    if (!bridge || !conversation) return;
+    const result = await bridge.setAgentMode({ owner, sessionId, generation: conversation.generation, mode: next, acknowledged }).catch(() => undefined);
+    setFullAllowStep(false);
+    if (!result?.ok || result.value.status !== "set") toast.add({ title: "The mode was not changed", description: result?.ok && result.value.status === "refused" && result.value.reason === "production" ? "Full allow on PROD is off in Settings › AI Agent." : "This conversation has ended.", type: "error" });
+  };
+  const decide: Decide = (approvalId, decision, production) => {
+    const bridge = window.ssterm;
+    if (!bridge || !conversation) return;
+    void bridge.decideAgent({ owner, sessionId, generation: conversation.generation, approvalId, decision, production }).then((result) => {
+      if (!result.ok || result.value.status !== "applied") toast.add({ title: "The decision was not applied", description: "That request is no longer waiting.", type: "error" });
+    }, () => undefined);
   };
   const target = conversation?.target;
 
@@ -94,7 +146,6 @@ export function AgentPanel({
             </p>
           ) : null}
         </div>
-        <Badge variant="outline" title="Read only: ssterm runs only commands its allowlist classifies as read-only (best effort) and refuses the rest.">Read only</Badge>
         <Button size="icon-sm" variant="ghost" aria-label="Close AI Agent" onClick={onClose}>
           <XIcon aria-hidden="true" />
         </Button>
@@ -106,6 +157,52 @@ export function AgentPanel({
           account's terms. Nothing is redacted.
         </span>
       </p>
+      {conversation && mode ? (
+        <div className="grid shrink-0 gap-1.5 border-b border-border px-3 py-2" data-testid="agent-mode" data-mode={mode}>
+          <ToggleGroup
+            aria-label="Agent mode"
+            variant="outline"
+            size="sm"
+            spacing={0}
+            value={[mode]}
+            onValueChange={(value) => {
+              const next = value[0] as AgentMode | undefined;
+              if (!next || next === mode) return;
+              if (next === "full-allow") setFullAllowStep(true);
+              else void setMode(next, false);
+            }}
+          >
+            {AGENT_MODES.map((option) => (
+              <ToggleGroupItem key={option} value={option} className="aria-pressed:bg-primary/15 aria-pressed:text-primary" disabled={option === "full-allow" && !conversation.fullAllowAvailable}>{modeLabels[option]}</ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <p className="type-caption text-muted-foreground" data-testid="agent-mode-note">
+            {modeNotes[mode]} Read-only classification is best effort: ssterm's allowlist can be wrong.
+          </p>
+          {!conversation.fullAllowAvailable ? (
+            <p className="type-caption text-muted-foreground" data-testid="agent-full-allow-off">
+              Full allow is off for PROD servers. It can be allowed in Settings › AI Agent.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {fullAllowStep && target ? (
+        <section role="alert" aria-labelledby="agent-full-allow-title" className="grid shrink-0 gap-2 border-b border-border px-3 py-2 text-sm" data-testid="agent-full-allow-step">
+          <h3 id="agent-full-allow-title" className="font-medium">Allow every command on {target.label}?</h3>
+          <TargetLine target={target} />
+          {target.environment === "PROD" ? <p className="text-environment-production">This is a PROD server.</p> : null}
+          <p className="type-caption text-muted-foreground">
+            The agent's commands run without asking you, including commands that change or delete data. ssterm still refuses
+            full-screen programs and applies the timeout. This applies to this conversation only; a new conversation starts in Auto.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" autoFocus onClick={() => setFullAllowStep(false)}>Cancel</Button>
+            <Button size="sm" variant="destructive" onClick={(event) => { if (event.detail > 1) return; void setMode("full-allow", true); }}>
+              Allow every command
+            </Button>
+          </div>
+        </section>
+      ) : null}
       <div ref={log} role="log" aria-live="polite" aria-label="Conversation" className="min-h-0 flex-1 overflow-y-auto px-3 py-2" data-testid="agent-messages">
         {ended ? (
           <p className="type-caption text-muted-foreground" data-testid="agent-ended">
@@ -139,7 +236,7 @@ export function AgentPanel({
         </ol>
         {conversation?.tasks.length ? (
           <ol className="mt-3 flex flex-col gap-2" aria-label="Tasks">
-            {conversation.tasks.map((task) => <TaskCard key={task.id} task={task} onCancel={() => cancelTask(task.id)} />)}
+            {conversation.tasks.map((task) => <TaskCard key={task.id} task={task} target={conversation.target} onDecide={decide} onCancel={() => cancelTask(task.id)} />)}
           </ol>
         ) : null}
         {conversation && conversation.status !== "idle" ? (
@@ -175,7 +272,44 @@ export function AgentPanel({
   );
 }
 
-function TaskCard({ task, onCancel }: { task: AgentTask; onCancel(): void }) {
+/** Approve (with the PROD confirmation step on a PROD target) or Reject one pending card. */
+function Decision({ id, kind, target, onDecide }: { id: string; kind: "plan" | "command"; target: Target; onDecide: Decide }) {
+  const [confirming, setConfirming] = useState(false);
+  const production = target.environment === "PROD";
+  const approve = kind === "plan" ? "Approve plan" : "Run";
+  if (confirming) {
+    return (
+      <section role="alert" aria-labelledby={`${id}-confirm`} className="mt-2 grid gap-1.5 rounded-md border border-environment-production p-2 text-sm" data-testid="agent-prod-confirm">
+        <h4 id={`${id}-confirm`} className="font-medium">{kind === "plan" ? "Approve this plan" : "Run this command"} on {target.label}?</h4>
+        <TargetLine target={target} />
+        <p className="text-environment-production">This is a PROD server.</p>
+        <p className="type-caption text-muted-foreground">
+          {kind === "plan" ? "Each approved command then runs once without asking again." : "Running it does not confirm that it succeeded."}
+        </p>
+        <div className="flex gap-2">
+          <Button size="xs" variant="outline" autoFocus onClick={() => setConfirming(false)}>Cancel</Button>
+          <Button size="xs" variant="destructive" onClick={(event) => { if (event.detail > 1) return; onDecide(id, "approve", true); }}>
+            {kind === "plan" ? "Approve plan on PROD" : "Run on PROD"}
+          </Button>
+        </div>
+      </section>
+    );
+  }
+  return (
+    <div className="mt-2 flex gap-2">
+      <Button size="xs" variant={production ? "destructive" : "default"} onClick={(event) => {
+        if (event.detail > 1) return;
+        if (production) setConfirming(true);
+        else onDecide(id, "approve", false);
+      }}>
+        {approve}
+      </Button>
+      <Button size="xs" variant="outline" onClick={() => onDecide(id, "reject", false)}>Reject</Button>
+    </div>
+  );
+}
+
+function TaskCard({ task, target, onDecide, onCancel }: { task: AgentTask; target: Target; onDecide: Decide; onCancel(): void }) {
   const open = task.status === "queued" || task.status === "running";
   return (
     <li className="rounded-lg border border-border bg-background p-2" data-testid="agent-task" data-task-id={task.id} data-status={task.status}>
@@ -190,6 +324,40 @@ function TaskCard({ task, onCancel }: { task: AgentTask; onCancel(): void }) {
         </Badge>
         {open ? <Button size="xs" variant="outline" onClick={onCancel}>Cancel</Button> : null}
       </div>
+      {task.plan ? (
+        <div className="mt-2 rounded-md border border-border p-2" data-testid="agent-plan" data-plan-id={task.plan.id} data-status={task.plan.status}>
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 type-caption text-muted-foreground">Plan proposed by the sub agent</p>
+            <Badge variant={task.plan.status === "pending" ? "warning" : "outline"}>{planStatus[task.plan.status]}</Badge>
+          </div>
+          <p className="text-sm break-words">{task.plan.goal}</p>
+          <ol className="mt-1 flex flex-col gap-1" aria-label="Plan commands">
+            {task.plan.commands.map((entry, index) => (
+              <li key={index} className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all whitespace-pre-wrap">{entry.command}</code>
+                {entry.ran ? <span className="type-caption text-muted-foreground">used</span> : null}
+              </li>
+            ))}
+          </ol>
+          {task.plan.status === "pending" ? (
+            <>
+              <p className="mt-1.5"><TargetLine target={target} /></p>
+              <p className="type-caption text-muted-foreground">
+                Approved commands run without asking, each once, only when the agent sends exactly that text. Anything else asks you first.
+              </p>
+              <Decision key={task.plan.id} id={task.plan.id} kind="plan" target={target} onDecide={onDecide} />
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {task.approval ? (
+        <div className="mt-2 rounded-md border border-connection-connecting p-2" data-testid="agent-approval" data-approval-id={task.approval.id}>
+          <p className="type-caption text-muted-foreground">The agent asks to run a command that is not in an approved plan:</p>
+          <code className="mt-1 block rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all whitespace-pre-wrap">{task.approval.command}</code>
+          <p className="mt-1.5"><TargetLine target={target} /></p>
+          <Decision key={task.approval.id} id={task.approval.id} kind="command" target={target} onDecide={onDecide} />
+        </div>
+      ) : null}
       <Collapsible>
         <CollapsibleTrigger render={<Button size="xs" variant="ghost" className="mt-1 group/record" />}>
           <ChevronRightIcon aria-hidden="true" className="transition-transform group-data-[panel-open]/record:rotate-90" />
@@ -205,6 +373,7 @@ function TaskCard({ task, onCancel }: { task: AgentTask; onCancel(): void }) {
                   <span className={`type-caption ${step.status === "refused" || (step.exitCode ?? 0) !== 0 ? "text-destructive" : "text-muted-foreground"}`}>
                     {stepStatus(step)}
                   </span>
+                  {step.via ? <span className="type-caption text-muted-foreground" data-via={step.via}>· {via[step.via]}</span> : null}
                 </div>
                 {step.output ? <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-1.5 font-mono text-xs whitespace-pre-wrap">{step.output}</pre> : null}
               </li>

@@ -59,9 +59,9 @@ import {
   type RevokeKnownHostRequest,
   isAgentSettingsRequest, isAgentSettingsView, isConfigureAgentRequest, isConfigureAgentResponse, isAgentStateRequest, isAgentState,
   isOpenAgentRequest, isOpenAgentResponse, isAgentConversationRequest, isSendAgentRequest, isSendAgentResponse,
-  isCancelAgentTaskRequest, isCancelAgentTaskResponse,
+  isCancelAgentTaskRequest, isCancelAgentTaskResponse, isSetAgentModeRequest, isSetAgentModeResponse, isDecideAgentRequest, isDecideAgentResponse,
   type AgentSettingsRequest, type ConfigureAgentRequest, type AgentStateRequest, type AgentState, type OpenAgentRequest,
-  type AgentConversationRequest, type SendAgentRequest, type CancelAgentTaskRequest,
+  type AgentConversationRequest, type SendAgentRequest, type CancelAgentTaskRequest, type SetAgentModeRequest, type DecideAgentRequest,
   failure,
   isBootstrapData,
   isPingRequest,
@@ -787,6 +787,16 @@ export function createDesktopBridge(transport: BridgeTransport): {
     cancelAgentTask(request: CancelAgentTaskRequest) {
       if (!isCancelAgentTaskRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.cancelAgentTask, [{ owner: { ...request.owner }, sessionId: request.sessionId, taskId: request.taskId }], isCancelAgentTaskResponse);
+    },
+    setAgentMode(request: SetAgentModeRequest) {
+      if (!isSetAgentModeRequest(request)) return Promise.resolve(failure("invalid-request"));
+      const { sessionId, generation, mode, acknowledged } = request;
+      return invoke(channels.setAgentMode, [{ owner: { ...request.owner }, sessionId, generation, mode, acknowledged }], isSetAgentModeResponse);
+    },
+    decideAgent(request: DecideAgentRequest) {
+      if (!isDecideAgentRequest(request)) return Promise.resolve(failure("invalid-request"));
+      const { sessionId, generation, approvalId, decision, production } = request;
+      return invoke(channels.decideAgent, [{ owner: { ...request.owner }, sessionId, generation, approvalId, decision, production }], isDecideAgentResponse);
     },
     openLink(request: OpenLinkRequest) {
       if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));

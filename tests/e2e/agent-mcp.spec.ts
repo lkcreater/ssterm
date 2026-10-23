@@ -126,7 +126,7 @@ test("MCP Read only executor on Docker OpenSSH: output and exit codes, refusals 
 
     const agent = await mcpClient(issued.socketPath, issued.credential);
     expect((await agent.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } })).result.serverInfo.name).toBe("ssterm");
-    expect((await agent.request("tools/list")).result.tools.map((tool: { name: string }) => tool.name)).toEqual(["run_command", "read_output", "cancel"]);
+    expect((await agent.request("tools/list")).result.tools.map((tool: { name: string }) => tool.name)).toEqual(["propose_plan", "run_command", "read_output", "cancel"]);
 
     // 1. A read-only command: typed visibly, its exit code and only its own output come back.
     const note = await agent.call("run_command", { command: "cat /home/fixture/agent/note.txt" });

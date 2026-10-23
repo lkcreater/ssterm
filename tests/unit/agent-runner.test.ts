@@ -12,14 +12,16 @@ import {
   createAgentRunner, DEFAULT_AGENT_SETTINGS, DELEGATE_TOOLS, parseAgentSettings, registerAgentHandlers, serializeAgentSettings,
   agentChannels, isolationViolation, taskRecord, type AgentSettingsStore,
 } from "../../apps/desktop/src/main/agent-runner.ts";
-import type { AgentStepRecord, AgentToolRole, ToolResult } from "../../apps/desktop/src/main/agent-mcp.ts";
+import type { AgentGate, AgentStepRecord, AgentToolRole, ToolResult } from "../../apps/desktop/src/main/agent-mcp.ts";
 import { sessionOwnerId } from "../../apps/desktop/src/main/session-runtime.ts";
 import { WindowBoundary } from "../../apps/desktop/src/main/boundary.ts";
 import {
   AGENT_DISCLOSURE_VERSION, AGENT_MODELS, effectiveDefaultModel, channels, failure, isAgentState, isConfigureAgentRequest, isSendAgentRequest, isOpenAgentRequest,
   isCancelAgentTaskRequest, type AgentState,
 } from "../../packages/contracts/src/index.ts";
-import type { SessionSnapshot } from "../../packages/services/src/index.ts";
+import { classifyReadOnly, type SessionSnapshot } from "../../packages/services/src/index.ts";
+import { DEFAULT_AGENT_TIMEOUT_MS } from "../../packages/services/src/agent-terminal.ts";
+import { APPROVAL_WAIT_MS } from "../../apps/desktop/src/main/agent-policy.ts";
 
 const owner = { windowId: 1, generation: 1 };
 /** An init event shaped like the verified claude 2.1.309 one. */
@@ -32,7 +34,9 @@ const temp = () => realpathSync(mkdtempSync(join(tmpdir(), "ssterm-agent-test-")
 
 test("spawn builders match the spike exports, minus its cost limits; the environment is allowlisted with the mandatory claude variables", async () => {
   const spike = await import("../../spikes/ai-cli-isolation/scripts/run.mjs" as string) as { CLAUDE_ENV: Record<string, string>; claudeArgs(config: string, prompt: string | null, mode: string): string[] };
-  assert.deepEqual({ ...CLAUDE_ENV }, spike.CLAUDE_ENV);
+  // The spike's variables, plus one addition (ticket 04): a per-call MCP wall clock above the approval wait and command timeout.
+  assert.deepEqual({ ...CLAUDE_ENV }, { ...spike.CLAUDE_ENV, MCP_TOOL_TIMEOUT: "1800000" });
+  assert.ok(Number(CLAUDE_ENV.MCP_TOOL_TIMEOUT) > APPROVAL_WAIT_MS + DEFAULT_AGENT_TIMEOUT_MS + 60_000);
   assert.equal(CLAUDE_ENV.CLAUDE_CODE_DISABLE_FILE_MENTIONS, "1");
   assert.equal(CLAUDE_ENV.CLAUDE_CODE_DISABLE_ATTACHMENTS, "1");
   const ours = claudeArgs({ mcpConfig: "/x/mcp.json", tools: ["mcp__ssterm__delegate_task", "mcp__ssterm__cancel_task"], systemPrompt: "SYSTEM", model: "claude-haiku-5-5", effort: "xhigh" });
@@ -142,18 +146,22 @@ test("residue cleanup removes only this run's folder, cache entries and session 
 test("settings: a versioned allowlist record; anything else, or consent to an older disclosure, reads as off", () => {
   const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
   const valid = { version: 1, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "high", instructions: "Prefer journalctl.", disclosure: AGENT_DISCLOSURE_VERSION };
-  assert.deepEqual(parseAgentSettings(encode(valid)), { enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "high", instructions: "Prefer journalctl.", disclosure: AGENT_DISCLOSURE_VERSION });
+  assert.deepEqual(parseAgentSettings(encode(valid)), { enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "high", instructions: "Prefer journalctl.", allowFullAllowOnProd: false, disclosure: AGENT_DISCLOSURE_VERSION },
+    "a ticket 03 version 1 record reads with Full allow on PROD off");
+  const v2 = { ...valid, version: 2, allowFullAllowOnProd: true };
+  assert.equal(parseAgentSettings(encode(v2)).allowFullAllowOnProd, true);
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(serializeAgentSettings(parseAgentSettings(encode(v2))))), v2, "written as version 2");
   assert.equal(parseAgentSettings(encode({ ...valid, model: "claude-opus-5-5" })).model, effectiveDefaultModel("claude"), "an unverified model falls back");
   assert.equal(AGENT_MODELS.claude.defaultModel, "claude-opus-5-5");
   assert.equal(AGENT_MODELS.claude.defaultEffort, "xhigh");
   assert.deepEqual([DEFAULT_AGENT_SETTINGS.model, DEFAULT_AGENT_SETTINGS.effort], ["claude-haiku-5-5", "xhigh"], "the user's default applies once verified");
   assert.deepEqual(parseAgentSettings(serializeAgentSettings({ ...DEFAULT_AGENT_SETTINGS })), DEFAULT_AGENT_SETTINGS);
   assert.equal(parseAgentSettings(encode({ ...valid, disclosure: 0 })).enabled, false);
-  for (const bad of [undefined, new Uint8Array([0xff]), encode([]), encode({ ...valid, version: 2 }), encode({ ...valid, provider: "codex" }),
+  for (const bad of [undefined, new Uint8Array([0xff]), encode([]), encode({ ...valid, version: 2 }), encode({ ...valid, allowFullAllowOnProd: true }), encode({ ...v2, allowFullAllowOnProd: "yes" }), encode({ ...v2, version: 3 }), encode({ ...valid, provider: "codex" }),
     encode({ ...valid, apiKey: "x" }), encode({ ...valid, instructions: "a\u0007" }), encode({ ...valid, instructions: "x".repeat(4_001) }),
     encode({ ...valid, model: "-p" }), encode({ ...valid, effort: "ultra" })])
     assert.deepEqual(parseAgentSettings(bad), DEFAULT_AGENT_SETTINGS);
-  const settings = { enabled: true, provider: "claude", model: "claude-custom:v1.2", effort: "max", instructions: "" };
+  const settings = { enabled: true, provider: "claude", model: "claude-custom:v1.2", effort: "max", instructions: "", allowFullAllowOnProd: false };
   assert.ok(isConfigureAgentRequest({ owner, settings, consent: true }));
   for (const bad of [{ owner, settings: { ...settings, provider: "codex" }, consent: true },
     { owner, settings: { ...settings, path: "/bin/sh" }, consent: true },
@@ -161,6 +169,8 @@ test("settings: a versioned allowlist record; anything else, or consent to an ol
     { owner, settings: { ...settings, model: "a b" }, consent: true },
     { owner, settings: { ...settings, model: "x\u0001" }, consent: true },
     { owner, settings: { ...settings, effort: "huge" }, consent: true },
+    { owner, settings: { ...settings, allowFullAllowOnProd: 1 }, consent: true },
+    { owner, settings: { enabled: true, provider: "claude", model: "haiku", effort: "max", instructions: "" }, consent: true },
     { owner, settings }])
     assert.equal(isConfigureAgentRequest(bad), false);
   assert.equal(isSendAgentRequest({ owner, sessionId: "s1", text: "   " }), false);
@@ -173,13 +183,13 @@ test("settings: a versioned allowlist record; anything else, or consent to an ol
 // The runner with a scripted CLI and a recording terminal endpoint.
 
 interface FakeCli extends CliProcess { role: "main" | "sub"; args: string[]; env: Record<string, string>; cwd: string; stdin: object[]; emit(event: object): void; exit(): void; stopped: boolean; readonly killed: boolean }
-function lab(options: { local?: boolean; team?: boolean } = {}) {
+function lab(options: { local?: boolean; team?: boolean; environment?: "DEV" | "PROD"; approvalMs?: number } = {}) {
   const folder = temp();
   const clis: FakeCli[] = [];
-  const issued: { credential: string; role?: AgentToolRole; record?: (step: AgentStepRecord) => void; admit?: () => string | undefined; revoked: boolean }[] = [];
+  const issued: { credential: string; role?: AgentToolRole; record?: (step: AgentStepRecord) => void; admit?: (reserve: boolean) => string | undefined; gate?: AgentGate; revoked: boolean }[] = [];
   const snapshot: Partial<SessionSnapshot> = {
     id: "s1", kind: "terminal", generation: 1, state: "Ready", hostId: "h1", ...(options.local ? { local: { shell: "/bin/zsh", platform: "darwin" } as never } : {}),
-    target: { label: "db", address: "db.example", port: 22, username: "ops", environment: "PROD", hostRevision: 1, catalogRevision: 1, ...(options.team ? { source: "team" as const } : {}) },
+    target: { label: "db", address: "db.example", port: 22, username: "ops", environment: options.environment ?? "PROD", hostRevision: 1, catalogRevision: 1, ...(options.team ? { source: "team" as const } : {}) },
   };
   let stored: Uint8Array | undefined;
   const store: AgentSettingsStore = {
@@ -200,6 +210,7 @@ function lab(options: { local?: boolean; team?: boolean } = {}) {
     },
     registry: () => ({ snapshot: (id: string, session?: string) => id === ownerId && /^s\d+$/u.test(session ?? "") ? [{ ...snapshot, id: session } as SessionSnapshot] : [] }),
     store, bridge: "/b/ssterm-mcp", tmp: folder, home: folder, profile: "/profile/one", waitMs: 2_000,
+    ...(options.approvalMs ? { approvalMs: options.approvalMs } : {}),
     resolve: async () => version === "ready" ? { status: "ready", path: "/fake/claude", version: "2.1.309" } : { status: "unsupported-version", version: "9.9.9" },
     env: (tmp) => cliEnv({ home: folder, user: "u", tmp }),
     spawn: (spec) => {
@@ -240,7 +251,7 @@ test("consent gating, session eligibility and the version gate decide whether a 
   const team = lab({ team: true });
   try {
     assert.deepEqual(await runner.open(owner, "s1", 1), { status: "refused", reason: "disabled" }, "off by default");
-    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "xhigh" as const, instructions: "" };
+    const settings = { enabled: true, provider: "claude" as const, model: "claude-haiku-5-5", effort: "xhigh" as const, instructions: "", allowFullAllowOnProd: false };
     assert.deepEqual(await runner.configure(settings, false), { status: "consent-required" });
     assert.equal(stored(), undefined, "nothing saved without consent");
     setVersion("unsupported-version");
@@ -248,7 +259,7 @@ test("consent gating, session eligibility and the version gate decide whether a 
     setVersion("ready");
     const saved = await runner.configure(settings, true);
     assert.equal(saved.status, "saved");
-    assert.deepEqual(JSON.parse(new TextDecoder().decode(stored())), { version: 1, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", disclosure: AGENT_DISCLOSURE_VERSION });
+    assert.deepEqual(JSON.parse(new TextDecoder().decode(stored())), { version: 2, enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false, disclosure: AGENT_DISCLOSURE_VERSION });
     assert.deepEqual(await runner.configure({ ...settings, model: "claude-opus-5-5" }, true), { status: "model-unverified" }, "A14: unverified models never run");
     assert.deepEqual(await runner.configure({ ...settings, model: "my-custom-model" }, true), { status: "model-unverified" }, "custom IDs are never verified");
     assert.equal((await runner.configure({ ...settings, instructions: "Be brief." }, false)).status, "saved", "already consented");
@@ -267,7 +278,7 @@ test("consent gating, session eligibility and the version gate decide whether a 
 test("main agent: delegate tools only; one sub agent at a time with the rest queued; the task record backs cards and get_task_status", async () => {
   const { runner, clis, issued, call, structured, last, cleanup, folder } = lab();
   try {
-    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "max", instructions: "Prefer journalctl." }, true);
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "max", instructions: "Prefer journalctl.", allowFullAllowOnProd: false }, true);
     await runner.open(owner, "s1", 1);
     assert.deepEqual(await runner.send(owner, "s1", "check disk"), { status: "sent" });
     const main = clis[0]!;
@@ -294,24 +305,24 @@ test("main agent: delegate tools only; one sub agent at a time with the rest que
     await tick();
     assert.equal(subs().length, 1, "one sub agent at a time");
     const sub = subs()[0]!;
-    assert.equal(sub.args[sub.args.indexOf("--allowedTools") + 1], "mcp__ssterm__run_command,mcp__ssterm__read_output,mcp__ssterm__cancel");
+    assert.equal(sub.args[sub.args.indexOf("--allowedTools") + 1], "mcp__ssterm__propose_plan,mcp__ssterm__run_command,mcp__ssterm__read_output,mcp__ssterm__cancel");
     assert.deepEqual([sub.args[sub.args.indexOf("--model") + 1], sub.args[sub.args.indexOf("--effort") + 1]], ["claude-haiku-5-5", "max"], "sub agents use the conversation's choice");
     assert.deepEqual(sub.stdin, [{ type: "user", message: { role: "user", content: "Task task-1: df -h" } }]);
     const subGrant = issued.find((entry) => entry.record)!;
     assert.equal(subGrant.role, undefined, "the sub agent gets the terminal tools");
-    subGrant.record!({ command: "df -h", status: "completed", exitCode: 0, output: "/dev/sda1 40%\n", truncated: false });
-    subGrant.record!({ command: "rm -rf /", status: "refused", exitCode: null, output: "Refused in Read only mode", truncated: false });
+    subGrant.record!({ command: "df -h", status: "completed", exitCode: 0, output: "/dev/sda1 40%\n", truncated: false, via: "read-only" });
+    subGrant.record!({ command: "rm -rf /", status: "refused", exitCode: null, output: "Refused in Read only mode", truncated: false, via: null });
 
     const waiting = call("get_task_status", { taskId: "task-1", wait: true });
-    sub.emit(init(["mcp__ssterm__run_command", "mcp__ssterm__read_output", "mcp__ssterm__cancel"]));
+    sub.emit(init(["mcp__ssterm__propose_plan", "mcp__ssterm__run_command", "mcp__ssterm__read_output", "mcp__ssterm__cancel"]));
     sub.emit({ type: "result", is_error: false, result: "Disk is at 40%." });
     sub.exit();
     const record = structured(await waiting);
     assert.deepEqual(record, {
-      taskId: "task-1", goal: "df -h", status: "completed", limitReached: false, subAgentReport: "Disk is at 40%.",
+      taskId: "task-1", goal: "df -h", status: "completed", limitReached: false, subAgentReport: "Disk is at 40%.", plan: null,
       commands: [
-        { command: "df -h", status: "completed", exitCode: 0, output: "/dev/sda1 40%\n", truncated: false },
-        { command: "rm -rf /", status: "refused", exitCode: null, output: "Refused in Read only mode", truncated: false },
+        { command: "df -h", status: "completed", exitCode: 0, output: "/dev/sda1 40%\n", truncated: false, via: "read-only" },
+        { command: "rm -rf /", status: "refused", exitCode: null, output: "Refused in Read only mode", truncated: false, via: null },
       ],
     });
     await tick();
@@ -346,7 +357,7 @@ test("close, lock and session end stop every CLI, revoke credentials, refuse pen
   for (const end of ["close", "lock", "session", "isolation", "owner"] as const) {
     const { runner, clis, issued, call, last, snapshot, cleanup } = lab();
     try {
-      await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "" }, true);
+      await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false }, true);
       await runner.open(owner, "s1", 1);
       await runner.send(owner, "s1", "hello");
       await call("delegate_task", { goal: "uptime" });
@@ -391,14 +402,25 @@ test("agent IPC: owner-authorized, app-lock gated, exactly one valid argument", 
   const call = (channel: string, ...args: unknown[]) => handlers.get(channel)!(event, ...args);
   const ownerOne = { windowId: 1, generation: 1 };
   assert.deepEqual(await call(channels.openAgent, { owner: ownerOne, sessionId: "s1", generation: 1 }), { ok: true, value: { status: "refused", reason: "disabled" } });
-  assert.deepEqual(await call(channels.configureAgent, { owner: ownerOne, settings: { enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "" }, consent: false }), { ok: true, value: { status: "consent-required" } });
+  assert.deepEqual(await call(channels.configureAgent, { owner: ownerOne, settings: { enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "xhigh", instructions: "", allowFullAllowOnProd: false }, consent: false }), { ok: true, value: { status: "consent-required" } });
   assert.deepEqual(await call(channels.openAgent, { owner: ownerOne, sessionId: "s1", generation: 1 }, "extra"), failure("invalid-request"));
   assert.deepEqual(await call(channels.sendAgent, { owner: ownerOne, sessionId: "s1", text: "" }), failure("invalid-request"));
   assert.deepEqual(await call(channels.agentState, { owner: { windowId: 1, generation: 9 } }), failure("stale-owner"));
   const forged = { sender, senderFrame: { url: "https://evil.example/" } } as unknown as IpcMainInvokeEvent;
   assert.equal(((await handlers.get(channels.agentState)!(forged, { owner: ownerOne })) as { ok: boolean }).ok, false);
+  // Ticket 04: mode and decision channels, owner-checked and bound to a live conversation generation.
+  const decision = { owner: ownerOne, sessionId: "s1", generation: 1, approvalId: "plan-0123abcd-1", decision: "approve", production: true };
+  assert.deepEqual(await call(channels.setAgentMode, { owner: ownerOne, sessionId: "s1", generation: 1, mode: "full-allow", acknowledged: true }), { ok: true, value: { status: "refused", reason: "ended" } });
+  assert.deepEqual(await call(channels.setAgentMode, { owner: ownerOne, sessionId: "s1", generation: 1, mode: "yolo", acknowledged: true }), failure("invalid-request"));
+  assert.deepEqual(await call(channels.decideAgent, decision), { ok: true, value: { status: "refused", reason: "stale" } });
+  assert.deepEqual(await call(channels.decideAgent, { ...decision, approvalId: "plan-1" }), failure("invalid-request"));
+  assert.deepEqual(await call(channels.decideAgent, decision, "extra"), failure("invalid-request"));
+  assert.deepEqual(await call(channels.decideAgent, { ...decision, owner: { windowId: 1, generation: 9 } }), failure("stale-owner"));
+  assert.equal(((await handlers.get(channels.decideAgent)!(forged, decision)) as { ok: boolean }).ok, false);
   open = false;
   assert.deepEqual(await call(channels.agentSettings, { owner: ownerOne }), failure("unauthorized"), "the app lock answers first");
+  assert.deepEqual(await call(channels.decideAgent, decision), failure("unauthorized"));
+  assert.deepEqual(await call(channels.setAgentMode, { owner: ownerOne, sessionId: "s1", generation: 1, mode: "auto", acknowledged: false }), failure("unauthorized"));
   open = true;
   assert.deepEqual(await call(channels.sendAgent, { owner: ownerOne, sessionId: "s1", text: "hi" }), { ok: true, value: { status: "refused", reason: "ended" } });
   assert.deepEqual(await call(channels.closeAgent, { owner: ownerOne, sessionId: "s1" }), { ok: true, value: { accepted: true } });
@@ -425,7 +447,7 @@ test("isolation detector mirrors the spike: hooks, extra tools/servers, non-buil
 test("bounded records: a task stops at its command limit unrun; cards show a 4 KiB tail; get_task_status stays under its budget", async () => {
   const { runner, clis, issued, call, structured, last, cleanup } = lab();
   try {
-    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "" }, true);
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false }, true);
     await runner.open(owner, "s1", 1);
     await runner.send(owner, "s1", "go");
     await call("delegate_task", { goal: "many" });
@@ -433,10 +455,10 @@ test("bounded records: a task stops at its command limit unrun; cards show a 4 K
     const grant = issued.find((entry) => entry.record)!;
     const big = "x".repeat(60_000) + "END";
     for (let i = 0; i < 64; i++) {
-      assert.equal(grant.admit!(), undefined);
-      grant.record!({ command: `cat f${i}`, status: "completed", exitCode: 0, output: big, truncated: false });
+      assert.equal(grant.admit!(true), undefined);
+      grant.record!({ command: `cat f${i}`, status: "completed", exitCode: 0, output: big, truncated: false, via: "read-only" });
     }
-    assert.match(grant.admit!()!, /limit of 64 commands; nothing more was sent/u);
+    assert.match(grant.admit!(true)!, /limit of 64 commands; nothing more was sent/u);
     const view = last().conversations[0]!.tasks[0]!;
     assert.equal(view.limitReached, true);
     assert.equal(view.steps.length, 64);
@@ -447,14 +469,14 @@ test("bounded records: a task stops at its command limit unrun; cards show a 4 K
     assert.ok(JSON.stringify(record).length < 300_000, "under the endpoint's buffer");
     assert.equal(record.commands.at(-1).output, big, "the newest commands are complete");
     assert.match(record.commands[0].output, /^\[ssterm: output shortened/u);
-    assert.deepEqual(taskRecord({ id: "task-9", goal: "g", status: "queued", subAgentReport: null, limitReached: false, steps: [] }).commands, []);
+    assert.deepEqual(taskRecord({ id: "task-9", goal: "g", status: "queued", subAgentReport: null, limitReached: false, steps: [], plan: null, approval: null }).commands, []);
   } finally { await runner.dispose(); cleanup(); }
 });
 
 test("the conversation limit holds across concurrent opens; one open per session at a time", async () => {
   const { runner, cleanup } = lab();
   try {
-    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "" }, true);
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false }, true);
     const results = await Promise.all(Array.from({ length: 10 }, (_, i) => runner.open(owner, `s${i + 1}`, 1)));
     assert.equal(results.filter((result) => result.status === "opened").length, 8);
     assert.equal(results.filter((result) => result.status === "refused" && result.reason === "limit").length, 2);
@@ -485,4 +507,239 @@ test("startup sweep removes only this profile's leftover run folders and their r
     assert.deepEqual(readdirSync(join(home, "Library", "Caches", "claude-cli-nodejs")), ["-T-ssterm-agent-00000000000000bb-cwd"]);
     assert.deepEqual(readdirSync(join(home, ".claude", "sessions")), []);
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Ticket 04: modes, plans, approvals and PROD gates, enforced in main whatever the agent's instructions say.
+
+const verdict = (command: string) => classifyReadOnly(command);
+/** An MCP request that is never cancelled. */
+const live = () => new AbortController().signal;
+async function startTask(fixture: ReturnType<typeof lab>, settings: Partial<{ allowFullAllowOnProd: boolean }> = {}) {
+  await fixture.runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false, ...settings }, true);
+  await fixture.runner.open(owner, "s1", 1);
+  await fixture.runner.send(owner, "s1", "go");
+  await fixture.call("delegate_task", { goal: "work" });
+  await until(() => fixture.issued.some((entry) => entry.gate));
+  return fixture.issued.find((entry) => entry.gate)!.gate!;
+}
+const task = (fixture: ReturnType<typeof lab>) => fixture.last().conversations[0]!.tasks[0]!;
+/** Approval ids carry the conversation's nonce (L4); it is read from the first card. */
+let nonce = "";
+const id = (kind: "plan" | "command", n: number) => `${kind}-${nonce}-${n}`;
+const learnNonce = (fixture: ReturnType<typeof lab>) => {
+  const current = task(fixture);
+  nonce = /^(?:plan|command)-([0-9a-f]{8})-\d+$/u.exec((current.plan ?? current.approval)!.id)![1]!;
+};
+const refusal = (decision: Awaited<ReturnType<AgentGate["authorize"]>>) => "refuse" in decision ? decision.refuse : "";
+
+test("Auto (the default): read-only runs; plan commands run once each after approval; anything else waits for its own card", async () => {
+  const fixture = lab({ environment: "DEV", approvalMs: 150 });
+  const { runner } = fixture;
+  try {
+    const gate = await startTask(fixture);
+    assert.deepEqual([fixture.last().conversations[0]!.mode, fixture.last().conversations[0]!.fullAllowAvailable], ["auto", true]);
+    assert.deepEqual(await gate.authorize("cat /etc/hostname", verdict("cat /etc/hostname"), live()), { run: "cat /etc/hostname", via: "read-only" });
+
+    // Nothing outside read-only runs before the plan is approved: a card is raised instead.
+    const proposing = gate.propose({ goal: "Restart nginx", commands: ["systemctl restart nginx", "touch /tmp/a"] }, live());
+    await tick();
+    learnNonce(fixture);
+    const plan = task(fixture).plan!;
+    assert.deepEqual(plan, { id: id("plan", 1), goal: "Restart nginx", status: "pending", commands: [{ command: "systemctl restart nginx", ran: false }, { command: "touch /tmp/a", ran: false }] });
+    assert.ok(isAgentState(fixture.last()));
+    assert.equal(((await gate.propose({ goal: "Other", commands: ["ls"] }, live())) as ToolResult).isError, true, "one pending plan at a time");
+    assert.deepEqual(runner.decide(owner, "s1", 2, id("plan", 1), "approve", false), { status: "refused", reason: "stale" }, "bound to the generation");
+    assert.deepEqual(runner.decide(owner, "s2", 1, id("plan", 1), "approve", false), { status: "refused", reason: "stale" }, "bound to the session");
+    assert.deepEqual(runner.decide({ windowId: 2, generation: 1 }, "s1", 1, id("plan", 1), "approve", false), { status: "refused", reason: "stale" }, "bound to the owner");
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("command", 1), "approve", false), { status: "refused", reason: "stale" });
+    assert.deepEqual(runner.decide(owner, "s1", 1, `plan-${nonce === "00000000" ? "00000001" : "00000000"}-1`, "approve", false), { status: "refused", reason: "stale" }, "another conversation's nonce");
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("plan", 1), "approve", false), { status: "applied" });
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("plan", 1), "reject", false), { status: "refused", reason: "stale" }, "decided once");
+    const approved = (await proposing).structuredContent as Record<string, unknown>;
+    assert.deepEqual([approved.planId, approved.status], [id("plan", 1), "approved"]);
+
+    const first = await gate.authorize("  systemctl restart nginx\t", verdict("systemctl restart nginx"), live());
+    assert.deepEqual([("run" in first) && first.run, ("via" in first) && first.via], ["systemctl restart nginx", "plan"], "the approved text runs");
+    assert.equal(task(fixture).plan!.commands[0]!.ran, true);
+    // The executor gave it back (nothing reached the shell): it may run again.
+    if ("undo" in first) first.undo!();
+    assert.equal(task(fixture).plan!.commands[0]!.ran, false);
+    assert.equal((await gate.authorize("systemctl restart nginx", verdict("systemctl restart nginx"), live()) as { via: string }).via, "plan");
+
+    // Used up, and a trailing chain: each asks the user.
+    const again = gate.authorize("systemctl restart nginx", verdict("systemctl restart nginx"), live());
+    await tick();
+    assert.deepEqual(task(fixture).approval, { id: id("command", 2), command: "systemctl restart nginx" });
+    assert.match(refusal(await gate.authorize("touch /tmp/b", verdict("touch /tmp/b"), live())), /already waiting for the user's approval/u, "one command card at a time");
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("command", 2), "reject", false), { status: "applied" });
+    assert.match(refusal(await again), /^Not run: [^]*The user rejected it\.[^]*Nothing was sent/u);
+    assert.equal(task(fixture).approval, null);
+
+    const chained = gate.authorize("touch /tmp/a; rm -rf /", verdict("touch /tmp/a; rm -rf /"), live());
+    await tick();
+    assert.equal(task(fixture).approval!.command, "touch /tmp/a; rm -rf /", "not matched to the plan's touch /tmp/a");
+    assert.match(refusal(await chained), /expired/u, "the wait is bounded");
+    assert.equal(task(fixture).approval, null);
+
+    const asked = gate.authorize("touch /tmp/c ", verdict("touch /tmp/c"), live());
+    await tick();
+    assert.deepEqual(runner.decide(owner, "s1", 1, task(fixture).approval!.id, "approve", false), { status: "applied" });
+    assert.deepEqual(await asked, { run: "touch /tmp/c", via: "approval" });
+    assert.match(refusal(await gate.authorize("echo x\nrm -rf /", verdict("echo x\nrm -rf /"), live())), /more than one line/u, "never a card for an unshowable command");
+    const planned = await gate.authorize("touch /tmp/a", verdict("touch /tmp/a"), live());
+    assert.deepEqual(["run" in planned && planned.run, "via" in planned && planned.via], ["touch /tmp/a", "plan"]);
+
+    // A new proposal replaces the plan: the old approval no longer applies.
+    const replacing = gate.propose({ goal: "More", commands: ["touch /tmp/z"] }, live());
+    await tick();
+    assert.equal(task(fixture).plan!.id, id("plan", 5));
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("plan", 5), "reject", false), { status: "applied" });
+    assert.equal(((await replacing).structuredContent as { status: string }).status, "rejected");
+    const after = gate.authorize("touch /tmp/a", verdict("touch /tmp/a"), live());
+    await tick();
+    assert.ok(task(fixture).approval, "the rejected plan grants nothing");
+    runner.cancelTask(owner, "s1", "task-1");
+    assert.match(refusal(await after), /withdrawn|ended/u, "cancelling the task withdraws its card");
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("command", 6), "approve", false), { status: "refused", reason: "stale" });
+  } finally { await runner.dispose(); fixture.cleanup(); }
+});
+
+test("Read only and Full allow: mode changes withdraw pending cards; Full allow needs the warning acknowledged and resets with a new conversation", async () => {
+  const fixture = lab({ environment: "DEV" });
+  const { runner } = fixture;
+  try {
+    const gate = await startTask(fixture);
+    const pending = gate.authorize("touch /tmp/a", verdict("touch /tmp/a"), live());
+    await tick();
+    assert.deepEqual(runner.setMode(owner, "s1", 1, "read-only", false), { status: "set" });
+    assert.match(refusal(await pending), /withdrawn/u, "a mode change withdraws the card");
+    assert.equal(fixture.last().conversations[0]!.mode, "read-only");
+    assert.match(refusal(await gate.authorize("touch /tmp/a", verdict("touch /tmp/a"), live())), /^Refused in Read only mode: `touch`/u);
+    assert.equal(task(fixture).approval, null, "Read only never asks");
+    assert.equal(((await gate.propose({ goal: "g", commands: ["touch /tmp/a"] }, live())) as ToolResult).isError, true);
+    assert.deepEqual(await gate.authorize("uptime", verdict("uptime"), live()), { run: "uptime", via: "read-only" });
+
+    assert.deepEqual(runner.setMode(owner, "s1", 1, "full-allow", false), { status: "refused", reason: "acknowledge" });
+    assert.deepEqual(runner.setMode(owner, "s1", 2, "full-allow", true), { status: "refused", reason: "ended" });
+    assert.deepEqual(runner.setMode(owner, "s1", 1, "full-allow", true), { status: "set" });
+    assert.deepEqual(await gate.authorize("touch /tmp/a", verdict("touch /tmp/a"), live()), { run: "touch /tmp/a", via: "full-allow" });
+    assert.deepEqual(await gate.authorize(" \ttouch /tmp/a ", verdict("touch /tmp/a"), live()), { run: "touch /tmp/a", via: "full-allow" }, "L2: the normalized line is typed");
+    assert.deepEqual(await gate.authorize("df -h", verdict("df -h"), live()), { run: "df -h", via: "read-only" });
+    assert.match(refusal(await gate.authorize("touch a\rrm b", verdict("touch a\rrm b"), live())), /more than one line/u, "still one line");
+    assert.equal(((await gate.propose({ goal: "g", commands: ["touch /tmp/a"] }, live())).structuredContent as { status: string }).status, "not-needed");
+
+    // A new conversation (panel close, reconnect, new session) starts in Auto again.
+    await runner.close(owner, "s1");
+    await runner.open(owner, "s1", 1);
+    assert.equal(fixture.last().conversations[0]!.mode, "auto");
+    assert.equal(fixture.clis.filter((cli) => !cli.stopped).length, 0);
+  } finally { await runner.dispose(); fixture.cleanup(); }
+});
+
+test("PROD: Full allow needs the Settings option and still the warning; approving a plan or a command needs the PROD confirmation", async () => {
+  const fixture = lab({ environment: "PROD" });
+  const { runner } = fixture;
+  try {
+    const gate = await startTask(fixture);
+    assert.equal(fixture.last().conversations[0]!.fullAllowAvailable, false);
+    assert.deepEqual(runner.setMode(owner, "s1", 1, "full-allow", true), { status: "refused", reason: "production" }, "off by default");
+
+    const proposing = gate.propose({ goal: "Restart", commands: ["systemctl restart nginx"] }, live());
+    await tick();
+    learnNonce(fixture);
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("plan", 1), "approve", false), { status: "refused", reason: "production" });
+    assert.equal(task(fixture).plan!.status, "pending", "still waiting");
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("plan", 1), "approve", true), { status: "applied" });
+    assert.equal(((await proposing).structuredContent as { status: string }).status, "approved");
+
+    const asked = gate.authorize("touch /tmp/prod", verdict("touch /tmp/prod"), live());
+    await tick();
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("command", 2), "approve", false), { status: "refused", reason: "production" });
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("command", 2), "approve", true), { status: "applied" });
+    assert.deepEqual(await asked, { run: "touch /tmp/prod", via: "approval" });
+    const rejected = gate.authorize("touch /tmp/prod2", verdict("touch /tmp/prod2"), live());
+    await tick();
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("command", 3), "reject", false), { status: "applied" }, "rejecting needs no confirmation");
+    assert.match(refusal(await rejected), /rejected/u);
+
+    const saved = await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: true }, false);
+    assert.equal(saved.status === "saved" && saved.view.settings.allowFullAllowOnProd, true);
+    assert.equal(fixture.last().conversations[0]!.fullAllowAvailable, true);
+    assert.deepEqual(runner.setMode(owner, "s1", 1, "full-allow", false), { status: "refused", reason: "acknowledge" }, "still the warning step");
+    assert.deepEqual(runner.setMode(owner, "s1", 1, "full-allow", true), { status: "set" });
+    assert.equal((await gate.authorize("touch /tmp/x", verdict("touch /tmp/x"), live()) as { via: string }).via, "full-allow");
+    // Turning the option off returns PROD conversations to Auto at once.
+    await runner.configure({ enabled: true, provider: "claude", model: "claude-haiku-5-5", effort: "low", instructions: "", allowFullAllowOnProd: false }, false);
+    assert.equal(fixture.last().conversations[0]!.mode, "auto");
+    assert.match(fixture.last().conversations[0]!.messages.at(-1)!.text, /back in Auto/u);
+    const back = gate.authorize("touch /tmp/x", verdict("touch /tmp/x"), live());
+    await tick();
+    assert.ok(task(fixture).approval, "asks again");
+    void runner.close(owner, "s1");
+    assert.match(refusal(await back), /withdrawn|ended/u);
+  } finally { await runner.dispose(); fixture.cleanup(); }
+});
+
+test("pending cards are withdrawn on panel close, lock, session end and owner revoke; their ids are then stale", async () => {
+  for (const end of ["close", "lock", "session", "owner"] as const) {
+    const fixture = lab({ environment: "DEV" });
+    const { runner, snapshot } = fixture;
+    try {
+      const gate = await startTask(fixture);
+      const plan = gate.propose({ goal: "g", commands: ["touch /tmp/a"] }, live());
+      const command = gate.authorize("touch /tmp/b", verdict("touch /tmp/b"), live());
+      await tick();
+      learnNonce(fixture);
+      if (end === "close") await runner.close(owner, "s1");
+      else if (end === "lock") await runner.lock();
+      else if (end === "owner") runner.revokeOwner(owner);
+      else { snapshot.state = "Closed"; runner.observe({ ownerId, sessionId: "s1", generation: 1, local: false, hostId: "h1", label: "db", endpoint: null, environment: "DEV" })!.end(); }
+      assert.notEqual(((await plan).structuredContent as { status: string }).status, "approved", end);
+      assert.ok("refuse" in (await command), end);
+      for (const stale of [id("plan", 1), id("command", 2)]) assert.deepEqual(runner.decide(owner, "s1", 1, stale, "approve", false), { status: "refused", reason: "stale" }, `${end} ${stale}`);
+    } finally { await runner.dispose(); fixture.cleanup(); }
+  }
+});
+
+test("M1/L3: an aborted request withdraws its card; every admitted call keeps its record slot, also after the task ended", async () => {
+  const fixture = lab({ environment: "DEV" });
+  const { runner } = fixture;
+  try {
+    const gate = await startTask(fixture);
+    const request = new AbortController();
+    const asked = gate.authorize("touch /tmp/a", verdict("touch /tmp/a"), request.signal);
+    await tick();
+    learnNonce(fixture);
+    assert.ok(task(fixture).approval);
+    request.abort();
+    assert.match(refusal(await asked), /withdrawn/u);
+    assert.equal(task(fixture).approval, null, "the card is gone");
+    assert.deepEqual(runner.decide(owner, "s1", 1, id("command", 1), "approve", false), { status: "refused", reason: "stale" });
+    const planRequest = new AbortController();
+    const proposing = gate.propose({ goal: "g", commands: ["touch /tmp/a"] }, planRequest.signal);
+    await tick();
+    planRequest.abort();
+    assert.equal(((await proposing).structuredContent as { status: string }).status, "cancelled");
+    const aborted = new AbortController();
+    aborted.abort();
+    assert.match(refusal(await gate.authorize("touch /tmp/b", verdict("touch /tmp/b"), aborted.signal)), /withdrawn/u, "no card for an already cancelled request");
+    assert.equal(task(fixture).approval, null);
+
+    // Slots: 63 recorded, one admitted and still waiting; the 65th is refused before anything else.
+    const grant = fixture.issued.find((entry) => entry.gate)!;
+    for (let i = 0; i < 63; i++) {
+      assert.equal(grant.admit!(true), undefined);
+      grant.record!({ command: `uptime ${i}`, status: "completed", exitCode: 0, output: "", truncated: false, via: "read-only" });
+    }
+    assert.equal(grant.admit!(true), undefined, "the 64th slot");
+    assert.match(grant.admit!(true)!, /limit of 64 commands/u, "a waiting call holds its slot");
+    // The task ends while that call is in flight: the late check refuses it, and its record is still kept.
+    runner.cancelTask(owner, "s1", "task-1");
+    assert.match(grant.admit!(false)!, /task has ended/u);
+    grant.record!({ command: "sleep 30", status: "interrupted", exitCode: null, output: "^C", truncated: false, via: "read-only" });
+    const view = task(fixture);
+    assert.equal(view.steps.length, 64);
+    assert.deepEqual([view.steps.at(-1)!.command, view.steps.at(-1)!.status], ["sleep 30", "interrupted"], "not dropped after the cancel");
+  } finally { await runner.dispose(); fixture.cleanup(); }
 });
