@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 import { AlertCircleIcon, FileClockIcon } from "lucide-react";
 import { RECORDING_BOUNDS, type Owner, type RecordingPolicy, type TerminalSettings } from "@ssterm/contracts";
 import { SignInSettings } from "@/components/app-lock/sign-in-settings";
+import { AgentSettings } from "@/components/agent/agent-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useRecordings } from "@/hooks/use-recordings";
@@ -33,10 +34,10 @@ const cursors: { value: TerminalSettings["terminalCursor"]; label: string }[] = 
 ];
 const count = (value: number) => value.toLocaleString("en-US");
 
-export type SettingsTab = "terminal" | "recording" | "security" | "sync";
+export type SettingsTab = "terminal" | "recording" | "security" | "sync" | "agent";
 
 /**
- * Settings drawer (SST-040/07): Terminal, Recording, Security and Sync tabs. Keyed by the caller per open. Panels stay
+ * Settings drawer (SST-040/07): Terminal, Recording, Security, Sync and AI Agent (SST-041) tabs. Keyed by the caller per open. Panels stay
  * mounted while the drawer is open, so a catalog lock seen by Sync closes the drawer from any tab and drafts survive tab
  * switches; everything is dropped when the drawer closes. A running sync action keeps the drawer open.
  */
@@ -86,6 +87,7 @@ export function SettingsDrawer({
           <TabsTrigger value="recording">Recording</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="sync">Sync</TabsTrigger>
+          <TabsTrigger value="agent">AI Agent</TabsTrigger>
         </TabsList>
         <TabsContent value="terminal" keepMounted className="grid gap-4">
           {disabledReason || error ? (
@@ -182,6 +184,9 @@ export function SettingsDrawer({
         <TabsContent value="sync" keepMounted>
           {/* A lock always closes, even mid-action (the action is fenced in main). */}
           {owner ? <SyncSettings owner={owner} onBusyChange={setSyncBusy} onLock={close.discard} /> : null}
+        </TabsContent>
+        <TabsContent value="agent" keepMounted>
+          {owner ? <AgentSettings owner={owner} /> : null}
         </TabsContent>
       </Tabs>
     </Drawer>

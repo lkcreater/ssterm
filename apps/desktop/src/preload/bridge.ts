@@ -57,6 +57,11 @@ import {
   type AnswerHostTrustRequest,
   type PrepareKnownHostRevokeRequest,
   type RevokeKnownHostRequest,
+  isAgentSettingsRequest, isAgentSettingsView, isConfigureAgentRequest, isConfigureAgentResponse, isAgentStateRequest, isAgentState,
+  isOpenAgentRequest, isOpenAgentResponse, isAgentConversationRequest, isSendAgentRequest, isSendAgentResponse,
+  isCancelAgentTaskRequest, isCancelAgentTaskResponse,
+  type AgentSettingsRequest, type ConfigureAgentRequest, type AgentStateRequest, type AgentState, type OpenAgentRequest,
+  type AgentConversationRequest, type SendAgentRequest, type CancelAgentTaskRequest,
   failure,
   isBootstrapData,
   isPingRequest,
@@ -109,6 +114,13 @@ export function createDesktopBridge(transport: BridgeTransport): {
     for (const callback of remoteEditCallbacks) callback(value);
   };
   let transferSequence = -1;
+  let agentSequence = -1;
+  const agentCallbacks = new Set<(state: AgentState) => void>();
+  const agentListener = (_event: unknown, value: unknown): void => {
+    if (disposed || !isAgentState(value) || !sameOwner(value.owner) || value.sequence <= agentSequence) return;
+    agentSequence = value.sequence;
+    for (const callback of agentCallbacks) callback(value);
+  };
   let tunnelSequence = -1;
   const tunnelCallbacks = new Set<(state: TunnelState) => void>();
   const tunnelListener = (_event: unknown, value: unknown): void => {
@@ -740,6 +752,41 @@ export function createDesktopBridge(transport: BridgeTransport): {
       if (!isForgetCommandRequest(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.forgetCommand, [{ owner: { ...request.owner }, sessionId: request.sessionId, generation: request.generation,
         text: request.text }], isForgetCommandResponse);
+    },
+    agentSettings(request: AgentSettingsRequest) {
+      if (!isAgentSettingsRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.agentSettings, [{ owner: { ...request.owner } }], isAgentSettingsView);
+    },
+    configureAgent(request: ConfigureAgentRequest) {
+      if (!isConfigureAgentRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.configureAgent, [{ owner: { ...request.owner }, settings: { ...request.settings }, consent: request.consent }], isConfigureAgentResponse);
+    },
+    async agentState(request: AgentStateRequest) {
+      if (!isAgentStateRequest(request)) return failure("invalid-request");
+      const result = await invoke(channels.agentState, [{ owner: { ...request.owner } }], isAgentState);
+      if (!result.ok) return result;
+      if (!sameOwner(result.value.owner) || !sameOwner(request.owner)) return failure("stale-owner");
+      agentSequence = Math.max(agentSequence, result.value.sequence);
+      return result;
+    },
+    onAgentState(callback: (state: AgentState) => void): () => void {
+      return subscribe(channels.agentStateChanged, agentCallbacks, agentListener, callback);
+    },
+    openAgent(request: OpenAgentRequest) {
+      if (!isOpenAgentRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.openAgent, [{ owner: { ...request.owner }, sessionId: request.sessionId, generation: request.generation }], isOpenAgentResponse);
+    },
+    closeAgent(request: AgentConversationRequest) {
+      if (!isAgentConversationRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.closeAgent, [{ owner: { ...request.owner }, sessionId: request.sessionId }], isTerminalActionResponse);
+    },
+    sendAgent(request: SendAgentRequest) {
+      if (!isSendAgentRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.sendAgent, [{ owner: { ...request.owner }, sessionId: request.sessionId, text: request.text }], isSendAgentResponse);
+    },
+    cancelAgentTask(request: CancelAgentTaskRequest) {
+      if (!isCancelAgentTaskRequest(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.cancelAgentTask, [{ owner: { ...request.owner }, sessionId: request.sessionId, taskId: request.taskId }], isCancelAgentTaskResponse);
     },
     openLink(request: OpenLinkRequest) {
       if (!isOpenLinkRequest(request)) return Promise.resolve(failure("invalid-request"));

@@ -18,8 +18,29 @@ import { classifyReadOnly, MAX_AGENT_COMMAND, ScreenTracker, TerminalExecutor, t
 type Registry = Pick<SessionRegistry, "snapshot" | "terminal">;
 /** One per observed SSH generation; the executor exists only once a credential was issued for it (idle sessions pay a screen scan). */
 interface Live { ownerId: string; sessionId: string; generation: number; screen: ScreenTracker; executor?: TerminalExecutor }
-interface Binding { hash: string; live: Live; sockets: Set<Socket> }
-interface ToolResult { content: { type: "text"; text: string }[]; structuredContent?: Record<string, unknown>; isError: boolean }
+/** What one terminal-tool call did, run or refused: ssterm's own task record (ticket 03). */
+export interface AgentStepRecord {
+  command: string;
+  status: AgentRunResult["status"] | "refused";
+  exitCode: number | null;
+  output: string;
+  truncated: boolean;
+}
+export interface ToolResult { content: { type: "text"; text: string }[]; structuredContent?: Record<string, unknown>; isError: boolean }
+export interface ToolDefinition { name: string; description: string; inputSchema: Record<string, unknown> }
+/** A tool set other than the terminal tools (the main agent's delegate tools); still bound to one Ready generation. */
+export interface AgentToolRole { tools: readonly ToolDefinition[]; call(name: unknown, args: unknown): Promise<ToolResult> }
+interface Binding {
+  hash: string;
+  live: Live;
+  sockets: Set<Socket>;
+  role?: AgentToolRole;
+  record?: (step: AgentStepRecord) => void;
+  /** Asked before a run_command executes; a string refuses it unrun (e.g. the task's command limit). */
+  admit?: () => string | undefined;
+  /** A run_command of this binding is in the executor: revoking it interrupts that command. */
+  running: boolean;
+}
 
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const MAX_LINE = 65_536;
@@ -62,7 +83,7 @@ const refusals: Record<AgentRunRefusal, string> = {
   "not-accepted": "The terminal did not accept input, so nothing was sent.",
   ended: "The bound session has ended.",
 };
-const text = (value: unknown, isError = false): ToolResult => typeof value === "string"
+export const text = (value: unknown, isError = false): ToolResult => typeof value === "string"
   ? { content: [{ type: "text", text: value }], isError }
   : { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value as Record<string, unknown>, isError };
 /** Nothing ran (or it is unknown whether it will): the model must not treat these as command results. */
@@ -114,6 +135,8 @@ export function createAgentTerminals(options: {
   };
   const revoke = (binding: Binding) => {
     if (credentials.get(binding.hash) === binding) credentials.delete(binding.hash);
+    // Nobody is left to receive its result: the command is interrupted rather than left running in the pane.
+    if (binding.running) { binding.running = false; binding.live.executor?.cancel(); }
     for (const socket of binding.sockets) socket.destroy();
     binding.sockets.clear();
   };
@@ -144,17 +167,29 @@ export function createAgentTerminals(options: {
       revoke(binding);
       return text("This binding is no longer valid: the session ended or reconnected, or the workspace locked. Ask the user to bind a session again.", true);
     }
+    if (binding.role) return binding.role.call(name, args);
     const none = args === undefined || exactObject(args, []);
+    // The record is shown in the renderer: a control character in a refused command must not break its view.
+    const shown = (command: string) => command.replace(/[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/gu, "\ufffd");
+    const refuse = (command: string, message: string) => {
+      binding.record?.({ command: shown(command), status: "refused", exitCode: null, output: message, truncated: false });
+      return text(message, true);
+    };
     switch (name) {
       case "run_command": {
         if (!exactObject(args, ["command"]) || typeof args.command !== "string" || args.command.length > MAX_AGENT_COMMAND)
           return text("run_command takes exactly one string argument, `command`.", true);
-        const verdict = classifyReadOnly(args.command);
+        const command = args.command;
+        const limit = binding.admit?.();
+        if (limit !== undefined) return text(limit, true);
+        const verdict = classifyReadOnly(command);
         if (!verdict.readOnly)
-          return text(`Refused in Read only mode: ${verdict.reason}. Nothing was sent to the terminal. Use a read-only command, or ask the user to change the mode.`, true);
-        const started = executor.run(args.command);
-        if (typeof started === "string") return text(refusals[started], true);
-        const result = await started;
+          return refuse(command, `Refused in Read only mode: ${verdict.reason}. Nothing was sent to the terminal. Use a read-only command, or ask the user to change the mode.`);
+        const started = executor.run(command);
+        if (typeof started === "string") return refuse(command, refusals[started]);
+        binding.running = true;
+        const result = await started.finally(() => { binding.running = false; });
+        binding.record?.({ command: shown(command), status: result.status, exitCode: result.exitCode, output: result.output, truncated: result.truncated });
         const note = notes[result.status];
         return text(note ? { ...result, note } : result, UNRUN.includes(result.status));
       }
@@ -223,7 +258,7 @@ export function createAgentTerminals(options: {
           return;
         }
         case "ping": reply({ id, result: {} }); return;
-        case "tools/list": reply({ id, result: { tools: TOOLS } }); return;
+        case "tools/list": reply({ id, result: { tools: bound.role?.tools ?? TOOLS } }); return;
         case "tools/call": {
           if (pending >= MAX_PENDING) { reply({ id, error: { code: -32000, message: "Too many calls in progress." } }); return; }
           pending += 1;
@@ -313,10 +348,11 @@ export function createAgentTerminals(options: {
       return () => { listeners.delete(listener); };
     },
     /**
-     * A new per-conversation credential for one Ready SSH terminal (not local, not Team-managed). Main-only: ticket 02
-     * has no caller besides the test seam; the agent panel (ticket 03) will be the production caller.
+     * A new per-conversation credential for one Ready SSH terminal (not local, not Team-managed). By default it serves
+     * the terminal tools, reporting each call to `record`; with a `role` it serves that tool set instead (ticket 03's
+     * main agent), under the same generation and Ready checks.
      */
-    async issue(ownerId: string, sessionId: string): Promise<{ credential: string; socketPath: string } | undefined> {
+    async issue(ownerId: string, sessionId: string, use: { role?: AgentToolRole; record?: (step: AgentStepRecord) => void; admit?: () => string | undefined } = {}): Promise<{ credential: string; socketPath: string } | undefined> {
       if (disposed || credentials.size >= MAX_CREDENTIALS) return undefined;
       const since = epoch;
       const bindable = () => {
@@ -346,12 +382,12 @@ export function createAgentTerminals(options: {
       });
       const credential = randomBytes(32).toString("base64url");
       const hash = digest(credential);
-      credentials.set(hash, { hash, live, sockets: new Set() });
+      credentials.set(hash, { hash, live, sockets: new Set(), running: false, ...(use.role ? { role: use.role } : {}), ...(use.record ? { record: use.record } : {}), ...(use.admit ? { admit: use.admit } : {}) });
       return { credential, socketPath: options.socketPath };
     },
     /**
-     * Ends one conversation's credential and its connections. Credentials otherwise live until their generation ends
-     * or the workspace locks (at most 32 at once); ticket 03's panel close must call this.
+     * Ends one conversation's credential and its connections, and interrupts a command it is running. Credentials
+     * otherwise live until their generation ends or the workspace locks (at most 32 at once).
      */
     revoke(credential: string): void {
       const binding = TOKEN.test(credential) ? credentials.get(digest(credential)) : undefined;

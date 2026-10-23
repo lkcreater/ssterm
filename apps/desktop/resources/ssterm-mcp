@@ -1,0 +1,17 @@
+#!/bin/sh
+# ssterm-mcp: the stdio bridge to ssterm's MCP endpoint (SST-041, ADR 0009 A8).
+#
+# An MCP client starts this as a stdio server. It connects to the ssterm Unix socket, sends the credential line the
+# endpoint expects first, then pipes MCP JSON-RPC both ways unchanged. The credential comes from the environment, never
+# from argv (visible to `ps`). Only macOS base system tools are used, so nothing else has to be installed or bundled.
+#
+#   SSTERM_MCP_SOCKET      absolute path of the socket (the ssterm profile's mcp/ssterm.sock)
+#   SSTERM_MCP_CREDENTIAL  the credential issued by ssterm
+case "$SSTERM_MCP_SOCKET" in
+  /*) ;;
+  *) echo "ssterm-mcp: SSTERM_MCP_SOCKET must be an absolute path" >&2; exit 64 ;;
+esac
+case "$SSTERM_MCP_CREDENTIAL" in
+  "" | *[!A-Za-z0-9_-]*) echo "ssterm-mcp: SSTERM_MCP_CREDENTIAL is missing or malformed" >&2; exit 64 ;;
+esac
+{ printf '{"credential":"%s"}\n' "$SSTERM_MCP_CREDENTIAL"; exec /bin/cat; } | exec /usr/bin/nc -U "$SSTERM_MCP_SOCKET"

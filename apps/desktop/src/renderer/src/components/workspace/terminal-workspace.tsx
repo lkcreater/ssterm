@@ -12,6 +12,7 @@ import {
 } from "react";
 import {
   AppWindowIcon,
+  BotIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   Columns2Icon,
@@ -40,6 +41,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { AgentPanel } from "@/components/agent/agent-panel";
+import { useAgentState } from "@/hooks/use-agent";
 import { CloseConfirm, type CloseRequest } from "@/components/workspace/close-confirm";
 import { LiveTerminal, type PaneSettings } from "@/components/workspace/live-terminal";
 import { WorkspaceTools } from "@/components/workspace/workspace-tools";
@@ -344,6 +348,38 @@ export function TerminalWorkspace({
   const order = tab ? panes(tab.root) : [];
   const focusMode = tab?.mode === "focus" && order.length > 1;
 
+  // SST-041: one AI Agent panel per window, bound to the session it was opened from (never to the active tab).
+  const agent = useAgentState(owner);
+  const [agentSession, setAgentSession] = useState<string>();
+  useEffect(() => setAgentSession(undefined), [owner.windowId, owner.generation]);
+  const agentEligible = (session: TerminalSession) =>
+    !!agent?.enabled && session.phase === "ready" && !session.local && session.target?.source !== "team";
+  const openAgent = async (session: TerminalSession) => {
+    const bridge = window.ssterm;
+    if (!bridge) return;
+    if (agentSession === session.sessionId) return;
+    // Opening it for another pane ends the previous conversation.
+    if (agentSession) void bridge.closeAgent({ owner, sessionId: agentSession }).catch(() => undefined);
+    setAgentSession(undefined);
+    const result = await bridge.openAgent({ owner, sessionId: session.sessionId, generation: session.generation }).catch(() => undefined);
+    if (result?.ok && result.value.status === "opened") return setAgentSession(session.sessionId);
+    const reason = result?.ok && result.value.status === "refused" ? result.value.reason : undefined;
+    toast.add({
+      title: "AI Agent could not open",
+      description: reason === "disabled" ? "Turn it on in Settings › AI Agent first."
+        : reason === "provider" ? "The claude CLI is not available in a verified version. See Settings › AI Agent."
+          : reason === "limit" ? "Too many agent conversations are open. Close one first."
+            : "The session is no longer connected.",
+      type: "error",
+    });
+  };
+  const closeAgentPanel = () => {
+    const sessionId = agentSession;
+    setAgentSession(undefined);
+    if (sessionId) void window.ssterm?.closeAgent({ owner, sessionId }).catch(() => undefined);
+    controller.focusActive();
+  };
+
   const run = (shortcut: WorkspaceShortcut, repeat: boolean): boolean => {
     switch (shortcut.kind) {
       case "toggle-sidebar":
@@ -434,7 +470,9 @@ export function TerminalWorkspace({
         }}
       >
         {header}
-        <div ref={layer} className="terminal-layer relative min-h-0 flex-1">
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+        <ResizablePanel id="terminal-layer-area" minSize={320}>
+        <div ref={layer} className="terminal-layer relative h-full min-h-0">
           {sessions.length === 0 ? empty : null}
           {focusMode && tab ? (
             <div
@@ -477,13 +515,27 @@ export function TerminalWorkspace({
                 onDisconnect={() => controller.disconnect(session.sessionId)}
                 actions={
                   entry ? (
-                    <PaneMenu
-                      controller={controller}
-                      session={session}
-                      home={entry.tab}
-                      onOpenSftp={onOpenSftp}
-                      onSnippets={catalog ? openSnippets : undefined}
-                    />
+                    <>
+                      {agentEligible(session) ? (
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="AI Agent"
+                          title="AI Agent"
+                          aria-pressed={agentSession === session.sessionId}
+                          onClick={() => void openAgent(session)}
+                        >
+                          <BotIcon aria-hidden="true" />
+                        </Button>
+                      ) : null}
+                      <PaneMenu
+                        controller={controller}
+                        session={session}
+                        home={entry.tab}
+                        onOpenSftp={onOpenSftp}
+                        onSnippets={catalog ? openSnippets : undefined}
+                      />
+                    </>
                   ) : null
                 }
               />
@@ -495,6 +547,22 @@ export function TerminalWorkspace({
               ))
             : null}
         </div>
+        </ResizablePanel>
+        {agentSession ? (
+          <>
+            <ResizableHandle aria-label="Resize AI Agent panel" />
+            <ResizablePanel id="agent-panel-area" defaultSize={380} minSize={300} maxSize="60" groupResizeBehavior="preserve-pixel-size">
+              <AgentPanel
+                key={agentSession}
+                owner={owner}
+                sessionId={agentSession}
+                conversation={agent?.conversations.find((conversation) => conversation.sessionId === agentSession)}
+                onClose={closeAgentPanel}
+              />
+            </ResizablePanel>
+          </>
+        ) : null}
+        </ResizablePanelGroup>
         {showSnippets ? (
           <SnippetPanel
             key={snippets}

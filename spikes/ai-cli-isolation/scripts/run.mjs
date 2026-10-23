@@ -75,6 +75,11 @@ export const CLAUDE_ENV = {
 const MENTION_ENV = ['CLAUDE_CODE_DISABLE_FILE_MENTIONS', 'CLAUDE_CODE_DISABLE_ATTACHMENTS'];
 
 const SYSTEM_PROMPT = 'You are a terminal assistant inside ssterm. Use only the tools you are given.';
+// Model and effort under test (SST-041 A14): the cheap haiku/low pair by default; ISOLATION_CLAUDE_MODEL and
+// ISOLATION_CLAUDE_EFFORT verify another pair. The budget cap only applies to the default pair.
+export const CLAUDE_MODEL = process.env.ISOLATION_CLAUDE_MODEL || 'haiku';
+export const CLAUDE_EFFORT = process.env.ISOLATION_CLAUDE_EFFORT || 'low';
+const budget = () => (CLAUDE_MODEL === 'haiku' && CLAUDE_EFFORT === 'low' ? ['--max-budget-usd', '0.10'] : ['--max-budget-usd', '2.00']);
 
 // mode 'argv': prompt as the last argument (what the live attacks use).
 // mode 'stream': long-lived process reading user messages as stream-json on
@@ -92,7 +97,7 @@ export function claudeArgs(mcpConfigPath, prompt, mode = 'argv') {
     '--setting-sources', '',
     '--disable-slash-commands',
     '--system-prompt', SYSTEM_PROMPT,
-    '--model', 'haiku', '--effort', 'low', '--max-budget-usd', '0.10',
+    '--model', CLAUDE_MODEL, '--effort', CLAUDE_EFFORT, ...budget(),
     ...(mode === 'stream' ? [] : [prompt]),
   ];
 }

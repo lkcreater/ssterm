@@ -68,6 +68,8 @@ test("package contents: offline fonts, notices and licences, native keyring unpa
   expect(notices).toContain("SIL OPEN FONT LICENSE");
   expect(notices).toContain("Node.js API collaborators");
   for (const file of ["LICENSE.electron.txt", "LICENSES.chromium.html"]) expect(existsSync(join(bundle, "Contents/Resources", file)), file).toBe(true);
+  // SST-041: the stdio bridge agent CLIs start, outside the archive so /bin/sh can read it.
+  expect(readFileSync(join(bundle, "Contents/Resources/ssterm-mcp"), "utf8")).toMatch(/^#!\/bin\/sh\n[^]*exec \/usr\/bin\/nc -U "\$SSTERM_MCP_SOCKET"\n$/u);
   // No build-machine paths or user names inside the shipped JavaScript.
   const home = process.env.HOME ?? "/Users/";
   const leaks = execFileSync("/bin/sh", ["-c", `grep -rl --binary-files=text -F "${home}" "${join(bundle, "Contents/Resources/app.asar")}" || true`], { encoding: "utf8" }).trim();

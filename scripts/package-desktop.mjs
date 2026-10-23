@@ -112,7 +112,8 @@ try {
     buildVersion: source.version,
     appCopyright: "Copyright © 2026 ssterm contributors",
     icon,
-    extraResource: [notices, join(resources, "LICENSE.electron.txt"), join(resources, "LICENSES.chromium.html")],
+    // ssterm-mcp: the stdio bridge agent CLIs (and later external MCP clients) start; signed with the bundle.
+    extraResource: [notices, join(resources, "LICENSE.electron.txt"), join(resources, "LICENSES.chromium.html"), join(desktop, "resources/ssterm-mcp")],
     // Explains each folder prompt in ssterm's words; the Files page reads only folders the user opens.
     extendInfo: {
       NSDesktopFolderUsageDescription: "ssterm shows and transfers files in the Desktop folder when you open it in Files.",

@@ -237,3 +237,52 @@ test("local terminals get no executor; observeBoth isolates a throwing tap", () 
   assert.deepEqual(seen, ["out", "end"]);
   agents.dispose();
 });
+
+test("ticket 03: a role binding serves its own tools; terminal calls are recorded; revoking a binding interrupts its running command", async () => {
+  const { agents, target, writes, emit, cleanup } = await lab();
+  try {
+    const calls: unknown[] = [];
+    const role = {
+      tools: [{ name: "delegate_task", description: "d", inputSchema: { type: "object" } }],
+      call: async (name: unknown, args: unknown) => { calls.push([name, args]); return { content: [{ type: "text" as const, text: "ok" }], isError: false }; },
+    };
+    const main = (await agents.issue(ownerId, target.sessionId, { role }))!;
+    const mainClient = await client(main.socketPath, main.credential);
+    assert.deepEqual((await mainClient.request("tools/list")).result.tools.map((tool: { name: string }) => tool.name), ["delegate_task"]);
+    assert.equal((await mainClient.call("delegate_task", { goal: "x" })).content[0].text, "ok");
+    assert.equal((await mainClient.call("run_command", { command: "ls" })).content[0].text, "ok", "routed to the role, which refuses it");
+    assert.deepEqual(calls, [["delegate_task", { goal: "x" }], ["run_command", { command: "ls" }]]);
+    assert.equal(writes.length, 0, "a role binding never reaches the terminal");
+
+    const steps: unknown[] = [];
+    let limit: string | undefined;
+    const sub = (await agents.issue(ownerId, target.sessionId, { record: (step) => steps.push(step), admit: () => limit }))!;
+    const subClient = await client(sub.socketPath, sub.credential);
+    await subClient.call("run_command", { command: "touch /tmp/x" });
+    // A control character in a refused command is recorded visibly replaced, so the agent view stays valid.
+    await subClient.call("run_command", { command: "rm\r-rf\u0007/" });
+    assert.equal((steps.pop() as { command: string }).command, "rm\ufffd-rf\ufffd/");
+    limit = "LIMIT reached";
+    const before = writes.length;
+    const limited = await subClient.call("run_command", { command: "ls" });
+    assert.deepEqual([limited.isError, limited.content[0].text, writes.length, steps.length], [true, "LIMIT reached", before, 1], "refused before anything is typed");
+    limit = undefined;
+    const running = subClient.call("run_command", { command: "sleep 30" });
+    await settle();
+    const nonce = nonceOf(writes.at(-1)!);
+    emit(`\x1b]ssterm;ready;${nonce}\x07$ \x1b]ssterm;start;${nonce}\x07`);
+    agents.revoke(sub.credential);
+    assert.equal(writes.at(-1), "\x03", "Ctrl+C: nobody is left to receive the result");
+    void limit;
+    await subClient.ended;
+    emit("^C\r\n$ ");
+    await new Promise((done) => setTimeout(done, 60));
+    assert.deepEqual(steps, [
+      { command: "touch /tmp/x", status: "refused", exitCode: null, output: steps.length ? (steps[0] as { output: string }).output : "", truncated: false },
+      { command: "sleep 30", status: "interrupted", exitCode: null, output: "^C\n$ ", truncated: false },
+    ]);
+    assert.match((steps[0] as { output: string }).output, /^Refused in Read only mode/u);
+    void running;
+    mainClient.socket.destroy();
+  } finally { cleanup(); }
+});

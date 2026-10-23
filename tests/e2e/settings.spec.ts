@@ -27,8 +27,8 @@ test("terminal settings persist across relaunch; invalid values show an inline e
   let relaunched: Desktop | undefined;
   try {
     const s = await openSettings(desktop.page);
-    // SST-040/07: one right-edge drawer (up to 640 px) with four tabs, Terminal first; terminal colors are read-only.
-    await expect(s.dialog.getByRole("tab")).toHaveText(["Terminal", "Recording", "Security", "Sync"]);
+    // SST-040/07: one right-edge drawer (up to 640 px), Terminal first (AI Agent added by SST-041); terminal colors are read-only.
+    await expect(s.dialog.getByRole("tab")).toHaveText(["Terminal", "Recording", "Security", "Sync", "AI Agent"]);
     await expect(s.dialog.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
     await expect(s.dialog.getByText("Terminal colors", { exact: true })).toBeVisible();
     await expect(s.dialog.getByText("Charcoal", { exact: true })).toBeVisible();

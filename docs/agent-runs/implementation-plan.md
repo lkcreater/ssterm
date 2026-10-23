@@ -1673,3 +1673,32 @@ Rules:
     - typecheck pass, unit 797/798 (1 known skip), build pass.
     - Full E2E 93/93 before the review fixes; the focused agent-mcp and terminal specs pass after them.
     - One `npm test` run hung once with no output, and two reruns passed. The cause is unknown; watch for it.
+
+**SST-041 decision A14 — model and effort selection (2026-10-23, user: “ปรับให้ ดึง list model ของแต่ละ provider และมี model default ตาม provider + เลือก effort ได้”).**
+- **No dynamic source exists.** Checked on 2026-10-23: neither `claude` 2.1.309 nor `codex-cli` 0.163.0 has a model-listing command. A provider API listing would need an API key, which ssterm does not hold (A3/A5).
+- **Model list:** a bundled per-provider list, versioned together with the verified CLI version, with a default per provider:
+  - claude: aliases `fable`, `opus`, `sonnet` and `haiku`, default `sonnet`;
+  - codex: its models, kept disabled until it is verified.
+- **Custom model ID:** an optional field validated as a strict token, so the user can add a model that is not in the list.
+- **Effort selector per provider:** claude `--effort` low|medium|high|xhigh|max, default medium; codex `model_reasoning_effort`.
+- **Where the choice lives:** the model/effort choice is stored in agent settings and shown in the panel header. It applies to new conversations, and sub agents use the same choice.
+- **Where it is implemented:** folded into ticket 03's review-fix round.
+- **A14 update (user: “claude default model opus 5.5 + effort xhigh”):** the claude default is model `claude-opus-5-5`, pinned by full ID rather than the moving `opus` alias, with effort `xhigh`. The bundled list shows the full IDs, with aliases alongside.
+- **SST-041/03 done (2026-10-23):**
+  - **Settings › AI Agent:** off by default, behind versioned consent and a disclosure extended with the spike findings. Settings live in an allowlisted 0600 file. The tab has a model/effort selector (A14) with verified flags and a strict custom-ID token.
+  - **AI Agent panel:** a non-modal resizable panel for Ready SSH sessions, bound to its session, with a provider banner. Task cards show ssterm's record and a "subAgentReport (unverified)" field.
+  - **CLI spawn:** production spawn ported from the spike, covering:
+    - fixed real-binary candidates, a Mach-O check, and a version gate on every spawn;
+    - refusal under managed policy (Application Support, Managed Preferences plists, remote-settings/policy-limits);
+    - an allowlisted environment with the mandatory `CLAUDE_CODE_*` variables, and prompts sent as stdin stream-json;
+    - an isolation detector on `init` and hook events. It fails closed: credentials are revoked, then the process group is killed;
+    - per-run 0700 directories, residue cleanup by run tag, and a startup sweep.
+  - **Roles:** the main agent has only delegate tools. Each sub agent gets a per-task terminal credential, one at a time, with queueing. The bundled POSIX `ssterm-mcp` bridge (`nc -U`) ships in Resources.
+  - **Review:** APPROVED. Fixed M1 (managed policy and hooks), M2 (control characters froze the view), M3 (the 64-step cap is now enforced before running) and lows L1–L8.
+  - **Deviation accepted:** claude 2.1.309 always lists its five built-in agent definitions. Exactly that list is allowed, because no Agent tool is offered; anything else fails closed.
+  - **A14 verification:**
+    - The live set with `claude-opus-5-5` at `xhigh` came back inconclusive (3 pass, 2 inconclusive). Opus safeguards declined the synthetic shell and web-fetch attack prompts, while the capture check passed and only the ssterm tool was offered. Cost $0.0792.
+    - So `claude-opus-5-5` stays unverified. The effective default is `claude-haiku-5-5` at `xhigh` until the user decides (see below).
+  - **Checks:**
+    - typecheck pass, unit 811/812 (1 known skip), build pass, full E2E 94/94.
+    - Packaged agent-panel/package-artifact/desktop: 7/8 on the first run, with one unrecorded agent-panel assertion failure, then 8/8 twice on rerun.

@@ -9,7 +9,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { realpathSync, constants as fsConstants } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { mkdir, open as openFile, rename, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import {
   channels,
   failure,
@@ -57,6 +57,8 @@ import { createIdentitiesController, registerIdentityHandlers, secretNamespace, 
 import { createSnippetsController, registerSnippetHandlers, type SnippetsController } from "./snippets";
 import { createTunnelController, registerTunnelHandlers, type TunnelController } from "./tunnels";
 import { createAgentTerminals, observeBoth, type AgentTerminals } from "./agent-mcp";
+import { createAgentRunner, registerAgentHandlers, type AgentRunner } from "./agent-runner";
+import { claudeCandidates, cliEnv, managedPolicyPaths, resolveClaude, sweepStaleRuns } from "./agent-cli";
 import { appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers, summarizeLiveWork, type AppLockController } from "./app-lock";
 
 /** The Google OAuth client compiled in from SSTERM_GOOGLE_CLIENT_FILE at build time (null without one). */
@@ -86,12 +88,17 @@ if (testUserData) {
  * (`SSTERM_TEST_LOCAL_HOME`), so E2E never runs the developer's own shell startup files.
  */
 function localTerminalAdapter() {
-  const home = testUserData && process.env.SSTERM_TEST_LOCAL_HOME;
-  if (!home) return createLocalPtyAdapter();
-  const actual = realpathSync(home);
+  const home = testProfilePath("SSTERM_TEST_LOCAL_HOME");
+  return home ? createLocalPtyAdapter({ home }) : createLocalPtyAdapter();
+}
+/** A test switch naming an existing path inside the validated test userData; undefined outside test profiles. */
+function testProfilePath(name: string): string | undefined {
+  const path = testUserData && process.env[name];
+  if (!path) return undefined;
+  const actual = realpathSync(path);
   const inside = relative(realpathSync(testUserData), actual);
-  if (!inside || inside.startsWith("..") || isAbsolute(inside)) throw new Error("Test local home must be inside the test userData");
-  return createLocalPtyAdapter({ home: actual });
+  if (!inside || inside.startsWith("..") || isAbsolute(inside)) throw new Error(`${name} must be inside the test userData`);
+  return actual;
 }
 
 app.setName("ssterm");
@@ -153,6 +160,9 @@ let syncHandlers: ReturnType<typeof registerSyncHandlers> | undefined;
 let recorder: Recorder | undefined;
 // SST-041 ticket 02: the MCP endpoint and terminal executor (Read only); its socket exists only while a binding does.
 let agentTerminals: AgentTerminals | undefined;
+// SST-041 ticket 03: the agent panel's conversations and CLI processes.
+let agentRunner: AgentRunner | undefined;
+let removeAgentHandlers: (() => void) | undefined;
 let removeRecordingHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
@@ -261,6 +271,8 @@ const boundary = new WindowBoundary(
     knownHosts?.revokeOwner(owner);
     catalog?.revokeOwner(owner);
     identities?.revokeOwner(owner);
+    // Its agent CLIs stop before its sessions close.
+    agentRunner?.revokeOwner(owner);
     // Stop output frames before the owner's sessions start closing.
     terminals?.revokeOwner(owner);
     remoteEdits?.revokeOwner(owner);
@@ -696,6 +708,35 @@ if (ownsInstance) {
       ...(Number.isSafeInteger(testTimeout) && testTimeout > 0 ? { timeoutMs: testTimeout } : {}),
     });
     agentTerminals = agents;
+    // Test seams (validated test profile only): a fake CLI standing in for claude, and the home its residue goes to.
+    const testCli = testProfilePath("SSTERM_TEST_AGENT_CLI");
+    const agentHome = testProfilePath("SSTERM_TEST_AGENT_HOME") ?? homedir();
+    const user = userInfo().username;
+    const runTmp = realpathSync(tmpdir());
+    const profile = app.getPath("userData");
+    // Run folders this profile left behind (crash, forced quit) go before any new run starts.
+    await sweepStaleRuns({ tmp: runTmp, home: agentHome, profile }).catch(() => 0);
+    const runner = createAgentRunner({
+      terminals: agents,
+      registry: () => desktopSessions?.registry,
+      store: new FileRecordStore(join(app.getPath("userData"), "agent-settings.json")),
+      bridge: app.isPackaged ? join(process.resourcesPath, "ssterm-mcp") : join(app.getAppPath(), "resources", "ssterm-mcp"),
+      resolve: () => resolveClaude({
+        // A test profile never runs the host's own claude, not even for --version.
+        candidates: testCli ? [testCli] : testUserData ? [] : claudeCandidates(homedir()),
+        env: cliEnv({ home: agentHome, user, tmp: tmpdir() }),
+        managed: managedPolicyPaths({ home: agentHome, user }),
+        ...(testCli ? { native: false } : {}),
+      }),
+      env: (tmp) => cliEnv({ home: agentHome, user, tmp }),
+      tmp: runTmp,
+      home: agentHome,
+      profile,
+      // Quit allows 5 s in all: SIGTERM, 2 s grace, SIGKILL, then the residue cleanup.
+      graceMs: 2_000,
+    });
+    agentRunner = runner;
+    const observeAgents = observeBoth(agents.observe, runner.observe);
     // Test seam: with a validated test profile only, E2E mints a conversation credential for a Ready SSH session.
     if (testUserData && process.env.SSTERM_TEST_MCP === "on") {
       (globalThis as { __sstermTestMcp?: unknown }).__sstermTestMcp = {
@@ -709,7 +750,7 @@ if (ownsInstance) {
         provider: secretProvider,
         transient: transientSecrets,
         power: powerMonitor,
-        observeTerminal: observeBoth(capture.observe, agents.observe),
+        observeTerminal: observeBoth(capture.observe, observeAgents),
         localAdapter: localTerminalAdapter(),
       });
       desktopSessions = savedHostSessions;
@@ -764,13 +805,14 @@ if (ownsInstance) {
           ok: false,
           error: { code: "unavailable", message: "Configuration is unavailable." },
         }),
-        observeTerminal: observeBoth(capture.observe, agents.observe),
+        observeTerminal: observeBoth(capture.observe, observeAgents),
       });
     }
     // After the registry ended every observer: drop decrypted history and abort plaintext exports.
     desktopSessions.onLock(() => recorder?.lock());
     // A8: a lock drops every MCP connection and credential; a new binding is needed after unlock.
     desktopSessions.onLock(() => agentTerminals?.lock());
+    desktopSessions.onLock(() => { void agentRunner?.lock(); });
     desktopSessions.onLock(() => { syncClient?.lock(); syncHandlers?.purge();teamClient?.lock(); teamGuard?.lock(); teamHandlers?.purge(); });
     await initializeSync();
     credentials = createCredentialsController({ registry: desktopSessions.registry });
@@ -859,6 +901,7 @@ if (ownsInstance) {
       boundary,
       repository: () => repository,
     });
+    removeAgentHandlers = registerAgentHandlers({ ipc: ipcMain, boundary, runner: () => agentRunner });
     removeLinkHandlers = registerLinkHandlers({
       ipc: ipcMain,
       boundary,
@@ -907,6 +950,9 @@ if (ownsInstance) {
           });
           tunnelControls?.register(result.value.owner, (state) => {
             if (!event.sender.isDestroyed()) event.sender.send(channels.tunnelStateChanged, state);
+          });
+          agentRunner?.register(result.value.owner, (state) => {
+            if (!event.sender.isDestroyed()) event.sender.send(channels.agentStateChanged, state);
           });
           catalog?.register(result.value.owner, (state) => {
             if (!event.sender.isDestroyed())
@@ -969,6 +1015,8 @@ app.on("before-quit", (event) => {
   const syncClosed = Promise.race([Promise.resolve(syncClient?.dispose()).catch(() => undefined), new Promise<void>(done => setTimeout(done, 2_000))]);
   credentials?.dispose();
   knownHosts?.dispose();
+  // Agent CLIs get SIGTERM now (SIGKILL after their grace); MCP credentials and the socket go with the terminals.
+  const agentsClosed = Promise.race([Promise.resolve(agentRunner?.dispose()).catch(() => undefined), new Promise<void>((done) => setTimeout(done, 5_000))]);
   agentTerminals?.dispose();
   terminals?.dispose();
   const remoteEditsClosed = Promise.resolve(remoteEdits?.dispose()).catch(() => undefined);
@@ -988,6 +1036,7 @@ app.on("before-quit", (event) => {
   removeLinkHandlers?.();
   removeWorkspaceTemplateHandlers?.();
   removeSettingsHandlers?.();
+  removeAgentHandlers?.();
   removeCatalogHandlers?.();
   removeIdentityHandlers?.();
   removeSnippetHandlers?.();
@@ -1006,7 +1055,7 @@ app.on("before-quit", (event) => {
   ]);
   // Session disposal ends every capture observer first; the recorder then drains its queues (bounded) and zeroes keys.
   const sessionsClosed = remoteEditsClosed.then(() => desktopSessions?.shutdown()).then(() => recorder?.dispose()).catch(() => undefined);
-  void Promise.all([tunnelsClosed, sessionsClosed, syncClosed,teamClosed]).finally(() => {
+  void Promise.all([tunnelsClosed, sessionsClosed, syncClosed, teamClosed, agentsClosed]).finally(() => {
     teamRepository?.close();
     syncRepository?.close();
     closeStorage();

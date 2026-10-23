@@ -166,17 +166,19 @@ test("DS05 release sweep: every page and drawer at 960×640 and 1280×800 with r
       matrix[label] = { checked: result.checked, excepted: result.excepted };
       findings.push(...result.findings.map((finding) => ({ page: drawer.name, size, ...finding })));
       if (drawer.name === "settings") {
-        // SST-040/07: one drawer with four tabs; each tab is audited (Terminal above). Colors are read-only Charcoal.
-        await expect(open.getByRole("tab")).toHaveText(["Terminal", "Recording", "Security", "Sync"]);
+        // SST-040/07: one drawer with tabs (AI Agent added by SST-041); each tab is audited (Terminal above). Colors are read-only Charcoal.
+        await expect(open.getByRole("tab")).toHaveText(["Terminal", "Recording", "Security", "Sync", "AI Agent"]);
         await expect(open.getByText("Charcoal", { exact: true })).toBeVisible();
-        for (const tab of ["Recording", "Security", "Sync"]) {
+        for (const tab of ["Recording", "Security", "Sync", "AI Agent"]) {
           await open.getByRole("tab", { name: tab }).click();
           if (tab === "Recording")
             await expect(page.getByTestId("recording-settings").getByRole("switch", { name: "Record session output" })).not.toBeChecked();
+          if (tab === "AI Agent")
+            await expect(page.getByTestId("agent-settings").getByRole("switch", { name: "Use the AI agent" })).not.toBeChecked();
           const audited = await audit(page);
-          matrix[`settings-${tab.toLowerCase()}@${size}`] = { checked: audited.checked, excepted: audited.excepted };
-          findings.push(...audited.findings.map((finding) => ({ page: `settings-${tab.toLowerCase()}`, size, ...finding })));
-          await placed(page, await drawerGeometry(page, "[data-slot='drawer']"), `settings-${tab.toLowerCase()}@${size}`, drawer.max);
+          matrix[`settings-${tab.toLowerCase().replace(" ", "-")}@${size}`] = { checked: audited.checked, excepted: audited.excepted };
+          findings.push(...audited.findings.map((finding) => ({ page: `settings-${tab.toLowerCase().replace(" ", "-")}`, size, ...finding })));
+          await placed(page, await drawerGeometry(page, "[data-slot='drawer']"), `settings-${tab.toLowerCase().replace(" ", "-")}@${size}`, drawer.max);
         }
       }
       await page.screenshot({ path: testInfo.outputPath(`${drawer.name}-drawer-${size}.png`) });

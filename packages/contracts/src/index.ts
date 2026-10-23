@@ -45,6 +45,12 @@ import type {
   ForgetCommandResponse,
 } from './recording.ts';
 export * from './recording.ts';
+import type {
+  AgentSettingsRequest, AgentSettingsView, ConfigureAgentRequest, ConfigureAgentResponse, AgentStateRequest, AgentState,
+  OpenAgentRequest, OpenAgentResponse, AgentConversationRequest, SendAgentRequest, SendAgentResponse, CancelAgentTaskRequest,
+  CancelAgentTaskResponse,
+} from "./agent.ts";
+export * from "./agent.ts";
 /** Serializable values crossing the isolated preload boundary. */
 export type ErrorCode =
   | "invalid-request"
@@ -188,6 +194,16 @@ export interface DesktopAPI {
   exportRecording(request: ExportRecordingRequest): Promise<Result<ExportRecordingResponse>>;
   suggestCommands(request: SuggestCommandsRequest): Promise<Result<SuggestCommandsResponse>>;
   forgetCommand(request: ForgetCommandRequest): Promise<Result<ForgetCommandResponse>>;
+  /** SST-041 ticket 03: Settings › AI Agent (provider availability is detected in main). */
+  agentSettings(request: AgentSettingsRequest): Promise<Result<AgentSettingsView>>;
+  configureAgent(request: ConfigureAgentRequest): Promise<Result<ConfigureAgentResponse>>;
+  agentState(request: AgentStateRequest): Promise<Result<AgentState>>;
+  onAgentState(callback: (state: AgentState) => void): () => void;
+  openAgent(request: OpenAgentRequest): Promise<Result<OpenAgentResponse>>;
+  /** Ends the conversation: CLI processes stop, credentials are revoked and the conversation is dropped. */
+  closeAgent(request: AgentConversationRequest): Promise<Result<TerminalActionResponse>>;
+  sendAgent(request: SendAgentRequest): Promise<Result<SendAgentResponse>>;
+  cancelAgentTask(request: CancelAgentTaskRequest): Promise<Result<CancelAgentTaskResponse>>;
   ping(
     request: PingRequest,
   ): Promise<Result<{ requestId: string; ready: true }>>;
@@ -289,6 +305,14 @@ export const channels = Object.freeze({
   exportRecording: "ssterm:export-recording",
   suggestCommands: "ssterm:suggest-commands",
   forgetCommand: "ssterm:forget-command",
+  agentSettings: "ssterm:agent-settings",
+  configureAgent: "ssterm:configure-agent",
+  agentState: "ssterm:agent-state",
+  agentStateChanged: "ssterm:agent-state-changed",
+  openAgent: "ssterm:open-agent",
+  closeAgent: "ssterm:close-agent",
+  sendAgent: "ssterm:send-agent",
+  cancelAgentTask: "ssterm:cancel-agent-task",
 });
 
 const messages: Record<ErrorCode, string> = {
