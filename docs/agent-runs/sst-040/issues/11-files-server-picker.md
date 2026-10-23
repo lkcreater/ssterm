@@ -4,7 +4,7 @@
 
 **Blocked by:** 09 — Shell v2
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Picker lists catalog hosts and calls the existing SFTP open; header shows the remote target and connection status
 - [ ] Choosing another server closes the previous SFTP session through the existing close/confirmation path; a live transfer is never dropped silently

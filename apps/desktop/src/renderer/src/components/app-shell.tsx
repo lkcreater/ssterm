@@ -350,7 +350,10 @@ export function AppShell() {
     setPage("team");
   }
 
-  /** One remote browser per window: another host replaces the current one (browse-only, no prompt). */
+  /**
+   * One remote browser per window: another host replaces the current one, after a confirmation on Files when that
+   * would stop pending transfers or remote edits (the same path as the Files server picker).
+   */
   const openSftp = (hostId: string) => {
     setPage("files");
     void sftp.open(hostId);

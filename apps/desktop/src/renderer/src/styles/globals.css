@@ -398,12 +398,15 @@
 /* Every row here is taken from the panes: tighter spacing, and on a narrow window the secondary actions keep
    their icons while their text stays the accessible name (and the title). */
 .terminals-header {
-  container-type: inline-size;
   gap: 8px;
   padding: 12px 16px 8px;
 }
+.terminals-header,
+.files-header {
+  container-type: inline-size;
+}
 @container (max-width: 760px) {
-  .terminals-header .page-action-text {
+  :is(.terminals-header, .files-header) .page-action-text {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -411,7 +414,7 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .terminals-header .page-header-actions [data-slot="button"]:has(.page-action-text) {
+  :is(.terminals-header, .files-header) .page-header-actions [data-slot="button"]:has(.page-action-text) {
     width: 32px;
     padding: 0;
   }

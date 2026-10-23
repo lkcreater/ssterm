@@ -1478,3 +1478,20 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
   - **Review:** APPROVED. Fixed both mediums (double-click dismissal, failed sessions shown as Disconnected) and lows L1–L6 and L8. L1: a tag change only rebases a draft taken at the same revision.
   - **Checks:** typecheck pass, unit 768/769 (1 known skip), build pass, full E2E 88/88 after the fixes.
   - **Loop paused after ticket 10 at the user's request** (“ทำถึง ticket 10 เสร็จแล้วหยุดก่อน”). Remaining: 11, 12, 13, 14, 15.
+- **Loop resumed (2026-10-23, user: “ทำ ticket ถัดไป จนถึง ticket 15”):** 11, 12, 13, 14, 15 in that order, same loop. PROD colour stays amber unless the user decides otherwise.
+- **SST-040/11 done (2026-10-23):**
+  - **Picker:** the Files header has a server picker (Base UI Select) that calls the existing `sftp.open` and shows the remote target and status.
+  - **Bug fixed:** switching SFTP servers from any of the three entry points used to stop live transfers and end remote edits silently. `useSftp.open` now reads pending work from main first. If any exists, it asks in an alert drawer that uses main's close/quit wording.
+  - **Counting rules:**
+    - Edits follow main's `pendingCount`.
+    - When remote editing is disabled in main, edits count as zero.
+    - If the read fails, the switch is refused with an accurate message.
+    - The drawer closes on lock or when its session ends.
+    - Stale requests from a different owner or generation are dropped.
+    - The millisecond race between the read and the connect is documented.
+  - **Removed:** the empty-state server combobox with search; typeahead remains.
+  - **Review:** APPROVED. Mediums M1 and M2 and lows L1–L5 fixed. New E2E covers the remote-edit branch and closing the drawer on lock.
+  - **Checks:**
+    - typecheck pass, unit 768/769 (1 known skip).
+    - Full E2E 89/89 before the review fixes; after them, the focused specs pass.
+    - A transfers.spec hang is open. It timed out once at 420 s and leaked a fixture container. It hung in this ticket's rerun, and before that once during ticket 02. It passed 3/3 alone, and the cause is unknown. Look at it in ticket 15.

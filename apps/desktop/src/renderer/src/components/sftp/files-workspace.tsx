@@ -3,16 +3,11 @@ import { PageHeader } from "@/components/page-header";
 import { ArrowDownToLineIcon, ArrowUpFromLineIcon, CircleIcon, FilePenLineIcon, LaptopIcon, RotateCcwIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
 import type { CatalogState, Owner, SftpSessionView } from "@ssterm/contracts";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@/components/ui/combobox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Drawer, firstUsable, useDrawerClose } from "@/components/drawer";
+import { ConnectionStatus, useAwaitingTrust, type ConnectionState } from "@/components/connection/connection-status";
+import { EnvironmentBadge } from "@/components/connection/host-identity";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Spinner } from "@/components/ui/spinner";
@@ -20,11 +15,12 @@ import { SessionHeader } from "@/components/workspace/live-terminal";
 import { FilePane, type FilePaneHandle } from "@/components/sftp/file-pane";
 import { TransferQueue } from "@/components/sftp/transfer-queue";
 import { RemoteEdits } from "@/components/sftp/remote-edits";
-import type { SftpController } from "@/hooks/use-sftp";
+import type { SftpController, SftpSwitch } from "@/hooks/use-sftp";
 import { useTransfers } from "@/hooks/use-transfers";
 import { useRemoteEdit } from "@/hooks/use-remote-edit";
 import { joinPath, parentPath } from "@/lib/file-browser";
 import { endpointText } from "@/lib/catalog-filter";
+import { terminalIdentity } from "@/lib/terminal-target";
 import { lifecycleFailure, terminalOutcome, type LifecycleAction } from "@/lib/terminal-outcome";
 
 const LOCAL = { kind: "local" } as const;
@@ -126,8 +122,7 @@ export function FilesWorkspace({
     }
     void transfers.enqueue({ owner, source: from.source, sourceDirectory: from.path, names: [...from.names], destination: to.source, destinationDirectory: to.path });
   };
-  // After the pane's Close, focus lands on the server picker that replaces it.
-  const [pickerFocus, setPickerFocus] = useState(false);
+  const picker = useRef<HTMLButtonElement>(null);
   return (
     <div
       ref={root}
@@ -143,14 +138,22 @@ export function FilesWorkspace({
         subtitle="Browse this Mac and one server over SFTP; transfers keep the folders they were started with."
         actions={
           <>
-        <Button size="sm" variant="outline" disabled={session?.phase !== "ready" || transfers.pending.has("enqueue")} onClick={() => transfer("upload")}>
-          <ArrowUpFromLineIcon data-icon="inline-start" aria-hidden="true" />Upload selected files
+        <ServerPicker
+          ref={picker}
+          state={catalog}
+          session={session}
+          pending={sftp.pending}
+          failed={!!sftp.failure}
+          onOpen={(hostId) => void sftp.open(hostId)}
+        />
+        <Button size="sm" variant="outline" title="Upload selected files" disabled={session?.phase !== "ready" || transfers.pending.has("enqueue")} onClick={() => transfer("upload")}>
+          <ArrowUpFromLineIcon data-icon="inline-start" aria-hidden="true" /><span className="page-action-text">Upload selected files</span>
         </Button>
-        <Button size="sm" variant="outline" disabled={session?.phase !== "ready" || transfers.pending.has("enqueue")} onClick={() => transfer("download")}>
-          <ArrowDownToLineIcon data-icon="inline-start" aria-hidden="true" />Download selected files
+        <Button size="sm" variant="outline" title="Download selected files" disabled={session?.phase !== "ready" || transfers.pending.has("enqueue")} onClick={() => transfer("download")}>
+          <ArrowDownToLineIcon data-icon="inline-start" aria-hidden="true" /><span className="page-action-text">Download selected files</span>
         </Button>
-        <Button ref={editButton} size="sm" variant="outline" disabled={session?.phase !== "ready" || edits.pending.has("start")} onClick={startEdit}>
-          <FilePenLineIcon data-icon="inline-start" aria-hidden="true" />Edit remote file
+        <Button ref={editButton} size="sm" variant="outline" title="Edit remote file" disabled={session?.phase !== "ready" || edits.pending.has("start")} onClick={startEdit}>
+          <FilePenLineIcon data-icon="inline-start" aria-hidden="true" /><span className="page-action-text">Edit remote file</span>
         </Button>
           </>
         }
@@ -176,7 +179,8 @@ export function FilesWorkspace({
               active={!hidden}
               handle={attachRemote}
               onDismissed={() => {
-                setPickerFocus(true);
+                // Focus lands on the server picker, which opens the next server.
+                picker.current?.focus();
                 sftp.forget();
               }}
             />
@@ -200,11 +204,10 @@ export function FilesWorkspace({
                       </EmptyMedia>
                       <EmptyTitle>Browse a server</EmptyTitle>
                       <EmptyDescription>
-                        Choose a saved server. Its files open here with the identity it is saved with.
+                        Choose a saved server above. Its files open here with the identity it is saved with.
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent>
-                      <ServerPicker state={catalog} autoFocus={pickerFocus} onOpen={(hostId) => void sftp.open(hostId)} />
                       {sftp.failure ? (
                         <Alert variant="destructive">
                           <TriangleAlertIcon aria-hidden="true" />
@@ -222,64 +225,188 @@ export function FilesWorkspace({
       </ResizablePanelGroup>
       <TransferQueue transfers={transfers} />
       <RemoteEdits edits={edits} fallbackFocus={editButton} />
+      {sftp.switching ? (
+        <SwitchConfirm
+          key={sftp.switching.serial}
+          request={sftp.switching}
+          catalog={catalog}
+          sessions={sftp.sessions}
+          onConfirm={() => void sftp.open(sftp.switching!.hostId, true)}
+          onClose={() => sftp.endSwitch(sftp.switching!.serial)}
+          returnFocus={() => firstUsable(picker.current)}
+        />
+      ) : null}
     </div>
   );
 }
 
+const phaseStates = { ready: "connected", connecting: "connecting", failed: "error", closed: "disconnected" } as const;
+const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
+
+/**
+ * The Files header picker (SST-040/11): the current remote target and its state, and every saved server. Choosing one
+ * goes through the same `sftp.open` as Servers → Open files; choosing the current one changes nothing.
+ */
 function ServerPicker({
+  ref,
   state,
-  autoFocus,
+  session,
+  pending,
+  failed,
   onOpen,
 }: {
+  ref: Ref<HTMLButtonElement>;
   state: CatalogState | undefined;
-  autoFocus: boolean;
+  session: SftpSessionView | undefined;
+  pending: boolean;
+  failed: boolean;
   onOpen(hostId: string): void;
 }) {
-  const hosts = useMemo(() => new Map((state?.hosts ?? []).map((host) => [host.id, host])), [state?.hosts]);
+  const awaiting = useAwaitingTrust();
   const identities = useMemo(() => new Map((state?.identities ?? []).map((row) => [row.id, row])), [state?.identities]);
-  const ids = useMemo(() => [...hosts.keys()], [hosts]);
+  const hosts = state?.hosts ?? [];
   const ready = state?.availability === "ready";
+  const status: ConnectionState | undefined = session
+    ? session.phase === "connecting" && awaiting(session) ? "awaiting-trust" : phaseStates[session.phase]
+    : pending ? "connecting" : failed ? "error" : undefined;
   return (
-    <div className="flex w-full max-w-72 flex-col gap-1" data-files-picker>
-      <Combobox
-        items={ids}
-        value={null}
-        disabled={!ready || ids.length === 0}
-        itemToStringLabel={(id: string) => hosts.get(id)?.label ?? ""}
+    <div className="files-picker flex min-w-0 max-w-full items-center gap-2" data-files-picker>
+      <Select
+        // Only a live session is "current": choosing an ended session's server opens it again, as Open files does.
+        value={session?.phase === "ready" || session?.phase === "connecting" ? session.hostId : null}
+        disabled={!ready || hosts.length === 0}
         onValueChange={(id: string | null) => {
           if (id) onOpen(id);
         }}
       >
-        <ComboboxInput autoFocus={autoFocus} aria-label="Server to browse" placeholder={ids.length ? "Choose a server" : "No saved servers"} />
-        <ComboboxContent>
-          <ComboboxEmpty>No servers match.</ComboboxEmpty>
-          <ComboboxList>
-            {(id: string) => {
-              const host = hosts.get(id)!;
-              // Same rule as Connect: a server opens only with a chosen identity.
-              const usable = host.effective.authSelection === "identity";
-              const identity = host.effective.identityId ? identities.get(host.effective.identityId) : undefined;
-              return (
-                <ComboboxItem key={id} value={id} disabled={!usable} data-host-id={id}>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate">{host.label}</span>
-                      {host.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
-                    </span>
-                    <span className="type-caption truncate text-muted-foreground">
-                      {usable
-                        ? endpointText(host.address, host.effective.port, identity?.username)
-                        : "Choose an identity to connect"}
-                    </span>
+        <SelectTrigger ref={ref} size="sm" aria-label="Server to browse" className="w-60 max-w-full min-w-0">
+          <ServerIcon aria-hidden="true" />
+          <SelectValue className="min-w-0 truncate">
+            {() =>
+              session ? (
+                <span className="truncate">{session.target?.label ?? "Unknown target"}</span>
+              ) : (
+                <span className="truncate text-muted-foreground">
+                  {!ready ? "Saved servers are unavailable" : hosts.length ? "Choose a server" : "No saved servers"}
+                </span>
+              )
+            }
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent align="end" alignItemWithTrigger={false} className="w-80 max-w-[calc(100vw-2rem)]">
+          {hosts.map((host) => {
+            // Same rule and reason as Connect: a server opens only with a chosen identity.
+            const usable = host.effective.authSelection === "identity";
+            const identity = host.effective.identityId ? identities.get(host.effective.identityId) : undefined;
+            return (
+              <SelectItem key={host.id} value={host.id} label={host.label} disabled={!usable} data-host-id={host.id} className="*:min-w-0! *:shrink!">
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">{host.label}</span>
+                    <EnvironmentBadge environment={host.environment} />
                   </span>
-                </ComboboxItem>
-              );
-            }}
-          </ComboboxList>
-        </ComboboxContent>
-      </Combobox>
-      {!ready ? <p className="type-caption text-muted-foreground">Saved servers are unavailable right now.</p> : null}
+                  <span className="type-caption truncate text-muted-foreground">
+                    {usable ? endpointText(host.address, host.effective.port, identity?.username) : "Choose an identity to connect."}
+                  </span>
+                </span>
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      {status ? <ConnectionStatus state={status} announce /> : null}
     </div>
+  );
+}
+
+/**
+ * Switching servers would stop pending transfers or end remote edits on the session it closes: a confirmation-only
+ * drawer, Cancel focused (Enter, Esc and × keep everything). Mounted per request (keyed by its serial).
+ */
+function SwitchConfirm({
+  request,
+  catalog,
+  sessions,
+  onConfirm,
+  onClose,
+  returnFocus,
+}: {
+  request: SftpSwitch;
+  catalog: CatalogState | undefined;
+  sessions: readonly SftpSessionView[];
+  onConfirm(): void;
+  onClose(): void;
+  returnFocus(): HTMLElement | true;
+}) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  const confirmed = useRef(false);
+  const close = useDrawerClose();
+  const { discard } = close;
+  // A lock (or the session ending) has already stopped what this asks about: close without acting.
+  const [epoch] = useState(catalog?.lockEpoch);
+  const current = request.from && sessions.find((row) => row.sessionId === request.from!.sessionId);
+  const valid =
+    (catalog?.lockEpoch ?? epoch) === epoch &&
+    (!request.from || current?.phase === "ready" || current?.phase === "connecting");
+  useEffect(() => {
+    if (!valid && !confirmed.current) discard();
+  }, [valid, discard]);
+  const from = request.from ? terminalIdentity(request.from) : undefined;
+  const to = catalog?.hosts.find((host) => host.id === request.hostId)?.label ?? "the other server";
+  return (
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      finalFocus={returnFocus}
+      data-testid="sftp-switch-dialog"
+      title={<span className="min-w-0 break-words">{`Close ${from?.label ?? "the current server"} and open ${to}?`}</span>}
+      target={
+        from?.endpoint ? (
+          <>
+            <span className="min-w-0 font-mono text-sm break-all">{from.endpoint}</span>
+            <EnvironmentBadge environment={request.from?.target?.environment} />
+          </>
+        ) : null
+      }
+      description="Files shows one server at a time. Opening another closes this SFTP session now; nothing stopped here is retried later."
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" onClick={close.request}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={!close.open || !valid}
+            onClick={() => {
+              if (confirmed.current || !valid) return;
+              confirmed.current = true;
+              onConfirm();
+              close.discard();
+            }}
+          >
+            Close and switch
+          </Button>
+        </>
+      }
+    >
+      <ul className="grid list-disc gap-2 pl-5" aria-label="Work that will stop">
+        {request.transfers ? (
+          <li>
+            {plural(request.transfers, "pending transfer")} will be cancelled. Temporary files are retained at the paths
+            shown in Transfers.
+          </li>
+        ) : null}
+        {request.edits ? (
+          <li>
+            {plural(request.edits, "remote edit")} will be discarded. ssterm will attempt cleanup of private working files;
+            your editor may retain its own copies.
+          </li>
+        ) : null}
+        {request.publishing ? <li>A publication already in progress may finish; check the remote file.</li> : null}
+      </ul>
+    </Drawer>
   );
 }
 

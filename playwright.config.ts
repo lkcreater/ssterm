@@ -95,6 +95,7 @@ export default defineConfig({
             "settings.spec.ts",
             "sftp.spec.ts",
             "sftp-browser.spec.ts",
+            "files-picker.spec.ts",
             "transfers.spec.ts",
             "transfer-conflicts.spec.ts",
             "remote-edit.spec.ts",
