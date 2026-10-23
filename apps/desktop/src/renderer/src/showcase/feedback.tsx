@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   InfoIcon,
   MoreHorizontalIcon,
@@ -49,7 +49,83 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
+import { ConnectionStatus } from "@/components/connection/connection-status";
+import { EnvironmentBadge } from "@/components/connection/host-identity";
 import { Section, Example } from "./section";
+
+/** Alert drawer specimen (pattern 42): a confirmation step, Cancel focused, no dismissal by the scrim. */
+function ConfirmDrawerFixture({ onClose }: { onClose(): void }) {
+  const close = useDrawerClose();
+  const cancel = useRef<HTMLButtonElement>(null);
+  return (
+    <Drawer
+      close={close}
+      onClose={onClose}
+      alert
+      initialFocus={cancel}
+      title="Delete fixture rule?"
+      target={<span className="min-w-0 break-all type-code">127.0.0.1:15432 → db.lab.ssterm.invalid:5432</span>}
+      description="Nothing is deleted: this specimen only shows the destructive confirmation step."
+      footer={
+        <>
+          <Button ref={cancel} variant="outline" onClick={close.request}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={() => close.discard()}>
+            Delete fixture rule
+          </Button>
+        </>
+      }
+    >
+      <p className="text-muted-foreground">A running tunnel would stop first. Copies elsewhere are not affected.</p>
+    </Drawer>
+  );
+}
+
+/** v2 table states (SST-040/15): the framed table, its empty, loading and failure states, fixture data only. */
+function TableStates() {
+  return (
+    <div className="grid gap-3">
+      <div className="data-frame">
+        <table className="data-table" aria-label="Fixture servers">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col" className="w-[30%]">Address</th>
+              <th scope="col" className="w-24">Environment</th>
+              <th scope="col" className="w-36">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {([["ฐานข้อมูลหลัก ระบบการเงิน", "ops@db.lab.ssterm.invalid:22", "PROD", "connected"],
+              ["Staging web", "deploy@10.0.0.12:22", "STAGING", "connecting"],
+              ["Dev box", "dev@dev.lab.ssterm.invalid:22", "DEV", "error"]] as const).map(([name, address, environment, state]) => (
+              <tr key={name}>
+                <td><span className="block truncate font-medium" title={name}>{name}</span></td>
+                <td><span className="host-target block truncate" title={address}>{address}</span></td>
+                <td><EnvironmentBadge environment={environment} /></td>
+                <td><ConnectionStatus state={state} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="data-frame">
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><Spinner aria-hidden="true" /></EmptyMedia>
+            <EmptyTitle>Loading fixture rules…</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      </div>
+      <Alert variant="destructive">
+        <TriangleAlertIcon aria-hidden="true" />
+        <AlertTitle>Fixture rules could not be read</AlertTitle>
+        <AlertDescription>Nothing was changed; open the page again to retry.</AlertDescription>
+      </Alert>
+    </div>
+  );
+}
 
 /** Right-edge drawer specimen: the shipping primitive, fixture-only; focus returns to the opener. */
 function HostDrawerFixture({ onClose }: { onClose(): void }) {
@@ -107,6 +183,7 @@ function HostDrawerFixture({ onClose }: { onClose(): void }) {
 export function Feedback() {
   // The open drawer's key (0 = closed): each open is a fresh instance, even during the exit motion.
   const [open, setOpen] = useState(0);
+  const [confirming, setConfirming] = useState(0);
   return (
     <Section
       id="feedback"
@@ -168,6 +245,15 @@ export function Feedback() {
         {open ? (
           <HostDrawerFixture key={open} onClose={() => setOpen(0)} />
         ) : null}
+        <Button variant="outline" onClick={() => setConfirming((serial) => serial + 1)}>
+          Open confirmation drawer fixture
+        </Button>
+        {confirming ? (
+          <ConfirmDrawerFixture key={confirming} onClose={() => setConfirming(0)} />
+        ) : null}
+      </Example>
+      <Example title="Table states · empty, loading, failure">
+        <TableStates />
       </Example>
       <div className="showcase-grid">
         <Example title="Menu & context menu">

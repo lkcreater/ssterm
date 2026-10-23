@@ -12,6 +12,7 @@ import type {
 } from "../../packages/contracts/src/team";
 import { TeamServer } from "../../apps/sync-server/src/team-server";
 import { test, expect, launchDesktop, type Desktop } from "./fixtures";
+import { expectDrawerPlaced } from "./support/drawer";
 test.use({ trace: "off", screenshot: "off", video: "off" });
 async function command(
   page: Page,
@@ -134,6 +135,7 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
     await expect(
       hostDrawer.getByLabel("Team host label", { exact: true }),
     ).toHaveValue(label);
+    await expectDrawerPlaced(desktop.page, "team-host");
     await desktop.page.keyboard.press("Escape");
     await expect(hostDrawer).toHaveCount(0);
     await ownerHosts
@@ -147,6 +149,7 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
     await expect(
       passwordDrawer.getByRole("button", { name: "Encrypt and share password" }),
     ).toBeDisabled();
+    await expectDrawerPlaced(desktop.page, "team-password");
     await passwordDrawer.getByRole("button", { name: "Cancel" }).click();
     await expect(passwordDrawer).toHaveCount(0);
     await ownerHosts
@@ -157,6 +160,7 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
     await expect(
       confirmDelete.getByRole("button", { name: "Cancel" }),
     ).toBeFocused();
+    await expectDrawerPlaced(desktop.page, "team-confirm");
     await confirmDelete.getByRole("button", { name: "Cancel" }).click();
     await expect(confirmDelete).toHaveCount(0);
     expect((await state(desktop.page)).hosts.map((host) => host.label)).toEqual([
@@ -463,11 +467,21 @@ test("team human roles enforce production IPC, encrypted stores, managed SSH and
     await memberDrawer.getByRole("button", { name: "Revoke member", exact: true }).click();
     await expect(memberDrawer.getByTestId("team-member-confirm")).toBeVisible();
     await expect(memberDrawer.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await expectDrawerPlaced(desktop.page, "team-member");
     await desktop.page.keyboard.press("Escape");
     await expect(memberDrawer.getByTestId("team-member-confirm")).toHaveCount(0);
     await expect(memberDrawer.getByRole("button", { name: "Revoke member", exact: true })).toBeVisible();
     await desktop.page.keyboard.press("Escape");
     await expect(memberDrawer).toHaveCount(0);
+    // SST-040/15: the invite and device-enrollment drawers open from the page; nothing typed, so Esc closes them.
+    for (const [opener, testId] of [["Invite member", "team-invite-drawer"], ["Open device enrollment", "team-enrollment-drawer"]] as const) {
+      await ownerPage.getByRole("button", { name: opener, exact: true }).click();
+      const drawer = desktop.page.getByTestId(testId);
+      await expect(drawer).toBeVisible();
+      await expectDrawerPlaced(desktop.page, testId);
+      await desktop.page.keyboard.press("Escape");
+      await expect(drawer).toHaveCount(0);
+    }
     expect((await state(desktop.page)).members.filter((member) => member.status === "active")).toHaveLength(3);
   } finally {
     for (const p of profiles.reverse()) await p.close();

@@ -87,7 +87,11 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
         sent anywhere. Exports are plaintext files outside ssterm's control.
       </p>
       {unavailable ? (
-        <Alert variant="destructive"><CircleAlertIcon /><AlertDescription>Recordings are unavailable right now.</AlertDescription></Alert>
+        <Alert variant="destructive">
+          <CircleAlertIcon />
+          <AlertTitle>Recordings could not be read</AlertTitle>
+          <AlertDescription>The recordings list is unavailable right now. Open this page again to retry.</AlertDescription>
+        </Alert>
       ) : state?.problem ? (
         <Alert>
           <TriangleAlertIcon />
@@ -100,25 +104,47 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
       {notice ? (
         <Alert variant={notice.tone === "error" ? "destructive" : "default"} role="status"><AlertDescription>{notice.text}</AlertDescription></Alert>
       ) : null}
-      {logs.length === 0 ? (
+      {!state && !unavailable ? (
         <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><Spinner aria-hidden="true" /></EmptyMedia>
+            <EmptyTitle role="status">Loading recordings…</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : !state ? null : logs.length === 0 ? (
+        <Empty className="flex-none">
           <EmptyHeader>
             <EmptyMedia variant="icon"><FileClockIcon /></EmptyMedia>
             <EmptyTitle>No session logs</EmptyTitle>
             <EmptyDescription>
-              {state?.policy.logs ? "New terminals are recorded; their logs appear here when they start." : "Session output is not recorded. Turn it on in Settings › Recording."}
+              {state.policy.logs ? "New terminals are recorded; their logs appear here when they start." : "Session output is not recorded. Turn it on in Settings › Recording."}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
-        <ul className="tunnel-list shrink-0" aria-label="Session logs">
-          {logs.map((log) => <LogRow key={log.id} log={log} busy={busy === log.id} onExport={() => void save({ kind: "log", id: log.id }, log.id)}
-            onDelete={() => setConfirm({ target: { kind: "log", id: log.id }, title: `Delete the log of ${log.label}?`,
-              description: log.state === "recording" ? "Recording stops now and the log is deleted from this Mac." : "The log is deleted from this Mac." })} />)}
-          {state && state.logCount > logs.length ? (
-            <li className="type-caption text-muted-foreground">Showing the newest {logs.length} of {state.logCount} logs.</li>
+        <div className="data-frame">
+          <table className="data-table" aria-label="Session logs">
+            <thead>
+              <tr>
+                <th scope="col" title="Session">Session</th>
+                <th scope="col" className="w-[22%]" title="Started">Started</th>
+                <th scope="col" className="w-24" title="Size">Size</th>
+                <th scope="col" className="w-32" title="State">State</th>
+                <th scope="col" className="w-40 data-actions-col">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log) => <LogRow key={log.id} log={log} busy={busy === log.id} onExport={() => void save({ kind: "log", id: log.id }, log.id)}
+                onDelete={() => setConfirm({ target: { kind: "log", id: log.id }, title: `Delete the log of ${log.label}?`,
+                  description: log.state === "recording" ? "Recording stops now and the log is deleted from this Mac." : "The log is deleted from this Mac." })} />)}
+            </tbody>
+          </table>
+          {state.logCount > logs.length ? (
+            <p className="type-caption border-t px-3 py-2 text-muted-foreground">Showing the newest {logs.length} of {state.logCount} logs.</p>
           ) : null}
-        </ul>
+        </div>
       )}
       <section className="recording-integration shrink-0" aria-labelledby="shell-integration-heading">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -144,7 +170,7 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
         </div>
         <table className="recording-matrix">
           <caption className="sr-only">Supported shells</caption>
-          <thead><tr><th scope="col">Shell</th><th scope="col">Where</th><th scope="col">Status</th></tr></thead>
+          <thead><tr><th scope="col" title="Shell">Shell</th><th scope="col" title="Where">Where</th><th scope="col" title="Status">Status</th></tr></thead>
           <tbody>
             {SHELL_MATRIX.map((row) => <tr key={`${row.shell}-${row.where}`}><td>{row.shell}</td><td>{row.where}</td><td>{row.status}</td></tr>)}
           </tbody>
@@ -164,33 +190,37 @@ export function RecordingsPage({ owner, onOpenSettings }: { owner: Owner; onOpen
 
 function LogRow({ log, busy, onExport, onDelete }: { log: RecordingSummary; busy: boolean; onExport(): void; onDelete(): void }) {
   return (
-    <li className="tunnel-row" data-recording-id={log.id} data-state={log.state}>
-      <div className="grid min-w-0 gap-1">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate font-medium" title={log.label}>{log.label}</span>
+    <tr data-recording-id={log.id} data-state={log.state}>
+      <td>
+        <span className="data-cell">
+          <span className="min-w-0 max-w-full truncate font-medium" title={log.label}>{log.label}</span>
           {log.local ? <Badge variant="secondary">LOCAL</Badge> : null}
           {log.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
-          {log.state === "recording" ? (
-            <Badge variant="recording"><CircleDotIcon data-icon="inline-start" />Recording</Badge>
-          ) : log.state === "incomplete" ? (
-            <Badge variant="warning"><TriangleAlertIcon data-icon="inline-start" />Incomplete</Badge>
-          ) : null}
         </span>
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
-          {log.endpoint ? <span className="host-target truncate">{log.endpoint}</span> : null}
-          <span>{when(log.startedAt)}</span>
-          <span>{bytes(log.bytes)}</span>
+        {log.endpoint ? <span className="host-target block truncate text-muted-foreground" title={log.endpoint}>{log.endpoint}</span> : null}
+      </td>
+      <td className="type-caption text-muted-foreground">{when(log.startedAt)}</td>
+      <td className="type-caption text-muted-foreground">{bytes(log.bytes)}</td>
+      <td>
+        {log.state === "recording" ? (
+          <Badge variant="recording"><CircleDotIcon data-icon="inline-start" />Recording</Badge>
+        ) : log.state === "incomplete" ? (
+          <Badge variant="warning"><TriangleAlertIcon data-icon="inline-start" />Incomplete</Badge>
+        ) : (
+          <span className="type-caption">Complete</span>
+        )}
+      </td>
+      <td>
+        <span className="data-actions">
+          <Button size="sm" variant="outline" disabled={busy} aria-label={`Export the log of ${log.label}`} title="Export…" onClick={onExport}>
+            {busy ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}<span className="data-action-text">Export…</span>
+          </Button>
+          <Button size="icon-sm" variant="ghost" aria-label={`Delete the log of ${log.label}`} title="Delete" onClick={onDelete}>
+            <Trash2Icon aria-hidden="true" />
+          </Button>
         </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <Button size="sm" variant="outline" disabled={busy} aria-label={`Export the log of ${log.label}`} onClick={onExport}>
-          {busy ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}Export…
-        </Button>
-        <Button size="icon-sm" variant="ghost" aria-label={`Delete the log of ${log.label}`} onClick={onDelete}>
-          <Trash2Icon aria-hidden="true" />
-        </Button>
-      </div>
-    </li>
+      </td>
+    </tr>
   );
 }
 

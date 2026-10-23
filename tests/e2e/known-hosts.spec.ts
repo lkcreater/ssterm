@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import type { Locator } from "@playwright/test";
 import { test, expect } from "./fixtures";
+import { expectDrawerPlaced } from "./support/drawer";
 
 test("verifies real SSH trust through dialogs, persistence, replacement and revoke", async ({
   desktop,
@@ -163,6 +164,7 @@ test("verifies real SSH trust through dialogs, persistence, replacement and revo
     await expect(dialog).toBeVisible();
     expect(await status()).toMatchObject({ knownHosts: [], decisions: [] });
     await shot("trust-unknown");
+    await expectDrawerPlaced(page, "host-trust-unknown");
     await measure(dialog, "unknown", [
       "Trust this server?",
       "ระบบทดสอบ กรุงเทพ",
@@ -292,6 +294,7 @@ test("verifies real SSH trust through dialogs, persistence, replacement and revo
       dialog.getByRole("button", { name: "Replace key", exact: true }),
     ).toBeInViewport();
     await shot("trust-changed-narrow");
+    await expectDrawerPlaced(page, "host-trust-changed");
     await measure(dialog, "changed", [
       "Server identity changed",
       "ระบบทดสอบ เปลี่ยนชื่อ",
@@ -332,9 +335,17 @@ test("verifies real SSH trust through dialogs, persistence, replacement and revo
     expect(latest.revision).toBe(replaced.revision);
     expect(latest.lastVerifiedAt >= replaced.lastVerifiedAt).toBe(true);
     const entry = page
-      .locator("article")
+      .getByTestId("known-hosts-workspace")
+      .getByRole("row")
       .filter({ hasText: latest.fingerprint });
     await expect(entry).toBeVisible();
+    // The full fingerprint is visible text (it wraps, never truncates), so anyone can verify it without a pointer.
+    const fingerprint = entry.getByTestId("known-host-fingerprint");
+    await expect(fingerprint).toHaveText(latest.fingerprint);
+    expect(await fingerprint.evaluate((node) => ({
+      wraps: getComputedStyle(node).textOverflow !== "ellipsis" && node.scrollWidth <= node.clientWidth && node.scrollHeight <= node.clientHeight,
+      inCell: (() => { const box = node.getBoundingClientRect(), cell = node.closest("td")!.getBoundingClientRect(); return box.right <= cell.right + 0.5 && box.bottom <= cell.bottom + 0.5; })(),
+    })), "the whole fingerprint is shown").toEqual({ wraps: true, inCell: true });
     await shot("trust-known-hosts-list");
     const revokeTrigger = entry.getByRole("button", {
       name: "Revoke trust",
@@ -352,6 +363,7 @@ test("verifies real SSH trust through dialogs, persistence, replacement and revo
       revoke.getByText(latest.fingerprint, { exact: true }),
     ).toBeVisible();
     await shot("trust-revoke-confirm");
+    await expectDrawerPlaced(page, "revoke-trust");
     await measure(revoke, "revoke", [
       "Revoke this host's trust?",
       "Key being revoked",

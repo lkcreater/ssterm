@@ -1,7 +1,6 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import {
-  ArrowRightIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleIcon,
@@ -195,75 +194,98 @@ export function TunnelsPage({
           ) : null}
         </Empty>
       ) : (
-        <ul className="tunnel-list" aria-label="Forwarding rules">
+        <div className="data-frame">
+          <table className="data-table" aria-label="Forwarding rules">
+            <thead>
+              <tr>
+                <th scope="col" title="Name">Name</th>
+                <th scope="col" className="w-[13%]" title="Server">Server</th>
+                <th scope="col" className="w-[13%]" title="Listen">Listen</th>
+                <th scope="col" className="w-[13%]" title="Destination">Destination</th>
+                <th scope="col" className="w-[19%]" title="Status">Status</th>
+                <th scope="col" className="w-44 data-actions-col">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
           {rules.map((rule) => {
             const host = hosts.get(rule.hostId);
             const status = statuses.get(rule.id);
             const phase = status?.phase;
             const listen = endpointText(rule.bindAddress, rule.bindPort === 0 ? (status?.remotePort ?? 0) : rule.bindPort);
             const destination = rule.destinationHost !== null && rule.destinationPort !== null ? endpointText(rule.destinationHost, rule.destinationPort) : "";
+            const listenText = rule.type === "remote" && rule.bindPort === 0 && status?.remotePort == null ? `${rule.bindAddress.includes(":") ? `[${rule.bindAddress}]` : rule.bindAddress}:assigned` : listen;
             return (
-              <li key={rule.id} className="tunnel-row" data-rule-id={rule.id} data-type={rule.type} data-phase={phase ?? "stopped"}>
-                <div className="grid min-w-0 gap-1">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 truncate font-medium" title={rule.label}>{rule.label}</span>
-                    <Badge variant="outline">{typeText[rule.type]}</Badge>
-                  </span>
-                  <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                    {rule.type === "remote" ? <span className="text-muted-foreground">Server</span> : null}
-                    <span className="host-target" title={rule.type === "remote" ? "Address the server listens on" : "Local address on this Mac"}>
-                      {rule.type === "remote" && rule.bindPort === 0 && status?.remotePort == null ? `${rule.bindAddress.includes(":") ? `[${rule.bindAddress}]` : rule.bindAddress}:assigned` : listen}
-                    </span>
-                    {rule.type === "dynamic" ? (
-                      <span className="text-muted-foreground">SOCKS5, destinations opened by the server</span>
-                    ) : (
-                      <>
-                        <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                        <span className="sr-only">forwards to</span>
-                        {rule.type === "remote" ? <span className="text-muted-foreground">this Mac</span> : null}
-                        <span className="host-target" title={rule.type === "remote" ? "Opened by this Mac" : "Opened by the server"}>{destination}</span>
-                      </>
-                    )}
-                    {rule.type === "remote" && (rule.bindAddress === "0.0.0.0" || rule.bindAddress === "::") ? (
-                      <Badge variant="outline" className="text-connection-connecting" title="The server listens on every address only if its GatewayPorts setting allows it">
-                        <TriangleAlertIcon data-icon="inline-start" />Public requested
-                      </Badge>
-                    ) : null}
-                    <span className="text-muted-foreground">via</span>
-                    <span className="min-w-0 truncate" title={host?.label}>{host?.label ?? "Missing server"}</span>
+              <tr key={rule.id} data-rule-id={rule.id} data-type={rule.type} data-phase={phase ?? "stopped"}>
+                <td>
+                  <span className="block truncate font-medium" title={rule.label}>{rule.label}</span>
+                  <Badge variant="outline" className="mt-1">{typeText[rule.type]}</Badge>
+                </td>
+                <td>
+                  <span className="data-cell">
+                    <span className="min-w-0 max-w-full truncate" title={host?.label}>{host?.label ?? "Missing server"}</span>
                     {host?.environment === "PROD" ? <Badge variant="production">PROD</Badge> : null}
                   </span>
+                </td>
+                <td>
+                  <span className="host-target block truncate" title={rule.type === "remote" ? `Address the server listens on: ${listenText}` : `Local address on this Mac: ${listenText}`}>
+                    {listenText}
+                  </span>
+                  <span className="type-caption text-muted-foreground">{rule.type === "remote" ? "on the server" : "on this Mac"}</span>
+                  {rule.type === "remote" && (rule.bindAddress === "0.0.0.0" || rule.bindAddress === "::") ? (
+                    <Badge variant="outline" className="mt-1 text-connection-connecting" title="The server listens on every address only if its GatewayPorts setting allows it">
+                      <TriangleAlertIcon data-icon="inline-start" />Public requested
+                    </Badge>
+                  ) : null}
+                </td>
+                <td>
+                  {rule.type === "dynamic" ? (
+                    <span className="type-caption">SOCKS5, destinations opened by the server</span>
+                  ) : (
+                    <>
+                      <span className="sr-only">forwards to</span>
+                      <span className="host-target block truncate" title={rule.type === "remote" ? `Opened by this Mac: ${destination}` : `Opened by the server: ${destination}`}>{destination}</span>
+                      <span className="type-caption text-muted-foreground">{rule.type === "remote" ? "opened by this Mac" : "opened by the server"}</span>
+                    </>
+                  )}
+                </td>
+                <td>
                   <TunnelStatusView status={status} />
                   {phase === "failed" && status?.error ? (
-                    <span className="tunnel-error" role="note">{tunnelErrorText[status.error]}</span>
+                    <span className="tunnel-error block" role="note">{tunnelErrorText[status.error]}</span>
                   ) : null}
-                  {notice?.ruleId === rule.id && phase !== "failed" ? <span className="tunnel-error" role="status">{notice.text}</span> : null}
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-1">
+                  {notice?.ruleId === rule.id && phase !== "failed" ? <span className="tunnel-error block" role="status">{notice.text}</span> : null}
+                </td>
+                <td>
+                <span className="data-actions">
                   {phase === "starting" || phase === "running" ? (
-                    <Button size="sm" variant="outline" disabled={busy.has(rule.id)} aria-label={`Stop ${rule.label}`} onClick={() => void stop(rule)}>
-                      {busy.has(rule.id) ? <Spinner data-icon="inline-start" /> : <SquareIcon data-icon="inline-start" />}Stop
+                    <Button size="sm" variant="outline" disabled={busy.has(rule.id)} aria-label={`Stop ${rule.label}`} title="Stop" onClick={() => void stop(rule)}>
+                      {busy.has(rule.id) ? <Spinner data-icon="inline-start" /> : <SquareIcon data-icon="inline-start" />}<span className="data-action-text">Stop</span>
                     </Button>
                   ) : phase === "stopping" ? (
-                    <Button size="sm" variant="outline" disabled>
-                      <Spinner data-icon="inline-start" />Stopping
+                    <Button size="sm" variant="outline" disabled title="Stopping">
+                      <Spinner data-icon="inline-start" /><span className="data-action-text">Stopping</span>
                     </Button>
                   ) : (
-                    <Button size="sm" disabled={busy.has(rule.id) || !host} aria-label={`Start ${rule.label}`} onClick={() => void start(rule)}>
-                      {busy.has(rule.id) ? <Spinner data-icon="inline-start" /> : <PlayIcon data-icon="inline-start" />}Start
+                    <Button size="sm" disabled={busy.has(rule.id) || !host} aria-label={`Start ${rule.label}`} title="Start" onClick={() => void start(rule)}>
+                      {busy.has(rule.id) ? <Spinner data-icon="inline-start" /> : <PlayIcon data-icon="inline-start" />}<span className="data-action-text">Start</span>
                     </Button>
                   )}
-                  <Button size="icon-sm" variant="ghost" aria-label={`Edit ${rule.label}`} onClick={() => setDialog({ kind: "edit", id: rule.id })}>
+                  <Button size="icon-sm" variant="ghost" aria-label={`Edit ${rule.label}`} title="Edit" onClick={() => setDialog({ kind: "edit", id: rule.id })}>
                     <PencilIcon aria-hidden="true" />
                   </Button>
-                  <Button size="icon-sm" variant="ghost" aria-label={`Delete ${rule.label}`} onClick={() => setDialog({ kind: "delete", rule })}>
+                  <Button size="icon-sm" variant="ghost" aria-label={`Delete ${rule.label}`} title="Delete" onClick={() => setDialog({ kind: "delete", rule })}>
                     <Trash2Icon aria-hidden="true" />
                   </Button>
-                </div>
-              </li>
+                </span>
+                </td>
+              </tr>
             );
           })}
-        </ul>
+            </tbody>
+          </table>
+        </div>
       )}
       {/* A rule deleted elsewhere closes its editor instead of turning it into "new". */}
       {editing && (!editing.id || editingRule) ? (

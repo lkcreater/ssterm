@@ -132,6 +132,17 @@ test("keeps drawer keyboard focus contained and restores its trigger", async ({
   await expect(
     page.getByRole("button", { name: "Review conflict fixture", exact: true }),
   ).toBeFocused();
+  // SST-040/15: the confirmation specimen is an alert drawer with Cancel focused; the v2 table states render.
+  const confirmTrigger = page.getByRole("button", { name: "Open confirmation drawer fixture", exact: true });
+  await confirmTrigger.click();
+  const confirm = page.getByRole("alertdialog", { name: "Delete fixture rule?" });
+  await expect(confirm).toHaveAttribute("data-slot", "drawer");
+  await expect(confirm.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(confirm).not.toBeVisible();
+  await expect(confirmTrigger).toBeFocused();
+  await expect(page.getByRole("table", { name: "Fixture servers" }).getByRole("row")).toHaveCount(4);
+  await expect(page.getByText("Loading fixture rules…", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

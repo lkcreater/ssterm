@@ -469,13 +469,6 @@
   overflow: auto;
   padding: 16px 20px;
 }
-.catalog-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-}
 /* Servers table (SST-040/10): fixed layout, so a long name, address or identity truncates (full text in its title)
    instead of widening the table. The frame scrolls; the header row and the summary below stay in view. */
 .servers-frame {
@@ -488,13 +481,14 @@
   background: var(--card);
   container-type: inline-size;
 }
-.servers-table {
+.servers-table,
+.data-table {
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
 }
-.servers-table th {
+:is(.servers-table, .data-table) th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -509,21 +503,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.servers-table th:first-child,
-.servers-table td:first-child {
+:is(.servers-table, .data-table) :is(th, td):first-child {
   padding-left: 12px;
 }
-.servers-table td {
+:is(.servers-table, .data-table) td {
   height: 48px;
   padding: 0 8px;
   overflow: hidden;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
-.servers-table tbody tr:last-child td {
+:is(.servers-table, .data-table) tbody tr:last-child td {
   border-bottom: 0;
 }
-.servers-table tbody tr:hover td {
+:is(.servers-table, .data-table) tbody tr:hover td {
   background: var(--muted);
 }
 /* The current row: a persistent fill plus a left bar; keyboard focus stays the ring on its name. */
@@ -535,6 +528,76 @@
 }
 .servers-identity {
   width: 16%;
+}
+/* v2 tables on the other pages (SST-040/15): the Servers look in a frame that sizes to its rows. Identifiers truncate
+   (full text in their title); descriptive cells wrap, so nothing widens the table at 960 px or with larger text. */
+.data-frame {
+  flex: none;
+  min-width: 0;
+  /* A long table scrolls inside its frame under the sticky header row; the page keeps its header in view. */
+  max-height: max(16rem, calc(100vh - 14rem));
+  overflow: auto;
+  container-type: inline-size;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+.data-table td {
+  padding-block: 8px;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.data-table caption {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  text-align: left;
+}
+.data-cell {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+/* Narrow frame (a 960 px window with larger text): row actions keep their icons, their text stays the accessible
+   name, and the actions column wraps two buttons per line. */
+@container (max-width: 640px) {
+  .data-action-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .data-table [data-slot="button"]:has(.data-action-text) {
+    width: 32px;
+    padding: 0;
+  }
+  .data-table th.data-actions-col {
+    width: 80px;
+  }
+}
+/* A framed list (Snippets): rows divided by lines instead of separate cards. */
+.data-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.data-list > li + li {
+  border-top: 1px solid var(--border);
+}
+.data-list .catalog-row {
+  border-radius: 0;
+  padding: 10px 12px;
 }
 .servers-env {
   width: 96px;
@@ -609,14 +672,6 @@
 }
 .servers-footer[data-connected] .servers-dot {
   background: var(--connection-connected);
-}
-.catalog-list {
-  display: flex;
-  min-height: 0;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-  overflow: auto;
 }
 /* minmax(0, 1fr): a long tag or label truncates instead of widening the row past the list. */
 .catalog-row {
@@ -1214,24 +1269,6 @@
   font-weight: 500;
 }
 /* Port forwarding rules: state is an icon plus text, colored per the operational state tokens. */
-.tunnel-list {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  gap: 8px;
-}
-.tunnel-row {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-}
 .tunnel-status {
   display: inline-flex;
   align-items: center;
@@ -1430,31 +1467,6 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-.identity-list {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-}
-/* minmax(0, 1fr): long labels, user names and fingerprints truncate instead of widening the row. */
-.identity-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 8px 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-}
-.identity-row[data-kind="key"] {
-  grid-template-columns: minmax(0, 1fr);
-}
-.identity-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 .credential-status {
   display: inline-flex;

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ElectronApplication, Locator } from "@playwright/test";
 import { test, expect, changeCatalog, emptyTestNamespace, type Desktop } from "./fixtures";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // The lab password is typed from main and saved in the test Keychain namespace; keep automatic artifacts off.
 // The visual test attaches explicit screenshots that show only terminals, labels and empty inputs.
@@ -77,7 +78,7 @@ async function workspace(desktop: Desktop, servers: Server[]) {
     }, secret), { message: "main typed the lab password" }).toBe(true);
     await editor.getByRole("button", { name: "Save", exact: true }).click();
     await expect(editor).toHaveCount(0);
-    const row = identities.locator("li[data-identity-id]", { hasText: "Lab workspace" });
+    const row = identities.locator("tr[data-identity-id]", { hasText: "Lab workspace" });
     await expect(row).toContainText("Saved in Keychain");
     const identityId = await row.getAttribute("data-identity-id");
     await changeCatalog(app, servers.map(({ label, environment, closed }) => ({
@@ -404,6 +405,7 @@ test("closing: Cmd+W asks only for a Ready pane; closing the window and quitting
     await expect(confirm).toBeVisible();
     await expect(confirm).toContainText(`Disconnect and close ${alpha}?`);
     await expect(confirm.getByText("PROD", { exact: true })).toBeVisible();
+    await expectDrawerPlaced(page, "close-confirm");
     await expect(confirm).toContainText(endpoint(w.lab));
     await expect(confirm.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
     await confirm.getByRole("button", { name: "Cancel", exact: true }).click();

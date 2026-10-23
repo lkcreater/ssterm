@@ -7,6 +7,7 @@ import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import { SHELL_INTEGRATION } from "../../packages/domain/src/recording";
 import { test, expect, changeCatalog, emptyTestNamespace } from "./fixtures";
 import { renderedContrast } from "./support/transfer-fixture";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // Sessions authenticate with a fixture password and terminals show arbitrary output: no traces, screenshots or video.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -142,7 +143,7 @@ test("recording over SSH bash 5.2 through production main: opt-in, encrypted, ex
     // 5. Export through main's save dialog (stubbed): output, never the typed secret.
     await page.getByRole("button", { name: "Recordings", exact: true }).click();
     const recordings = page.getByTestId("recordings-page");
-    const row = recordings.locator("li[data-recording-id]");
+    const row = recordings.locator("tr[data-recording-id]");
     await expect(row).toHaveCount(1);
     await expect(row).toHaveAttribute("data-state", "complete");
     await expect(row.getByText("PROD", { exact: true })).toBeVisible();
@@ -251,6 +252,7 @@ test("recording over SSH bash 5.2 through production main: opt-in, encrypted, ex
     await row.first().getByRole("button", { name: `Delete the log of ${server}` }).click();
     await expect(confirm).toHaveAttribute("role", "alertdialog");
     await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await expectDrawerPlaced(page, "delete-recording");
     await confirm.getByRole("button", { name: "Delete", exact: true }).click();
     await expect(confirm).toHaveCount(0);
     await expect(row).toHaveCount(1);

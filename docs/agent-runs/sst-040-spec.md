@@ -1,6 +1,6 @@
 # SST-040 spec — UI v2 Charcoal
 
-**Status:** `ready-for-agent` · 2026-10-22 · T054. Decisions: [implementation plan](implementation-plan.md#sst-040-authorization--ui-v2-charcoal-2026-10-22), [ADR 0008](../adr/0008-ui-v2-charcoal.md), [ADR 0004 amendment](../adr/0004-local-app-lock.md#amendment--manual-relock-sst-040-2026-10-22). Tickets: [SST-040 breakdown](sst-040/README.md). Visual reference: [UI v2 handoff](../logo/ui-v2/README.md) (concept PNGs; its visual and drawer contracts govern, not pixels).
+**Status:** `done` · 2026-10-23 · T054 ([delivery](sst-040-delivery.md)). Decisions: [implementation plan](implementation-plan.md#sst-040-authorization--ui-v2-charcoal-2026-10-22), [ADR 0008](../adr/0008-ui-v2-charcoal.md), [ADR 0004 amendment](../adr/0004-local-app-lock.md#amendment--manual-relock-sst-040-2026-10-22). Tickets: [SST-040 breakdown](sst-040/README.md). Visual reference: [UI v2 handoff](../logo/ui-v2/README.md) (concept PNGs; its visual and drawer contracts govern, not pixels).
 
 ## Problem Statement
 

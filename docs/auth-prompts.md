@@ -18,7 +18,7 @@ Credential state projects only owner/sequence, prompt identifiers, purpose/attem
 
 The controller/IPC handlers reuse the registered main-frame sender and WindowBoundary checks. Preload reconstructs validated DTOs; main copies answers into owned transient values and clears received bytes. Ordered owner-bound events and subscribe-before-snapshot prevent stale prompts reappearing. Lock, suspend, owner revocation and quit remove pending prompts and dispose transport resources. No renderer connect or terminal capability is added by SST-011; SST-012 later adds the [terminal](terminal.md) boundary.
 
-The dialog uses uncontrolled inputs, clears them before awaiting submit/cancel and on prompt changes/unmount, and stores no answers in React state. It identifies the captured execution target and PROD environment, honors echo flags, keyboard focus/Enter/Escape, IME composition, reduced motion and minimum-window overflow. Multiple sessions stay separate; host-trust dialogs take precedence over credential entry.
+The prompt (a right-edge drawer since SST-040) uses uncontrolled inputs, clears them before awaiting submit/cancel and on prompt changes/unmount, and stores no answers in React state. It identifies the captured execution target and PROD environment, honors echo flags, keyboard focus/Enter/Escape, IME composition, reduced motion and minimum-window overflow. Multiple sessions stay separate; host-trust dialogs take precedence over credential entry.
 
 ## Verification
 

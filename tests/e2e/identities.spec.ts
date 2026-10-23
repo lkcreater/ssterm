@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import { test, expect, changeCatalog, launchDesktop, type Desktop } from "./fixtures";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // Passwords and passphrases are typed from main; keep dialogs, terminals and inputs out of artifacts.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -171,8 +172,8 @@ function ui(page: Page) {
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
       await expect(dialog).toHaveCount(0);
     },
-    identityRow: (label: string) => identities.locator("li[data-identity-id]", { hasText: label }),
-    keyRow: (label: string) => identities.locator("li[data-key-id]", { hasText: label }),
+    identityRow: (label: string) => identities.locator("tr[data-identity-id]", { hasText: label }),
+    keyRow: (label: string) => identities.locator("tr[data-key-id]", { hasText: label }),
   };
 }
 
@@ -460,11 +461,21 @@ test("imports an encrypted Ed25519 key, connects without a prompt, and asks agai
     // Forget the passphrase: the next connection asks for it through the SST-011 prompt.
     await u.openIdentities();
     await u.identities.getByRole("tab", { name: "SSH keys" }).click();
+    // SST-040/15: Rename is a right-edge drawer with the name field; Esc closes it unchanged.
+    const renameButton = keyRow.getByRole("button", { name: `Rename ${keyLabel}` });
+    await renameButton.click();
+    const rename = page.getByTestId("rename-key-dialog");
+    await expect(rename.getByLabel("Name", { exact: true })).toHaveValue(keyLabel);
+    await expectDrawerPlaced(page, "rename-key");
+    await page.keyboard.press("Escape");
+    await expect(rename).toHaveCount(0);
+    await expect(renameButton).toBeFocused();
     const forgetButton = keyRow.getByRole("button", { name: `Forget passphrase for ${keyLabel}` });
     await forgetButton.click();
     const forget = page.getByTestId("forget-passphrase-key-dialog");
     // Destructive: Cancel takes focus, and Escape returns focus to the row action.
     await expect(forget.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    await expectDrawerPlaced(page, "forget-passphrase");
     await page.keyboard.press("Escape");
     await expect(forget).toHaveCount(0);
     await expect(forgetButton).toBeFocused();
@@ -506,6 +517,7 @@ test("imports an encrypted Ed25519 key, connects without a prompt, and asks agai
     await keyRow.getByRole("button", { name: `Delete ${keyLabel}` }).click();
     const deleteKey = page.getByTestId("delete-key-dialog");
     await expect(deleteKey.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    await expectDrawerPlaced(page, "delete-key");
     await deleteKey.getByRole("button", { name: "Delete key", exact: true }).click();
     await expect(deleteKey).toHaveCount(0);
     await expect(u.identities.getByText("No SSH keys yet", { exact: true })).toBeVisible();

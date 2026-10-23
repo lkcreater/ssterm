@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import type { Locator } from "@playwright/test";
 import { test, expect, showPane } from "./fixtures";
+import { expectDrawerPlaced } from "./support/drawer";
 import { renderedContrast } from "./support/transfer-fixture";
 
 // Real Docker OpenSSH sessions with a Keychain-held fixture password; keep terminal content out of traces.
@@ -211,6 +212,7 @@ test("snippet Paste sends nothing until Run or Insert; Run goes to the target th
       return { inside: box.left >= 0 && box.right <= innerWidth + 0.5 && box.bottom <= innerHeight + 0.5, scroll: element.scrollWidth - element.clientWidth };
     });
     expect(bounds).toEqual({ inside: true, scroll: 0 });
+    await expectDrawerPlaced(page, "snippet-panel", { selector: "[data-testid='snippet-panel']" });
     for (const [name, locator] of [
       ["feedback", feedback.locator("span")],
       ["target", target.locator("span.truncate.font-medium")],

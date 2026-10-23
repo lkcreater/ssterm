@@ -35,7 +35,8 @@ function TargetLabel({ target }: { target: CapturedTarget }) {
 
 /**
  * Workspace templates and the explicit multi-target composer, as a drawer. Explicit composer only: terminal keystrokes
- * continue through each pane's local input. Closing cancels a running operation at once (Ready sessions stay open);
+ * continue through each pane's local input. Closing cancels a running preparation at once (Ready sessions stay open);
+ * while a multi-target send runs, Close is disabled and Cancel operation stops it;
  * a typed template name asks before it is discarded. The Run/Insert confirmation is a step inside this drawer.
  */
 export function WorkspaceTools({ owner, catalog, controller, returnFocus, onClose }: {

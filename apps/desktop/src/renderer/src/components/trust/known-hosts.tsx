@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
-import { AlertTriangleIcon, ShieldAlertIcon } from "lucide-react";
+import { AlertTriangleIcon, ShieldAlertIcon, ShieldCheckIcon, ShieldOffIcon } from "lucide-react";
 import {
   MAX_KNOWN_HOSTS,
   type HostTrustDecision,
@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import {
   Empty,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty";
@@ -134,15 +135,21 @@ export function KnownHostsWorkspace({
       setBusy(false);
     }
   }
+  const hosts = state?.knownHosts ?? [];
   return (
-    <div
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-auto p-5"
-      data-testid="known-hosts-workspace"
-    >
+    <div className="catalog-page" data-testid="known-hosts-workspace">
       <PageHeader
         title="Known hosts"
-        subtitle="Saved SSH server identities are shared across terminals, file transfers and port forwarding. Verify fingerprints with your administrator before trusting a key."
+        subtitle={
+          state?.availability === "ready"
+            ? `Server keys you trusted on this Mac · ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"}`
+            : "Server keys you trusted on this Mac"
+        }
       />
+      <p className="type-caption text-muted-foreground">
+        Saved SSH server identities are shared across terminals, file transfers and port forwarding. Verify
+        fingerprints with your administrator before trusting a key.
+      </p>
       {error || failed || state?.availability === "unavailable" ? (
         <TrustError conflict={failed === "conflict"} />
       ) : null}
@@ -151,10 +158,22 @@ export function KnownHostsWorkspace({
           Showing the first {MAX_KNOWN_HOSTS.toLocaleString()} known hosts.
         </p>
       ) : null}
-      {!state && !error ? <Spinner aria-label="Loading known hosts" /> : null}
-      {state?.availability === "ready" && state.knownHosts.length === 0 ? (
+      {!state && !error ? (
         <Empty>
           <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Spinner aria-hidden="true" />
+            </EmptyMedia>
+            <EmptyTitle role="status">Loading known hosts…</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
+      {state?.availability === "ready" && hosts.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <ShieldCheckIcon />
+            </EmptyMedia>
             <EmptyTitle>No trusted hosts yet</EmptyTitle>
             <EmptyDescription>
               Remembered server keys will appear here after you explicitly trust
@@ -163,32 +182,62 @@ export function KnownHostsWorkspace({
           </EmptyHeader>
         </Empty>
       ) : null}
-      {state?.knownHosts.map((entry) => (
-        <article
-          key={entry.id}
-          className="grid min-w-0 gap-3 rounded-lg border p-4"
-        >
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <h3 className="min-w-0 break-all font-medium">
-              {entry.endpointHost}:{entry.endpointPort}
-            </h3>
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={(event) => {
-                trigger.current = event.currentTarget;
-                void prepare(entry);
-              }}
-            >
-              Revoke trust
-            </Button>
-          </div>
-          <KeyDetails entry={entry} label="Remembered key" />
-          <p className="type-caption text-muted-foreground">
-            Last verified: {new Date(entry.lastVerifiedAt).toLocaleString()}
-          </p>
-        </article>
-      ))}
+      {hosts.length ? (
+        <div className="data-frame">
+          <table className="data-table" aria-label="Known hosts">
+            <thead>
+              <tr>
+                <th scope="col" title="Host">Host</th>
+                <th scope="col" className="w-16" title="Port">Port</th>
+                <th scope="col" className="w-[14%]" title="Key type">Key type</th>
+                <th scope="col" className="w-[24%]" title="Fingerprint">Fingerprint</th>
+                <th scope="col" className="w-[16%]" title="Last verified">Last verified</th>
+                <th scope="col" className="w-36 data-actions-col">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {hosts.map((entry) => (
+                <tr key={entry.id} data-known-host-id={entry.id}>
+                  <td>
+                    <span className="host-target block truncate" title={entry.endpointHost}>
+                      {entry.endpointHost}
+                    </span>
+                  </td>
+                  <td className="host-target">{entry.endpointPort}</td>
+                  <td className="font-mono">{entry.algorithm}</td>
+                  <td>
+                    <code className="block text-sm break-all" data-testid="known-host-fingerprint">
+                      {entry.fingerprint}
+                    </code>
+                  </td>
+                  <td className="type-caption text-muted-foreground">
+                    {new Date(entry.lastVerifiedAt).toLocaleString()}
+                  </td>
+                  <td>
+                    <span className="data-actions">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        title="Revoke trust"
+                        onClick={(event) => {
+                          trigger.current = event.currentTarget;
+                          void prepare(entry);
+                        }}
+                      >
+                        <ShieldOffIcon data-icon="inline-start" />
+                        <span className="data-action-text">Revoke trust</span>
+                      </Button>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
       {activePreview ? (
         <RevokeDrawer
           key={activePreview.token}

@@ -32,6 +32,8 @@ export interface Desktop {
    * same `secretNamespace`; that relaunch's own close empties it.
    */
   close(options?: { keepSecrets?: boolean }): Promise<void>;
+  /** After `close()`: true when the graceful quit did not finish within 5 s and the app was killed with SIGKILL. */
+  forcedKill(): boolean;
 }
 
 const TEST_NAMESPACE = /^dev\.ssterm\.test\.[0-9a-f-]{36}$/u;
@@ -89,6 +91,7 @@ export async function launchDesktop(
   });
   const alive = () => child.exitCode === null && child.signalCode === null;
   let closing: Promise<void> | undefined;
+  let forced = false;
   const close = (closeOptions: { keepSecrets?: boolean } = {}) =>
     (closing ??= (async () => {
       if (!alive()) return;
@@ -108,6 +111,7 @@ export async function launchDesktop(
       ]);
       if (timer) clearTimeout(timer);
       if (alive()) {
+        forced = true;
         child.kill("SIGKILL");
         await exited;
       }
@@ -133,7 +137,7 @@ export async function launchDesktop(
     });
     if (showcase) await page.goto("http://127.0.0.1:5174/#showcase");
     await page.waitForLoadState("domcontentloaded");
-    return { app, page, errors, externalRequests, profile, secretNamespace, close };
+    return { app, page, errors, externalRequests, profile, secretNamespace, close, forcedKill: () => forced };
   } catch (error) {
     await close().catch(() => undefined);
     throw error;

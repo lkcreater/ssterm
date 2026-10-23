@@ -2,6 +2,8 @@
 
 **สถานะ: DS01/T047 `DONE`; DS02–DS03/T048–T049 `DONE` ใน SST-004 ที่อนุมัติแล้ว.** [Desktop shell/evidence](../desktop-shell.md) มี semantic CSS, 33 shared primitives, offline fonts/licenses และ development showcase; unit/development/packaged checks ผ่าน ผ่าน independent TEST/REVIEW/DELIVERY; DS04–DS06 ยัง `AWAITING_IMPLEMENT_CONFIRMATION`; production icon exports ยังไม่ทำ
 
+> **SST-040 (2026-10-22–23, UI v2 Charcoal):** [ADR 0008](../adr/0008-ui-v2-charcoal.md) แทนที่ navy surfaces, overlay pattern และ shell ของ Signal Blue: tokens Charcoal, terminal theme Charcoal แบบอ่านอย่างเดียว; titlebar มีแค่ traffic lights + drag region; sidebar มี icon v2, เก้าหน้า, group tree และ footer (Settings, Keyboard shortcuts, Lock workspace); ทุกหน้ามี page header; ไม่มี global status bar (ใช้ Servers footer summary และ pane header + pane status bar ต่อ pane แทน); ทุก form/settings/tool/confirmation เป็น right-edge `Drawer` (`components/drawer.tsx`) และลบ `ui/dialog.tsx`/`ui/alert-dialog.tsx` แล้ว สถานะ DS01–DS06 และข้อความ Signal Blue ด้านล่างเป็นบันทึกเดิม ([decisions](../agent-runs/implementation-plan.md#sst-040-authorization--ui-v2-charcoal-2026-10-22))
+
 ใช้ [Design System v1.0 — Signal Blue](design-system.md) เป็น visual specification หลักของ ssterm และใช้ [architecture](proposed-architecture.md), [tickets](tickets.md) และ [tasks](tasks.md) สำหรับพฤติกรรมและขอบเขต MVP ข้อกำหนดนี้เป็น design ของ ssterm ไม่ใช่หลักฐาน UI ภายใน Termius
 
 ## Baseline และขอบเขต
@@ -49,9 +51,9 @@ Spec ที่พูดถึง agent auth, remote/dynamic tunnels, favorites, 
 |---|---|---|
 | Controls / forms | Button, fields/input/search, select/combobox, checkbox/switch, textarea และ tooltip | default/hover/pressed/focus/disabled/loading/error; labels, validation และ sensitive input masking |
 | Navigation / layout | Sidebar, tree-row composition, tabs, resizable/collapsible regions, menus, separator, scroll area | long labels, overflow tabs, active row, selected row ต่างจาก focus; traffic-light safe area และ no-drag controls |
-| Feedback / overlays | Badge, Alert, Empty, Skeleton, Progress, Spinner, Dialog/AlertDialog และ toast ตาม selected base | loading/cancel/empty/failed; title/focus trap/return focus; specific actionable copy ไม่มี secrets |
+| Feedback / overlays | Badge, Alert, Empty, Skeleton, Progress, Spinner, right-edge Drawer (แทน Dialog/AlertDialog ตั้งแต่ SST-040; confirmation เป็น alert drawer หรือ step ใน drawer) และ toast ตาม selected base | loading/cancel/empty/failed; title/focus trap/return focus; specific actionable copy ไม่มี secrets |
 | Connection identity | ConnectionStatus + HostIdentity + environment label | active/disconnected และ inactive/connected ถูกต้อง; each split pane shows user@host:port; copy full target |
-| Terminal workspace | SessionTab, TerminalPane, context bar, snippet composer | pane focus, resize/full-screen output, preserved history after disconnect, independent terminal typography/ANSI |
+| Terminal workspace | SessionTab, TerminalPane, pane header + pane status bar (แทน global context bar ตั้งแต่ SST-040), snippet composer | pane focus, resize/full-screen output, preserved history after disconnect, independent terminal typography/ANSI |
 | Files / tunnels / credentials | dual-pane SFTP + transfer row, local tunnel rule/status, credential row | explicit roots/direction/overwrite/skip/rename/cancel/errors; bind failure; labels/types/shared references ไม่ reveal secrets |
 
 ชื่อ primitives เป็น inventory สำหรับค้น/ตรวจ API ตาม version จริง ไม่ใช่ imports ที่ยืนยันแล้ว ตรวจ installed components, base/icon library และ `shadcn docs` ก่อนใช้จริง ใช้ composition และ built-in variants; สร้าง domain-specific wrappers เมื่อ primitives ไม่ครอบคลุม behavior ไม่ติดตั้งทุก component โดยไม่มี use case ใน MVP

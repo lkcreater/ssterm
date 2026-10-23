@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { test, expect, changeCatalog } from "./fixtures";
 import { pane, snapshot, terminalState } from "./support/transfer-fixture";
+import { closeAndExpectNoSsh } from "./support/ssh-teardown";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // Sessions authenticate with the lab password typed from main; keep automatic artifacts off.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -129,6 +131,7 @@ test("Files server picker: empty page, current is a no-op, switch without and wi
     await expect(confirm).toContainText(endpoint);
     await expect(confirm).toContainText("1 pending transfer will be cancelled.");
     await expect(confirm.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    await expectDrawerPlaced(page, "files-switch");
     await page.keyboard.press("Enter");
     await expect(confirm).toHaveCount(0);
     await expect(picker, "focus returns to the picker").toBeFocused();
@@ -223,8 +226,7 @@ test("Files server picker: empty page, current is a no-op, switch without and wi
     expect(desktop.externalRequests).toEqual([]);
   } finally {
     try {
-      await desktop.close();
-      await expect.poll(() => count("sshd: fixture@"), { message: "no SSH process survives app quit", timeout: 10_000 }).toBe(0);
+      await closeAndExpectNoSsh(desktop, lab, () => count("sshd: fixture@"));
     } finally {
       lab.privateKey.fill(0);
       await lab.dispose();

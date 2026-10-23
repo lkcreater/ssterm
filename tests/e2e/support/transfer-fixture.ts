@@ -7,6 +7,8 @@ import { promisify } from "node:util";
 import type { Locator, Page } from "@playwright/test";
 import type { TransferJob } from "../../../packages/contracts/src/index";
 import { expect, changeCatalog, type Desktop } from "../fixtures";
+import { closeAndExpectNoSsh } from "./ssh-teardown";
+import { expectDrawerPlaced } from "./drawer";
 
 const runFile = promisify(execFile);
 const { startFixture } = createRequire(import.meta.url)("../../../spikes/ssh-compat/src/fixture.cjs");
@@ -61,8 +63,7 @@ export async function setupTransferLab(desktop: Desktop) {
   };
   const finish = async () => {
     try {
-      await desktop.close();
-      await expect.poll(processCount, { timeout: 10_000, message: "no SSH process survives app quit" }).toBe(0);
+      await closeAndExpectNoSsh(desktop, fixture, processCount);
     } finally {
       fixture.privateKey.fill(0);
       await fixture.dispose(); await fixture.assertCleaned();
@@ -150,6 +151,7 @@ export async function chooseConflict(page: Page, entry: Locator, action: "Skip" 
   await entry.getByRole("button", { name: /^Resolve conflict for / }).click();
   const drawer = page.getByTestId("transfer-conflict-drawer");
   await expect(drawer).toBeVisible();
+  await expectDrawerPlaced(page, "transfer-conflict");
   await expect(drawer.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
   await drawer.getByRole("radio", { name: action, exact: true }).click();
   return drawer;

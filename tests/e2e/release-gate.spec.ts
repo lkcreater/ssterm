@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { test, expect, changeCatalog, launchDesktop } from "./fixtures";
 import { audit } from "./support/audit";
+import { drawerGeometry, placed } from "./support/drawer";
 
 // SST-027 / DS05 release-quality sweep (design-system.md §11) over every page with a populated fixture catalog.
 test.use({ trace: "off", video: "off" });
@@ -30,42 +31,6 @@ async function focusAudit(page: Page, presses = 25) {
     if (!result.indicated) findings.push(result.name);
   }
   return { findings, reached };
-}
-
-/** Drawer geometry on the current frame: with reduced motion it is already at rest once the starting style is gone. */
-function drawerGeometry(page: Page, selector: string) {
-  return page.evaluate((query) => {
-    const drawer = document.querySelector<HTMLElement>(query)!;
-    const box = drawer.getBoundingClientRect();
-    const controls = [...drawer.querySelectorAll(":is(input, button, [role=combobox], [role=radio], label):not([aria-hidden='true'])")].map((node) => ({ node, rect: node.getBoundingClientRect() }))
-      .filter(({ rect }) => rect.width > 0);
-    return {
-      left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width,
-      viewport: { width: innerWidth, height: innerHeight },
-      duration: Math.max(...getComputedStyle(drawer).transitionDuration.split(",").map((part) => parseFloat(part) * (part.trim().endsWith("ms") ? 0.001 : 1))),
-      overflowing: controls.filter(({ rect }) => rect.left < box.left - 0.5 || rect.right > box.right + 0.5)
-        .map(({ node, rect }) => `${node.outerHTML.slice(0, 120)} ${rect.left}-${rect.right}`),
-      // Scroll containers only: clipped helpers (sr-only text, hidden form mirrors) never scroll.
-      scrolling: [drawer, ...drawer.querySelectorAll("*")].filter((node) => node.scrollWidth - node.clientWidth > 1 &&
-        (node === drawer || ["auto", "scroll"].includes(getComputedStyle(node).overflowX)))
-        .map((node) => `${node.outerHTML.slice(0, 160)} ${node.scrollWidth}/${node.clientWidth} ${getComputedStyle(node).overflowX}`),
-    };
-  }, selector);
-}
-
-/** The drawer contract's placement: flush right, from the titlebar's bottom to the window's, 480–560 px (640 for Settings). */
-async function placed(page: Page, g: Awaited<ReturnType<typeof drawerGeometry>>, size: string, max = 560) {
-  // The modal hides the page from the accessibility tree; the banner is still the titlebar.
-  const titlebar = (await page.getByRole("banner", { includeHidden: true }).boundingBox())!;
-  expect(g.duration, `${size}: no motion under reduced motion`).toBeLessThanOrEqual(0.00001);
-  expect(Math.abs(g.right - g.viewport.width), `${size}: flush with the right edge`).toBeLessThanOrEqual(1);
-  expect(Math.abs(g.top - (titlebar.y + titlebar.height)), `${size}: starts below the titlebar`).toBeLessThanOrEqual(1);
-  expect(Math.abs(g.bottom - g.viewport.height), `${size}: full height`).toBeLessThanOrEqual(1);
-  expect(g.width, `${size}: drawer width`).toBeGreaterThanOrEqual(Math.min(480, g.viewport.width));
-  expect(g.width, `${size}: drawer width`).toBeLessThanOrEqual(max);
-  expect(g.left, `${size}: the source screen stays visible`).toBeGreaterThan(0);
-  expect(g.overflowing, `${size}: fields stay inside the drawer`).toEqual([]);
-  expect(g.scrolling, `${size}: no horizontal scroll`).toEqual([]);
 }
 
 /** SST-040/08: any dialog, alert dialog or modal in the page must be the right-edge drawer — no centered modal remains. */
@@ -221,6 +186,122 @@ test("DS05 release sweep: every page and drawer at 960×640 and 1280×800 with r
     }
   }
   await testInfo.attach("release-sweep", { body: JSON.stringify({ matrix, findings }, null, 2), contentType: "application/json" });
+  expect(findings).toEqual([]);
+  expect(desktop.errors).toEqual([]);
+});
+
+/**
+ * Text that does not fit: an element whose own text overflows its box, or whose box leaves the nearest ancestor that
+ * clips (overflow hidden/clip), unless a `title` carries the full text (truncated identifiers). Visually hidden
+ * accessible names (clip-path) and scroll containers are not clipping.
+ */
+function clipped(page: Page, selector: string) {
+  return page.evaluate((query) => {
+    const root = document.querySelector(query);
+    if (!root) return [`${query} is not rendered`];
+    const out: string[] = [];
+    const page = root.getBoundingClientRect();
+    if (page.left < -1 || page.right > innerWidth + 1) out.push(`${query} spans ${page.left}-${page.right} of ${innerWidth}`);
+    const clips = (value: string) => value === "hidden" || value === "clip";
+    for (const element of root.querySelectorAll<HTMLElement>("*")) {
+      if (element.closest(".sr-only, [aria-hidden='true'], svg") || element.closest("[title]")) continue;
+      if (![...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim())) continue;
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (box.width < 1 || box.height < 1 || style.clipPath !== "none" || style.visibility === "hidden") continue;
+      const text = `${element.tagName.toLowerCase()} "${element.textContent!.trim().slice(0, 40)}"`;
+      if ((clips(style.overflowX) && element.scrollWidth - element.clientWidth > 1) || (clips(style.overflowY) && element.scrollHeight - element.clientHeight > 1))
+        out.push(`${text} overflows its box`);
+      for (let parent = element.parentElement; parent && parent !== root.parentElement; parent = parent.parentElement) {
+        const outer = getComputedStyle(parent);
+        if (["auto", "scroll"].includes(outer.overflowX) || ["auto", "scroll"].includes(outer.overflowY)) break;
+        if (!clips(outer.overflowX) && !clips(outer.overflowY)) continue;
+        const edge = parent.getBoundingClientRect();
+        if (box.left < edge.left - 1 || box.right > edge.right + 1 || box.top < edge.top - 1 || box.bottom > edge.bottom + 1)
+          out.push(`${text} is cut by ${parent.tagName.toLowerCase()}.${[...parent.classList].join(".")}`);
+        break;
+      }
+    }
+    return out;
+  }, selector);
+}
+
+// SST-040/15: the restyled pages hold Thai labels without clipping or overflow at both sizes, at 100% and with larger
+// text (zoom level 1, two ⌘+ steps: 120%), which at 960×640 leaves an 800 px wide layout.
+test("v2 pages: Thai labels and tables at 960×640 and 1280×800 at 100% and 120% text size — no clipping or overflow", async ({ desktop }, testInfo) => {
+  test.setTimeout(240_000);
+  const { app, page } = desktop;
+  await changeCatalog(app, [
+    { type: "create-group", data: { label: "โครงสร้างพื้นฐาน การผลิต" } },
+    { type: "create-identity", data: { label: "ผู้ดูแลระบบฐานข้อมูลภาคตะวันออกเฉียงเหนือ", username: "ผู้ดูแล-admin", method: "password" } },
+    { type: "create-identity", data: { label: "Deploy key user", username: "deploy", method: "keyboard-interactive" } },
+    { type: "create-host", data: { label: "ฐานข้อมูลหลัก ระบบการเงินภาคตะวันออกเฉียงเหนือ", address: "db-01.internal.example", groupId: "$0", environment: "PROD", auth: { mode: "value", identityId: "$1" } } },
+    { type: "create-tunnel-rule", data: { label: "Postgres ผ่านเซิร์ฟเวอร์ฐานข้อมูลหลัก", hostId: "$3", bindPort: 15432, destinationHost: "127.0.0.1", destinationPort: 5432 } },
+  ]);
+  await page.reload();
+  await page.evaluate(async () => {
+    const boot = await window.ssterm.bootstrap();
+    if (!boot.ok) throw new Error("bootstrap");
+    await window.ssterm.saveSnippet({ owner: boot.value.owner, snippetId: null, expectedRevision: null, label: "รีสตาร์ทบริการเว็บและฐานข้อมูลทั้งหมด", body: "sudo systemctl restart app\n", tagIds: [] });
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const nav = (name: string | RegExp) => page.getByRole("button", { name, exact: typeof name === "string" }).click();
+  const views: { name: string; root: string; open(): Promise<void> }[] = [
+    { name: "identities", root: "[data-testid='identities-page']", open: async () => {
+      await nav("Identities");
+      await page.getByRole("tab", { name: "Identities", exact: true }).click();
+      await expect(page.getByRole("table", { name: "Identities" })).toBeVisible();
+    } },
+    { name: "ssh-keys", root: "[data-testid='identities-page']", open: async () => {
+      await nav("Identities");
+      await page.getByRole("tab", { name: "SSH keys", exact: true }).click();
+      await expect(page.getByText("No SSH keys yet", { exact: true })).toBeVisible();
+    } },
+    { name: "known-hosts", root: "[data-testid='known-hosts-workspace']", open: async () => {
+      await nav("Known hosts");
+      await expect(page.getByText("No trusted hosts yet", { exact: true })).toBeVisible();
+    } },
+    { name: "snippets", root: "[data-testid='snippets-page']", open: async () => {
+      await nav("Snippets");
+      await expect(page.getByRole("searchbox", { name: "Search snippets" })).toBeVisible();
+    } },
+    { name: "port-forwarding", root: "[data-testid='tunnels-page']", open: async () => {
+      await nav(/^Port forwarding/u);
+      await expect(page.getByRole("table", { name: "Forwarding rules" })).toBeVisible();
+    } },
+    { name: "recordings", root: "[data-testid='recordings-page']", open: async () => {
+      await nav("Recordings");
+      await expect(page.getByText("No session logs", { exact: true })).toBeVisible();
+    } },
+    { name: "team-vault", root: "[data-testid='team-workspace']", open: async () => {
+      await nav("Team vault");
+      await expect(page.getByRole("button", { name: "Set up Team vault", exact: true })).toBeVisible();
+    } },
+  ];
+  const findings: Finding[] = [];
+  try {
+    for (const level of [0, 1]) {
+      await app.evaluate(({ BrowserWindow }, zoom) => BrowserWindow.getAllWindows()[0]!.webContents.setZoomLevel(zoom), level);
+      for (const [width, height] of SIZES) {
+        await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0]!.setContentSize(size[0], size[1]), [width, height] as const);
+        const css = width / 1.2 ** level;
+        await expect.poll(async () => Math.abs((await page.evaluate(() => innerWidth)) - css)).toBeLessThanOrEqual(1);
+        const size = `${width}x${height}@${level ? "120" : "100"}%`;
+        for (const view of views) {
+          await view.open();
+          await page.waitForTimeout(100);
+          for (const detail of await clipped(page, view.root)) findings.push({ page: view.name, size, kind: "clipped", detail });
+          const result = await audit(page);
+          findings.push(...result.findings.map((finding) => ({ page: view.name, size, ...finding })));
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${view.name}@${size}: no horizontal page scroll`).toBe(true);
+          await page.screenshot({ path: testInfo.outputPath(`${view.name}-${size.replace("%", "pct")}.png`) });
+        }
+      }
+    }
+  } finally {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.setZoomLevel(0));
+  }
+  await testInfo.attach("v2-pages-text-scaling", { body: JSON.stringify(findings, null, 2), contentType: "application/json" });
   expect(findings).toEqual([]);
   expect(desktop.errors).toEqual([]);
 });

@@ -17,6 +17,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { KeyRoundIcon, PencilIcon, ServerIcon, TerminalIcon, Trash2Icon, UnlinkIcon, UserCogIcon } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   call,
@@ -239,22 +241,29 @@ export function TeamWorkspace({
   return (
     <div
       ref={container}
-      className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-5"
+      className="catalog-page"
       data-testid="team-workspace"
     >
       <PageHeader
         title="Team vault"
         subtitle="Use your own server for encrypted shared hosts and Owner-shared SSH passwords. Team membership is separate from personal sync and Google sign-in."
         actions={
-          state && !configured ? (
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => openPanel({ kind: "setup", mode: "create" })}
-            >
-              Set up Team vault
-            </Button>
-          ) : null
+          <>
+            <div className="flex h-8 flex-wrap items-center gap-2" aria-live="polite">
+              <Badge variant="outline">{state?.status ?? "Loading team"}</Badge>
+              {state?.role ? <Badge variant="secondary">{state.role}</Badge> : null}
+              {busy ? <Spinner aria-label="Working on team vault" /> : null}
+            </div>
+            {state && !configured ? (
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => openPanel({ kind: "setup", mode: "create" })}
+              >
+                Set up Team vault
+              </Button>
+            ) : null}
+          </>
         }
       />
       <Alert>
@@ -272,11 +281,14 @@ export function TeamWorkspace({
           <AlertDescription>{problem}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2" aria-live="polite">
-        <Badge variant="outline">{state?.status ?? "Loading team"}</Badge>
-        {state?.role ? <Badge variant="secondary">{state.role}</Badge> : null}
-        {busy ? <Spinner aria-label="Working on team vault" /> : null}
-      </div>
+      {!state && !problem ? (
+        <Empty className="flex-none">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><Spinner aria-hidden="true" /></EmptyMedia>
+            <EmptyTitle role="status">Loading Team vault…</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
       {state?.endpoint ? (
         <p className="break-all text-sm">Server: {state.endpoint}</p>
       ) : null}
@@ -429,44 +441,76 @@ export function TeamWorkspace({
               Add Team host
             </Button>
           ) : null}
-          <div className="flex flex-col gap-3">
-            {state?.hosts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No Team hosts are available.
-              </p>
-            ) : null}
-            {state?.hosts.map((host) => (
-              <div
-                key={host.recordId}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3"
-                data-team-host-id={host.recordId}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="break-words font-medium">{host.label}</p>
-                  <p className="break-all font-mono text-xs">{endpointText(host)}</p>
-                </div>
-                <Badge variant="secondary">Team</Badge>
-                <EnvironmentBadge environment={host.environment} />
+          {state?.hosts.length === 0 ? (
+            <Empty className="flex-none">
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><ServerIcon /></EmptyMedia>
+                <EmptyTitle>No Team hosts</EmptyTitle>
+                <EmptyDescription>
+                  {canEdit ? "Add a Team host to share it with your team." : "The Owner or an Editor adds the hosts your team shares."}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : state?.hosts.length ? (
+            <div className="data-frame">
+              <table className="data-table" aria-label="Team hosts">
+                <thead>
+                  <tr>
+                    <th scope="col" title="Name">Name</th>
+                    <th scope="col" className="w-[20%]" title="Endpoint">Endpoint</th>
+                    <th scope="col" className="w-[12%]" title="Login">Login</th>
+                    <th scope="col" className="w-24" title="Environment">Environment</th>
+                    <th scope="col" className={`${canManage ? "w-64" : canEdit ? "w-44" : "w-28"} data-actions-col`}>
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+            {state.hosts.map((host) => (
+              <tr key={host.recordId} data-team-host-id={host.recordId}>
+                <td>
+                  <span className="data-cell">
+                    <span className="min-w-0 max-w-full truncate font-medium" title={host.label}>{host.label}</span>
+                    <Badge variant="secondary">Team</Badge>
+                  </span>
+                </td>
+                <td>
+                  <span className="host-target block truncate" title={`${host.address}:${host.port}`}>{host.address}:{host.port}</span>
+                </td>
+                <td>
+                  <span className="host-target block truncate" title={host.username}>{host.username}</span>
+                </td>
+                <td>
+                  <EnvironmentBadge environment={host.environment} />
+                </td>
+                <td>
+                <span className="data-actions">
                 <Button
                   variant="outline"
+                  size="sm"
                   disabled={busy || !canConnect}
                   aria-label={`Connect to Team host ${host.label}`}
+                  title="Connect"
                   onClick={() => void onConnect(host.virtualHostId)}
                 >
-                  Connect
+                  <TerminalIcon data-icon="inline-start" /><span className="data-action-text">Connect</span>
                 </Button>
                 {canEdit ? (
                   <>
                     <Button
-                      variant="outline"
+                      variant="ghost"
+                      size="icon-sm"
+                      title="Edit"
                       disabled={busy || !state.metadataHash}
                       aria-label={`Edit Team host ${host.label}`}
                       onClick={() => openPanel({ kind: "host", host: { ...host } })}
                     >
-                      Edit
+                      <PencilIcon aria-hidden="true" />
                     </Button>
                     <Button
-                      variant="outline"
+                      variant="ghost"
+                      size="icon-sm"
+                      title="Delete"
                       disabled={busy || !state.metadataHash}
                       aria-label={`Delete Team host ${host.label}`}
                       onClick={() =>
@@ -487,22 +531,26 @@ export function TeamWorkspace({
                         })
                       }
                     >
-                      Delete
+                      <Trash2Icon aria-hidden="true" />
                     </Button>
                   </>
                 ) : null}
                 {canManage ? (
                   <>
                     <Button
-                      variant="outline"
+                      variant="ghost"
+                      size="icon-sm"
+                      title="Share or replace password"
                       disabled={busy || !state.metadataHash || !state.credentialHash}
                       aria-label={`Share password for ${host.label}`}
                       onClick={() => openPanel({ kind: "password", host: { ...host } })}
                     >
-                      Share or replace password
+                      <KeyRoundIcon aria-hidden="true" />
                     </Button>
                     <Button
-                      variant="outline"
+                      variant="ghost"
+                      size="icon-sm"
+                      title="Detach password"
                       disabled={busy || !state.credentialHash}
                       aria-label={`Detach password for ${host.label}`}
                       onClick={() =>
@@ -523,13 +571,18 @@ export function TeamWorkspace({
                         })
                       }
                     >
-                      Detach password
+                      <UnlinkIcon aria-hidden="true" />
                     </Button>
                   </>
                 ) : null}
-              </div>
+                </span>
+                </td>
+              </tr>
             ))}
-          </div>
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </FieldSet>
       ) : null}
       {configured ? (
@@ -569,36 +622,58 @@ export function TeamWorkspace({
             >
               Invite member
             </Button>
+            <div className="data-frame">
+              <table className="data-table" aria-label="Team members">
+                <thead>
+                  <tr>
+                    <th scope="col" title="Name">Name</th>
+                    <th scope="col" className="w-28" title="Role">Role</th>
+                    <th scope="col" className="w-24" title="Status">Status</th>
+                    <th scope="col" className="w-[24%]" title="Principal">Principal</th>
+                    <th scope="col" className="w-28 data-actions-col">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
             {state.members.map((member) => (
-              <div
-                key={member.principalId}
-                className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3"
-                data-team-member-id={member.principalId}
-              >
-                <div className="grid min-w-0 flex-1 gap-1">
-                  <p className="break-words font-medium">
-                    {memberName(member)}{" "}
-                    <Badge variant="outline">{member.role}</Badge>{" "}
-                    <Badge variant="secondary">{member.status}</Badge>
-                  </p>
-                  <p className="break-all font-mono text-xs">
-                    {member.principalId}
-                  </p>
-                </div>
+              <tr key={member.principalId} data-team-member-id={member.principalId}>
+                <td>
+                  <span className="block truncate font-medium" title={memberName(member)}>{memberName(member)}</span>
+                </td>
+                <td>
+                  <Badge variant="outline">{member.role}</Badge>
+                </td>
+                <td>
+                  <Badge variant="secondary">{member.status}</Badge>
+                </td>
+                <td>
+                  <span className="host-target block truncate text-xs" title={member.principalId}>{member.principalId}</span>
+                </td>
+                <td>
+                  <span className="data-actions">
                 {member.role !== "Owner" &&
                 member.status === "active" &&
                 state.policyHash ? (
                   <Button
                     variant="outline"
+                    size="sm"
                     disabled={busy}
                     aria-label={`Manage ${memberName(member)}`}
+                    title="Manage"
                     onClick={() => openPanel({ kind: "member", principalId: member.principalId })}
                   >
-                    Manage
+                    <UserCogIcon data-icon="inline-start" />
+                    <span className="data-action-text">Manage</span>
                   </Button>
                 ) : null}
-              </div>
+                  </span>
+                </td>
+              </tr>
             ))}
+                </tbody>
+              </table>
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"

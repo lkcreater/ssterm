@@ -65,7 +65,7 @@ function ui(page: Page) {
   return {
     root, editor,
     nav: page.getByRole("button", { name: "Port forwarding", exact: false }),
-    row: (label: string) => root.locator("li[data-rule-id]").filter({ hasText: label }),
+    row: (label: string) => root.locator("tr[data-rule-id]").filter({ hasText: label }),
   };
 }
 
@@ -94,7 +94,7 @@ test("F06: a saved rule forwards HTTP only while started, reports collisions, re
         return true; })()`);
     }, secret)).toBe(true);
     await identityEditor.getByRole("button", { name: "Save", exact: true }).click();
-    const identityRow = identities.locator("li[data-identity-id]", { hasText: "Lab tunnel" });
+    const identityRow = identities.locator("tr[data-identity-id]", { hasText: "Lab tunnel" });
     await expect(identityRow).toContainText("Saved in Keychain");
     const identityId = await identityRow.getAttribute("data-identity-id");
     await changeCatalog(app, [{ type: "create-host", data: {

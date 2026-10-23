@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import type { Locator } from "@playwright/test";
 import { test, expect, showPane } from "./fixtures";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // The sessions authenticate with a Keychain-held fixture password; keep terminal content out of traces.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -145,6 +146,7 @@ test("terminal input, Unicode, clipboard, links and search reach only the focuse
     await paste(paneA, "echo PC$((3+4))\necho PD$((4+4))");
     await expect(confirm).toBeVisible();
     await expect(confirm).toContainText("This is a production target.");
+    await expectDrawerPlaced(page, "paste-confirm");
     await expect(confirm, "bash had bracketed paste on").not.toContainText("not in bracketed paste mode");
     await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused();
     await confirm.getByRole("button", { name: "Cancel" }).click();

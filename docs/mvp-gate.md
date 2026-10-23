@@ -1,6 +1,6 @@
 # MVP gate — SST-027
 
-**2026-10-17 · T033 DONE; T034 and DS05/T051 automated parts DONE, manual walkthrough pending.** Release checklist proving the MVP workflows. See [ticket](termius/tickets.md#sst-027--end-to-end--accessibility--regression-gate), [execution plan](agent-runs/implementation-plan.md#sst-027-execution-plan--2026-10-17) and [delivery](agent-runs/sst-027-delivery.md).
+**2026-10-17 · T033 DONE; T034 and DS05/T051 automated parts DONE, manual walkthrough pending.** Release checklist proving the MVP workflows. The page names, dialogs and layout described here predate the SST-040 UI v2 shell and drawers ([ADR 0008](adr/0008-ui-v2-charcoal.md)); this is the historical SST-027 record. See [ticket](termius/tickets.md#sst-027--end-to-end--accessibility--regression-gate), [execution plan](agent-runs/implementation-plan.md#sst-027-execution-plan--2026-10-17) and [delivery](agent-runs/sst-027-delivery.md).
 
 **Final run (macOS 15 arm64, unsigned package):** typecheck PASS; `npm test` 422/422; `npm run test:e2e` 62/62 (59 desktop + 3 showcase); `npm run package:mac` PASS; `npm run test:packaged` 59/59. Every desktop spec runs in both development and packaged projects. No lint script exists.
 

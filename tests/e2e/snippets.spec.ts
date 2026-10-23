@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { test, expect, launchDesktop, type Desktop } from "./fixtures";
 import { renderedContrast } from "./support/transfer-fixture";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // Fixture bodies are project-owned strings; keep editor contents out of traces.
 test.use({ trace: "off" });
@@ -109,6 +110,7 @@ test("snippets: create with feedback, tags and search; encrypted at rest; exact 
   // Edit; leaving with unsaved changes asks first, as a step inside the same drawer.
   await s.row("Deploy ไทย").click();
   await expect(s.body).toHaveValue(BODY);
+  await expectDrawerPlaced(page, "snippet-editor", { selector: "[data-testid='snippet-drawer']" });
   await expect(s.name).toBeFocused();
   await s.body.fill(EDITED);
   await s.body.press("Escape");

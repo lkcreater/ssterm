@@ -119,7 +119,27 @@ export function SnippetsPage({ owner, catalog, state }: { owner: Owner; catalog:
       <PageHeader
         title="Snippets"
         subtitle={`Reusable commands, encrypted on this Mac · ${state.snippets.length} ${state.snippets.length === 1 ? "snippet" : "snippets"}`}
-        actions={empty ? null : newButton}
+        actions={
+          empty ? null : (
+            <>
+              <InputGroup className="catalog-search">
+                <InputGroupAddon>
+                  <SearchIcon aria-hidden="true" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="search"
+                  aria-label="Search snippets"
+                  placeholder="Search names and tags"
+                  value={search}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </InputGroup>
+              {newButton}
+            </>
+          )
+        }
       />
       <p className="flex items-center gap-2 type-caption text-muted-foreground">
         <ShieldCheckIcon className="size-4 shrink-0" aria-hidden="true" />
@@ -145,20 +165,6 @@ export function SnippetsPage({ owner, catalog, state }: { owner: Owner; catalog:
         </Empty>
       ) : (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-          <InputGroup className="max-w-md">
-            <InputGroupAddon>
-              <SearchIcon aria-hidden="true" />
-            </InputGroupAddon>
-            <InputGroupInput
-              type="search"
-              aria-label="Search snippets"
-              placeholder="Search names and tags"
-              value={search}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </InputGroup>
           <span role="status" className="sr-only">
             {search.trim() ? `${shown.length} ${shown.length === 1 ? "snippet matches" : "snippets match"}` : ""}
           </span>
@@ -176,9 +182,10 @@ export function SnippetsPage({ owner, catalog, state }: { owner: Owner; catalog:
               </EmptyContent>
             </Empty>
           ) : (
+            <div className="data-frame min-h-0">
             <ul
               ref={list}
-              className="catalog-list"
+              className="data-list"
               aria-label="Snippets"
               onKeyDown={(event) => {
                 const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>("button[data-snippet-id]") ?? [])];
@@ -221,6 +228,7 @@ export function SnippetsPage({ owner, catalog, state }: { owner: Owner; catalog:
                 );
               })}
             </ul>
+            </div>
           )}
         </div>
       )}

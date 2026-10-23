@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import {
+  CheckIcon,
   CircleAlertIcon,
   CopyIcon,
+  EraserIcon,
   FileKeyIcon,
   KeyRoundIcon,
   MessageCircleQuestionIcon,
@@ -66,10 +68,10 @@ const toneIcons: Record<CredentialTone, typeof ShieldCheckIcon> = {
   missing: CircleAlertIcon,
 };
 
-export function MethodBadge({ method }: { method: IdentityMethod }) {
+export function MethodBadge({ method, className }: { method: IdentityMethod; className?: string }) {
   const Icon = methodIcons[method];
   return (
-    <Badge variant="secondary">
+    <Badge variant="secondary" className={className}>
       <Icon data-icon="inline-start" aria-hidden="true" />
       {methodLabels[method]}
     </Badge>
@@ -143,7 +145,7 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
     <div className="catalog-page" data-testid="identities-page">
       <PageHeader
         title="Identities"
-        subtitle="Users, passwords and SSH keys for your servers, kept in the macOS Keychain."
+        subtitle={`Users, passwords and SSH keys for your servers, kept in the macOS Keychain · ${identities.length} ${identities.length === 1 ? "identity" : "identities"} · ${state.keys.length} ${state.keys.length === 1 ? "key" : "keys"}`}
         actions={empty ? null : tab === "identities" ? (
           <Button size="sm" onClick={() => setDialog({ kind: "identity" })}>
             <PlusIcon data-icon="inline-start" /> New identity
@@ -204,7 +206,20 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
               </EmptyContent>
             </Empty>
           ) : (
-            <ul className="identity-list" aria-label="Identities">
+            <div className="data-frame">
+            <table className="data-table" aria-label="Identities">
+              <thead>
+                <tr>
+                  <th scope="col" title="Name">Name</th>
+                  <th scope="col" className="w-[17%]" title="User name">User name</th>
+                  <th scope="col" className="w-[22%]" title="Method">Method</th>
+                  <th scope="col" className="w-[22%]" title="Used by">Used by</th>
+                  <th scope="col" className="w-28 data-actions-col">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
               {identities.map((identity) => (
                 <IdentityRow
                   key={identity.id}
@@ -216,7 +231,9 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
                   onDelete={() => setDialog({ kind: "delete-identity", id: identity.id })}
                 />
               ))}
-            </ul>
+              </tbody>
+            </table>
+            </div>
           )}
         </TabsContent>
         <TabsContent value="keys" className="min-h-0">
@@ -238,7 +255,20 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
               </EmptyContent>
             </Empty>
           ) : (
-            <ul className="identity-list" aria-label="SSH keys">
+            <div className="data-frame">
+            <table className="data-table" aria-label="SSH keys">
+              <thead>
+                <tr>
+                  <th scope="col" title="Name">Name</th>
+                  <th scope="col" className="w-24" title="Algorithm">Algorithm</th>
+                  <th scope="col" className="w-[22%]" title="Fingerprint">Fingerprint</th>
+                  <th scope="col" className="w-[24%]" title="Used by">Used by</th>
+                  <th scope="col" className="w-40 data-actions-col">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
               {state.keys.map((key) => (
                 <KeyRow
                   key={key.id}
@@ -252,7 +282,9 @@ export function IdentitiesPage({ owner, catalog, state }: { owner: Owner; catalo
                   onDelete={() => setDialog({ kind: "delete-key", id: key.id })}
                 />
               ))}
-            </ul>
+              </tbody>
+            </table>
+            </div>
           )}
         </TabsContent>
       </Tabs>
@@ -330,32 +362,41 @@ function IdentityRow({
   onDelete(): void;
 }) {
   return (
-    <li className="identity-row" data-identity-id={identity.id}>
-      <div className="grid min-w-0 gap-1">
-        <div className="flex min-w-0 items-center gap-2">
+    <tr data-identity-id={identity.id}>
+      <td>
+        <span className="flex min-w-0 items-center gap-2">
+          <UserRoundIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 truncate font-medium" title={identity.label}>
             {identity.label}
           </span>
-          <MethodBadge method={identity.method} />
-        </div>
-        <span className="host-target truncate" title={identity.username}>
+        </span>
+      </td>
+      <td>
+        <span className="host-target block truncate" title={identity.username}>
           {identity.username}
         </span>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 type-caption">
-          <CredentialStatus {...status} />
-          <span className="min-w-0 text-muted-foreground">{usage}</span>
-        </div>
-        {status.tone === "unresolved" ? <span>{retry}</span> : null}
-      </div>
-      <div className="identity-actions">
-        <Button variant="outline" size="sm" aria-label={`Edit ${identity.label}`} onClick={onEdit}>
-          <PencilIcon data-icon="inline-start" /> Edit
-        </Button>
-        <Button variant="outline" size="sm" aria-label={`Delete ${identity.label}`} onClick={onDelete}>
-          <Trash2Icon data-icon="inline-start" /> Delete
-        </Button>
-      </div>
-    </li>
+      </td>
+      <td>
+        <span className="data-cell">
+          <MethodBadge method={identity.method} className="h-auto max-w-full whitespace-normal" />
+          <span className="type-caption min-w-0">
+            <CredentialStatus {...status} />
+          </span>
+        </span>
+      </td>
+      <td className="type-caption text-muted-foreground">{usage}</td>
+      <td>
+        <span className="data-actions">
+          {status.tone === "unresolved" ? retry : null}
+          <Button variant="outline" size="sm" aria-label={`Edit ${identity.label}`} title="Edit" onClick={onEdit}>
+            <PencilIcon data-icon="inline-start" /> <span className="data-action-text">Edit</span>
+          </Button>
+          <Button variant="ghost" size="icon-sm" aria-label={`Delete ${identity.label}`} title="Delete" onClick={onDelete}>
+            <Trash2Icon aria-hidden="true" />
+          </Button>
+        </span>
+      </td>
+    </tr>
   );
 }
 
@@ -381,64 +422,74 @@ function KeyRow({
   const reason = keyInUseReason(users);
   const reasonId = `${keyItem.id}-delete-reason`;
   return (
-    <li className="identity-row" data-kind="key" data-key-id={keyItem.id}>
-      <div className="grid min-w-0 gap-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate font-medium" title={keyItem.label}>
+    <tr data-key-id={keyItem.id}>
+      <td>
+        <span className="data-cell">
+          <KeyRoundIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 max-w-full truncate font-medium" title={keyItem.label}>
             {keyItem.label}
           </span>
-          <Badge variant="secondary">{algorithmLabel(keyItem.algorithm)}</Badge>
           {keyItem.passphraseSaved ? <Badge variant="outline">Passphrase saved</Badge> : null}
-        </div>
+        </span>
+        {keyItem.pending ? (
+          <span className="data-cell mt-1 type-caption">
+            <CredentialStatus tone="unresolved" text="Keychain change unresolved" />
+            {retry}
+          </span>
+        ) : null}
+      </td>
+      <td>
+        <Badge variant="secondary">{algorithmLabel(keyItem.algorithm)}</Badge>
+      </td>
+      <td>
         <Tooltip>
           <TooltipTrigger
-            render={<span tabIndex={0} className="host-target w-fit max-w-full truncate" aria-label={`Fingerprint ${keyItem.fingerprint}`} />}
+            render={<span tabIndex={0} className="host-target block w-fit max-w-full truncate" aria-label={`Fingerprint ${keyItem.fingerprint}`} />}
           >
             {keyItem.fingerprint}
           </TooltipTrigger>
           <TooltipContent className="max-w-[min(90vw,40rem)] font-mono break-all">{keyItem.fingerprint}</TooltipContent>
         </Tooltip>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 type-caption">
-          {keyItem.pending ? <CredentialStatus tone="unresolved" text="Keychain change unresolved" /> : null}
-          <span className="text-muted-foreground">
-            {users.length
-              ? `Used by ${users.length} ${users.length === 1 ? "identity" : "identities"}`
-              : "Not used by any identities"}
+      </td>
+      <td className="type-caption text-muted-foreground">
+        {users.length
+          ? `Used by ${users.length} ${users.length === 1 ? "identity" : "identities"}`
+          : "Not used by any identities"}
+        {reason ? (
+          <span id={reasonId} className="mt-1 block">
+            {reason}
           </span>
-        </div>
-        {keyItem.pending ? <span>{retry}</span> : null}
-      </div>
-      <div className="identity-actions">
-        <Button variant="outline" size="sm" aria-label={`${copied ? "Copied" : "Copy"} public key for ${keyItem.label}`} onClick={onCopy}>
-          <CopyIcon data-icon="inline-start" /> {copied ? "Copied" : "Copy public key"}
-        </Button>
-        <Button variant="outline" size="sm" aria-label={`Rename ${keyItem.label}`} onClick={onRename}>
-          <PencilIcon data-icon="inline-start" /> Rename
-        </Button>
-        {keyItem.passphraseSaved ? (
-          <Button variant="outline" size="sm" aria-label={`Forget passphrase for ${keyItem.label}`} onClick={onForget}>
-            Forget passphrase
-          </Button>
         ) : null}
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label={`Delete ${keyItem.label}`}
-          aria-disabled={reason ? true : undefined}
-          aria-describedby={reason ? reasonId : undefined}
-          className="aria-disabled:opacity-50"
-          onClick={() => {
-            if (!reason) onDelete();
-          }}
-        >
-          <Trash2Icon data-icon="inline-start" /> Delete
-        </Button>
-      </div>
-      {reason ? (
-        <p id={reasonId} className="type-caption text-muted-foreground">
-          {reason}
-        </p>
-      ) : null}
-    </li>
+      </td>
+      <td>
+        <span className="data-actions">
+          <Button variant="ghost" size="icon-sm" aria-label={`${copied ? "Copied" : "Copy"} public key for ${keyItem.label}`} title={copied ? "Copied" : "Copy public key"} onClick={onCopy}>
+            {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
+          </Button>
+          <Button variant="ghost" size="icon-sm" aria-label={`Rename ${keyItem.label}`} title="Rename" onClick={onRename}>
+            <PencilIcon aria-hidden="true" />
+          </Button>
+          {keyItem.passphraseSaved ? (
+            <Button variant="ghost" size="icon-sm" aria-label={`Forget passphrase for ${keyItem.label}`} title="Forget passphrase" onClick={onForget}>
+              <EraserIcon aria-hidden="true" />
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Delete ${keyItem.label}`}
+            title="Delete"
+            aria-disabled={reason ? true : undefined}
+            aria-describedby={reason ? reasonId : undefined}
+            className="aria-disabled:opacity-50"
+            onClick={() => {
+              if (!reason) onDelete();
+            }}
+          >
+            <Trash2Icon aria-hidden="true" />
+          </Button>
+        </span>
+      </td>
+    </tr>
   );
 }

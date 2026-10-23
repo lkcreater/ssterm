@@ -1,6 +1,6 @@
 # ssterm — Design System
 
-> **Superseded in part (2026-10-22):** UI v2 Charcoal replaces the navy surfaces, overlay pattern, shell layout and some contrast rules below; see [ADR 0008](../adr/0008-ui-v2-charcoal.md) and the [UI v2 handoff](../logo/ui-v2/README.md). Principles in §1 still apply.
+> **Superseded in part (2026-10-22):** UI v2 Charcoal replaces the navy surfaces, overlay pattern, shell layout and some contrast rules below; see [ADR 0008](../adr/0008-ui-v2-charcoal.md) and the [UI v2 handoff](../logo/ui-v2/README.md). Principles in §1 still apply. No longer true of the shipped UI: the navy palette (§3.1, §12 “Locked”), the §6 shell diagram and §6.1 status/context bar (the titlebar now holds only traffic lights and a drag region, tabs and terminal actions sit in the Terminals page header, and each pane has its own header and status bar instead of a global bar), centered dialogs (§5, §7: every form, setting, tool and confirmation is a right-edge drawer) and the implementation status line below (DS04 was delivered in SST-018; the automated parts of DS05/DS06 in SST-027/028, with manual checks still pending).
 
 > **Version:** 1.0\
 > **Brand direction:** 02 — Signal Blue\

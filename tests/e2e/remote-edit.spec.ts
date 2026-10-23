@@ -4,6 +4,7 @@ import type { Page, TestInfo } from "@playwright/test";
 import type { RemoteEditView } from "../../packages/contracts/src/index";
 import { test, expect, type Desktop } from "./fixtures";
 import { pane, renderedContrast } from "./support/transfer-fixture";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // Credential-bearing main fixture and local/remote text must never enter automatic traces or screenshots.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -108,6 +109,7 @@ test("remote edit uses an owned editor process, private copies and exact explici
     expect(await confirm.evaluate((node) => { const box = node.getBoundingClientRect(); return { right: Math.abs(innerWidth - box.right) <= 0.5, bottom: Math.abs(innerHeight - box.bottom) <= 0.5 }; }), "right-edge drawer below the titlebar").toEqual({ right: true, bottom: true });
     await expect(page.getByRole("alertdialog"), "one confirmation drawer, no stacked overlay").toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expectDrawerPlaced(page, "remote-edit-open-consent");
     const contrasts: Record<string, unknown> = {};
     for (const [name, locator] of [["title", confirm.getByRole("heading")], ["description", confirm.locator('[data-slot="sheet-description"]')], ["cancel", confirm.getByRole("button", { name: "Cancel", exact: true })], ["open", confirm.getByRole("button", { name: "Open TextEdit", exact: true })], ["PROD", confirm.getByText("PROD", { exact: true })]] as const) {
       const measured = await renderedContrast(locator); contrasts[name] = measured; expect(measured.ratio, name).toBeGreaterThanOrEqual(4.5);
@@ -131,6 +133,7 @@ test("remote edit uses an owned editor process, private copies and exact explici
     await row(page, NAME).getByRole("button", { name: "Upload changes", exact: true }).click();
     await expect(dialog(page, "upload")).toContainText("cannot compare and replace atomically");
     await expect(dialog(page, "upload").getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    await expectDrawerPlaced(page, "remote-edit-upload-consent");
     await dialog(page, "upload").getByRole("button", { name: "Cancel", exact: true }).click();
     expect((await lab.operate("remoteInfo", NAME)).hash).toBe(hash(original));
     await row(page, NAME).getByRole("button", { name: "Upload changes", exact: true }).click();

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Locator, Page } from "@playwright/test";
 import { test, expect, changeCatalog, type Desktop } from "./fixtures";
+import { closeAndExpectNoSsh } from "./support/ssh-teardown";
 
 // Sessions authenticate with the lab password typed from main; keep automatic artifacts off.
 // The visual check attaches explicit screenshots that show only fixture names, labels and the endpoint.
@@ -68,8 +69,7 @@ async function lab(desktop: Desktop, servers: { label: string; prod?: boolean; u
   };
   const finish = async () => {
     try {
-      await desktop.close();
-      expect(await count("sshd: fixture@"), "no server session outlives the app").toBe(0);
+      await closeAndExpectNoSsh(desktop, lab, () => count("sshd: fixture@"));
     } finally {
       lab.privateKey.fill(0);
       await lab.dispose();

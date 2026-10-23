@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import type { Locator } from "@playwright/test";
 import type { CredentialPrompt, Owner } from "../../packages/contracts/src/index";
 import { test, expect } from "./fixtures";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // Credential values must never enter traces, automatic screenshots, videos, or test attachments.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -113,6 +114,7 @@ test("shipped SSH prompts unlock real keys and isolate bounded keyboard-interact
     expect(identity(await prompt())).toEqual(opened);
     await expect(dialog.getByLabel("Passphrase", { exact: true })).toBeFocused();
     await shot("credentials-passphrase-1280");
+    await expectDrawerPlaced(page, "credential-passphrase");
     await measure(dialog.getByRole("heading", { name: "SSH authentication", exact: true }), "heading");
     await measure(dialog.getByText("ระบบทดสอบ กรุงเทพ", { exact: true }), "Thai target");
     await measure(dialog.getByText("PROD", { exact: true }), "PROD badge");
@@ -201,6 +203,7 @@ test("shipped SSH prompts unlock real keys and isolate bounded keyboard-interact
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(960);
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await shot("credentials-keyboard-960-reduced-motion");
+    await expectDrawerPlaced(page, "credential-keyboard-interactive");
     await measure(dialog.getByText("Response 1", { exact: true }), "keyboard field label");
     await fill("first");
     await proceed.click();

@@ -85,7 +85,7 @@
 ## Post-MVP — authorized
 
 - [x] **T053 / SST-039:** local app lock — password or Google (loopback OAuth), recovery code, main-side IPC gate, Settings
-- [ ] **T054 / SST-040:** UI v2 Charcoal — tokens/icon, right-edge drawers, shell, Files picker, manual Lock workspace ([spec](../agent-runs/sst-040-spec.md))
+- [x] **T054 / SST-040:** UI v2 Charcoal — tokens/icon, right-edge drawers, shell, Files picker, manual Lock workspace ([spec](../agent-runs/sst-040-spec.md), [delivery](../agent-runs/sst-040-delivery.md))
 
 ## Later scope — authorized separately from MVP
 

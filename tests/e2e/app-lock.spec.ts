@@ -11,6 +11,7 @@ import type { Page } from "@playwright/test";
 import { test, expect, changeCatalog, launchDesktop, type Desktop } from "./fixtures";
 import { pane } from "./support/transfer-fixture";
 import { audit } from "./support/audit";
+import { expectDrawerPlaced } from "./support/drawer";
 
 // Passwords and recovery codes are owned fixture values; keep traces off anyway.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -345,7 +346,7 @@ test("Lock workspace with live work: SSH and local terminals, a tunnel and a tra
     await expect(local.locator(".xterm-rows")).toContainText("lock-e2e%", { timeout: 20_000 });
     // 3. Tunnel.
     await page.getByRole("button", { name: "Port forwarding", exact: false }).click();
-    const rule = page.getByTestId("tunnels-page").locator("li[data-rule-id]").filter({ hasText: "เว็บ lock" });
+    const rule = page.getByTestId("tunnels-page").locator("tr[data-rule-id]").filter({ hasText: "เว็บ lock" });
     await rule.getByRole("button", { name: "Start เว็บ lock" }).click();
     await expect(rule.locator(".tunnel-status")).toContainText("Running", { timeout: 30_000 });
     expect(await portIsOpen(port)).toBe(true);
@@ -412,6 +413,7 @@ test("Lock workspace with live work: SSH and local terminals, a tunnel and a tra
     await expect(confirm).toBeVisible();
     // Explicit evidence: the drawer shows targets and counts only (the saved password never reaches the UI).
     await expect.poll(() => drawer.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
+    await expectDrawerPlaced(page, "lock-workspace");
     await page.screenshot({ path: testInfo.outputPath("lock-workspace-drawer.png") });
     await page.keyboard.press("Escape");
     await alive();
