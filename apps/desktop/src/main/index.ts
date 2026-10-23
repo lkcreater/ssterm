@@ -443,7 +443,15 @@ async function initializeAppLock(): Promise<void> {
     service = new AppLockService({ store, marker, googleAvailable: !!google });
     await service.load();
   }
-  appLock = createAppLockController({ service, google, openExternal: (url) => shell.openExternal(url) });
+  appLock = createAppLockController({
+    service, google, openExternal: (url) => shell.openExternal(url),
+    // Lock workspace (SST-040): every window's sessions, tunnels, transfers and remote edits, as on screen lock.
+    lockSessions: () => desktopSessions?.lock(),
+    // A reload rotates each window's owner (unregistering its feature pushes) and bootstraps it locked, as at launch.
+    showGate: () => {
+      for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.reload();
+    },
+  });
   boundary.setAccessGate(() => appLock?.open() ?? false);
   removeAppLockHandlers = registerAppLockHandlers({ ipc: ipcMain, boundary, controller: () => appLock });
 }

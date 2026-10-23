@@ -65,6 +65,8 @@ export const appLockRequestSchemas = {
   unlockOffline: z.strictObject({ owner }),
   recover: z.strictObject({ owner, code: text(64) }),
   regenerateRecovery: z.strictObject({ owner }),
+  /** Lock workspace (SST-040): session lock for the whole process, then back to the gate. */
+  lockNow: z.strictObject({ owner }),
 } as const;
 export type AppLockStateRequest = z.infer<typeof appLockRequestSchemas.state>;
 export type SetupPasswordRequest = z.infer<typeof appLockRequestSchemas.setupPassword>;
@@ -75,6 +77,7 @@ export type CancelGoogleRequest = z.infer<typeof appLockRequestSchemas.cancelGoo
 export type UnlockOfflineRequest = z.infer<typeof appLockRequestSchemas.unlockOffline>;
 export type RecoverRequest = z.infer<typeof appLockRequestSchemas.recover>;
 export type RegenerateRecoveryRequest = z.infer<typeof appLockRequestSchemas.regenerateRecovery>;
+export type LockNowRequest = z.infer<typeof appLockRequestSchemas.lockNow>;
 
 export type SetupPasswordResponse =
   | { status: "configured"; recoveryCode: string }
@@ -92,6 +95,11 @@ export type GoogleSignInResponse =
   | { status: "failed"; code: GoogleFailure; graceAvailable: boolean };
 export type UnlockOfflineResponse = { status: "unlocked" } | { status: "failed"; code: "online" | "expired" | "not-allowed" };
 export type RegenerateRecoveryResponse = { status: "regenerated"; recoveryCode: string } | { status: "not-allowed" } | { status: "store-unavailable" };
+/**
+ * `not-allowed`: the app lock is off (test profiles) or no sign-in is configured yet, so there is no gate to return to.
+ * `busy`: a sign-in change or new recovery code is being saved (briefly); nothing was locked, try again.
+ */
+export type LockNowResponse = { status: "locked" | "not-allowed" | "busy" };
 
 const recoveryCode = z.string().regex(RECOVERY_CODE_PATTERN);
 const fields = z.strictObject({ username: z.string().max(200).optional(), password: z.string().max(200).optional(), confirmPassword: z.string().max(200).optional() });
@@ -135,6 +143,7 @@ const responseSchemas = {
     z.strictObject({ status: z.enum(["not-allowed", "store-unavailable"]) }),
   ]),
   ok: z.strictObject({ status: z.literal("cancelled") }),
+  lockNow: z.strictObject({ status: z.enum(["locked", "not-allowed", "busy"]) }),
 };
 const guard = <T>(schema: z.ZodType<T>) => (value: unknown): value is T => schema.safeParse(value).success;
 export const isAppLockStatus = guard<AppLockStatus>(statusSchema);
@@ -144,6 +153,7 @@ export const isGoogleSignInResponse = guard<GoogleSignInResponse>(responseSchema
 export const isUnlockOfflineResponse = guard<UnlockOfflineResponse>(responseSchemas.offline as z.ZodType<UnlockOfflineResponse>);
 export const isRegenerateRecoveryResponse = guard<RegenerateRecoveryResponse>(responseSchemas.regenerate as z.ZodType<RegenerateRecoveryResponse>);
 export const isCancelGoogleResponse = guard<{ status: "cancelled" }>(responseSchemas.ok);
+export const isLockNowResponse = guard<LockNowResponse>(responseSchemas.lockNow);
 export const appLockRequestGuards = {
   state: guard<AppLockStateRequest>(appLockRequestSchemas.state),
   setupPassword: guard<SetupPasswordRequest>(appLockRequestSchemas.setupPassword),
@@ -154,6 +164,7 @@ export const appLockRequestGuards = {
   unlockOffline: guard<UnlockOfflineRequest>(appLockRequestSchemas.unlockOffline),
   recover: guard<RecoverRequest>(appLockRequestSchemas.recover),
   regenerateRecovery: guard<RegenerateRecoveryRequest>(appLockRequestSchemas.regenerateRecovery),
+  lockNow: guard<LockNowRequest>(appLockRequestSchemas.lockNow),
 };
 /** Field messages for the setup form (renderer) and main's re-validation. */
 export function passwordSetupErrors(value: { username: string; password: string; confirmPassword: string }): AppLockFieldErrors | null {

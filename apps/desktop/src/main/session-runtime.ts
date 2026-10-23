@@ -50,7 +50,9 @@ export function createDesktopSessions(options: {
 
   return {
     registry,
-    /** Called after every lock (screen lock or suspend) has fenced the registry. */
+    /** The screen-lock/suspend lock, also run by Lock workspace (SST-040) before the app lock closes. */
+    lock,
+    /** Called after every lock (screen lock, suspend or Lock workspace) has fenced the registry. */
     onLock(listener: () => void): () => void {
       lockListeners.add(listener);
       return () => { lockListeners.delete(listener); };

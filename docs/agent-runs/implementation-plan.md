@@ -1495,3 +1495,12 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
     - typecheck pass, unit 768/769 (1 known skip).
     - Full E2E 89/89 before the review fixes; after them, the focused specs pass.
     - A transfers.spec hang is open. It timed out once at 420 s and leaked a fixture container. It hung in this ticket's rerun, and before that once during ticket 02. It passed 3/3 alone, and the cause is unknown. Look at it in ticket 15.
+- **SST-040/12 done (2026-10-23):**
+  - **Lock workspace (immediate):** validated `ssterm:app-lock-lock-now` (owner/sender/strict payload). It runs the session lock and `service.lock()` in the same synchronous turn, then reloads every window into the gate. The button is hidden when the app lock is off.
+  - **Lock counter:** fences in-flight unlock, confirm, recovery, Google and offline attempts.
+  - **Review: first BLOCKED, then APPROVED.**
+    - High (reproduced): a Settings password/Google change still in flight reopened the app after a relock.
+    - Medium: a recovery-code regenerate could leave the user without a working code.
+    - Fix: changes not yet written are abandoned, and Lock workspace answers `busy` while a Keychain write is in flight (ADR 0004 note).
+    - Lows: a throwing session lock now still reloads, and the race tests now interleave.
+  - **Checks:** typecheck pass, unit 773/774 (1 known skip), build pass. Full E2E was 90/90 before the fixes; after them app-lock/desktop/settings pass 11/11.

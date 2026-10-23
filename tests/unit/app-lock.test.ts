@@ -3,13 +3,13 @@ import { test } from "node:test";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:net";
 import {
-  appLockRequestGuards, isAppLockStatus, isGoogleSignInResponse, passwordSetupErrors, recoveryCodeSchema, RECOVERY_CODE_PATTERN,
+  appLockRequestGuards, channels, isAppLockStatus, isGoogleSignInResponse, isLockNowResponse, passwordSetupErrors, recoveryCodeSchema, RECOVERY_CODE_PATTERN,
 } from "../../packages/contracts/src/index.ts";
 import { AppLockService, type AppLockStore } from "../../packages/services/src/app-lock.ts";
 import { beginAuthorization, completeAuthorization, OAuthError, verifyIdToken, GOOGLE_REDIRECT_URI } from "../../packages/services/src/google-oauth.ts";
 import { waitForOAuthCallback } from "../../packages/adapters/src/oauth-loopback.ts";
 import { WindowBoundary } from "../../apps/desktop/src/main/boundary.ts";
-import { appLockEnabled, createAppLockController, googleConfiguration } from "../../apps/desktop/src/main/app-lock.ts";
+import { appLockChannels, appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers } from "../../apps/desktop/src/main/app-lock.ts";
 
 const FAST = { N: 1024, r: 8, p: 1 };
 class MemoryStore implements AppLockStore {
@@ -315,4 +315,288 @@ test("ID token azp/email_verified and loopback Host checks", async () => {
   assert.equal(rebound, 404);
   await fetch(`http://127.0.0.1:${port}/oauth/callback?state=S&code=ok`);
   assert.deepEqual(await pending, { status: "code", code: "ok" });
+});
+
+/** One registered window behind the real boundary, gated by `controller.open()`. */
+function gatedWindow(controller: { open(): boolean }) {
+  const mainFrame = { url: "http://127.0.0.1:5174/" };
+  const sender = { id: 7, mainFrame, isDestroyed: () => false, send() {} };
+  const boundary = new WindowBoundary(mainFrame.url, { name: "ssterm", version: "0", platform: "darwin" }, () => ({ status: "ready", schemaVersion: 1 }));
+  boundary.register(sender, 1, true, () => {});
+  boundary.setAccessGate(() => controller.open());
+  const event = { sender, senderFrame: mainFrame };
+  const owner = { windowId: 1, generation: 1 };
+  /** What any feature channel would answer right now. */
+  const feature = () => { const result = boundary.authorizeOwner(event, owner); return result.ok ? "open" : result.error.code; };
+  return { boundary, event, owner, mainFrame, feature };
+}
+
+test("Lock workspace: session lock then app lock in one turn, gate refuses feature IPC during teardown, repeat is idempotent, unlock is unchanged", async () => {
+  const store = new MemoryStore();
+  const clock = { now: 1_000_000 };
+  const lock = await service(store, clock);
+  const order: string[] = [];
+  // Stands in for the registry teardown that continues after the synchronous fence.
+  let drained!: () => void;
+  const teardown = new Promise<void>((done) => { drained = done; });
+  // What feature IPC answered at points interleaved with the session lock's asynchronous teardown.
+  const interleaved: string[] = [];
+  const controller = createAppLockController({
+    service: lock, google: undefined, openExternal: async () => {},
+    // The real session lock fences synchronously and keeps tearing down afterwards.
+    lockSessions: () => {
+      order.push(`sessions:${lock.unlocked ? "open" : "closed"}`);
+      if (order.length > 1) return;
+      void Promise.resolve().then(() => interleaved.push(`teardown-step:${window.feature()}`));
+      void teardown.then(() => interleaved.push(`teardown-done:${window.feature()}`));
+    },
+    showGate: () => order.push("gate"),
+  });
+  const window = gatedWindow(controller);
+  assert.deepEqual(controller.lockNow(), { ok: true, value: { status: "not-allowed" } }, "first-run setup has no gate to return to");
+  assert.deepEqual(order, []);
+  await lock.setupPassword(SETUP);
+  assert.deepEqual(await lock.confirmPassword(SETUP.password), { status: "confirmed" });
+  assert.equal(lock.status().elevated, true);
+  assert.equal(window.feature(), "open");
+
+  // An IPC already queued when Lock workspace starts runs after it, behind the closed gate.
+  queueMicrotask(() => interleaved.push(`queued-ipc:${window.feature()}`));
+  const locked = controller.lockNow();
+  assert.deepEqual(locked, { ok: true, value: { status: "locked" } });
+  assert.ok(isLockNowResponse(locked.ok && locked.value));
+  assert.deepEqual(order, ["sessions:open", "gate"], "session lock runs first, then every window is sent to the gate");
+  assert.equal(lock.status().phase, "locked");
+  assert.equal(window.feature(), "unauthorized", "IPC while the session lock is still tearing down is refused");
+  await new Promise((done) => setImmediate(done));
+  drained();
+  await teardown;
+  await new Promise((done) => setImmediate(done));
+  assert.deepEqual(interleaved, ["queued-ipc:unauthorized", "teardown-step:unauthorized", "teardown-done:unauthorized"]);
+  assert.equal(window.boundary.authorizeLockOwner(window.event, window.owner).ok, true, "the gate's own channels stay served");
+
+  assert.deepEqual(controller.lockNow(), { ok: true, value: { status: "locked" } }, "repeat is safe");
+  assert.deepEqual(order, ["sessions:open", "gate", "sessions:closed"], "a repeat re-fences sessions but does not reload gated windows");
+  assert.equal(lock.lockEpoch, 2);
+
+  // Same method and backoff as at launch.
+  assert.deepEqual(await controller.unlockPassword("alice", "wrong password!!"), { ok: true, value: { status: "rejected", retryAfterMs: 1000 } });
+  assert.deepEqual(await controller.unlockPassword("alice", SETUP.password), { ok: true, value: { status: "rejected", retryAfterMs: 1000 } });
+  clock.now += 1000;
+  assert.deepEqual(await controller.unlockPassword("alice", SETUP.password), { ok: true, value: { status: "unlocked" } });
+  assert.equal(window.feature(), "open");
+  assert.equal(lock.status().elevated, false, "the Settings confirmation window did not survive the lock");
+
+  let offLocks = 0;
+  const off = createAppLockController({ service: undefined, google: undefined, openExternal: async () => {}, lockSessions: () => { offLocks += 1; } });
+  assert.deepEqual(off.lockNow(), { ok: true, value: { status: "not-allowed" } }, "hidden and refused when the app lock is off");
+  assert.equal(offLocks, 0);
+});
+
+test("Lock workspace races: an unlock, confirmation, recovery, Google sign-in or offline unlock in flight cannot open the app", async () => {
+  const store = new MemoryStore();
+  const clock = { now: 1_000_000 };
+  const lock = await service(store, clock);
+  const code = ((await lock.setupPassword(SETUP)) as { recoveryCode: string }).recoveryCode;
+  const controller = createAppLockController({ service: lock, google: undefined, openExternal: async () => {} });
+
+  const confirming = lock.confirmPassword(SETUP.password);
+  controller.lockNow();
+  assert.deepEqual(await confirming, { status: "not-allowed" });
+  assert.equal(lock.status().elevated, false);
+
+  const unlocking = lock.unlockPassword("alice", SETUP.password);
+  assert.deepEqual(controller.lockNow(), { ok: true, value: { status: "locked" } });
+  assert.deepEqual(await unlocking, { status: "not-allowed" }, "the lock wins over an unlock that was still verifying");
+  assert.equal(lock.unlocked, false);
+  const recovering = lock.recover(code);
+  controller.lockNow();
+  assert.deepEqual(await recovering, { status: "not-allowed" });
+  assert.equal(lock.status().phase, "locked");
+  assert.deepEqual(await lock.unlockPassword("alice", SETUP.password), { status: "unlocked" }, "a fresh attempt after the lock works");
+
+  // Google: setup, relock, then lock again during the browser round trip and during the offline check.
+  const google = fakeGoogle();
+  const port = await freePort();
+  const googleLock = await service(new MemoryStore(), clock);
+  await googleLock.completeGoogle("setup", { sub: "123", email: "a@example.com" });
+  let reachable!: (online: boolean) => void;
+  const gc = createAppLockController({
+    service: googleLock,
+    google: { client: { clientId: google.clientId, clientSecret: "s" }, endpoints: { authorization: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://t/token", jwks: "https://t/certs", issuers: ["https://accounts.google.com"] } },
+    port,
+    // Google unreachable, answered only after the lock below.
+    fetch: (() => new Promise((_, reject) => { reachable = () => reject(new Error("offline")); })) as unknown as typeof fetch,
+    openExternal: async () => {},
+  });
+  assert.deepEqual(gc.lockNow(), { ok: true, value: { status: "locked" } });
+  const signingIn = gc.google("unlock");
+  await new Promise((done) => setTimeout(done, 50));
+  gc.lockNow();
+  const signedIn = await signingIn;
+  assert.ok(signedIn.ok && signedIn.value.status === "failed" && signedIn.value.code === "cancelled", "Lock workspace stops the sign-in");
+  assert.equal(googleLock.graceAvailable(), true);
+  const offline = gc.unlockOffline();
+  gc.lockNow();
+  reachable(false);
+  assert.deepEqual(await offline, { ok: true, value: { status: "failed", code: "not-allowed" } });
+  assert.equal(googleLock.unlocked, false);
+});
+
+test("Lock workspace IPC: owner-checked, strict payload, served while locked", async () => {
+  const lock = await service(new MemoryStore());
+  await lock.setupPassword(SETUP);
+  let sessionLocks = 0;
+  const controller = createAppLockController({ service: lock, google: undefined, openExternal: async () => {}, lockSessions: () => { sessionLocks += 1; } });
+  const window = gatedWindow(controller);
+  const handlers = new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>();
+  const remove = registerAppLockHandlers({
+    ipc: { handle: (channel: string, run: never) => { handlers.set(channel, run); }, removeHandler: (channel: string) => { handlers.delete(channel); } } as never,
+    boundary: window.boundary,
+    controller: () => controller,
+  });
+  assert.ok(appLockChannels.includes(channels.lockNow));
+  const invoke = (event: unknown, ...args: unknown[]) => handlers.get(channels.lockNow)!(event, ...args);
+  const code = (result: unknown) => (result as { ok: boolean; error?: { code: string } }).error?.code;
+  const foreign = { sender: { id: 8, mainFrame: window.mainFrame, isDestroyed: () => false }, senderFrame: window.mainFrame };
+  assert.equal(code(await invoke(foreign, { owner: window.owner })), "unauthorized", "an unregistered sender");
+  assert.equal(code(await invoke({ ...window.event, senderFrame: { url: "http://127.0.0.1:5174/" } }, { owner: window.owner })), "unauthorized", "a subframe");
+  assert.equal(code(await invoke(window.event, { owner: { windowId: 2, generation: 1 } })), "unauthorized", "another window's owner");
+  assert.equal(code(await invoke(window.event, { owner: { windowId: 1, generation: 9 } })), "stale-owner");
+  assert.equal(code(await invoke(window.event, { owner: window.owner, now: true })), "invalid-request");
+  assert.equal(code(await invoke(window.event, { owner: window.owner }, 1)), "invalid-request");
+  assert.equal(code(await invoke(window.event)), "invalid-request");
+  assert.equal(sessionLocks, 0, "rejected requests lock nothing");
+  assert.equal(lock.unlocked, true);
+  assert.deepEqual(await invoke(window.event, { owner: window.owner }), { ok: true, value: { status: "locked" } });
+  assert.equal(sessionLocks, 1);
+  assert.equal(window.feature(), "unauthorized");
+  assert.deepEqual(await invoke(window.event, { owner: window.owner }), { ok: true, value: { status: "locked" } }, "served behind the gate");
+  remove();
+  assert.equal(handlers.size, 0);
+});
+
+/** Holds the next write until released, so a test can act while it is in flight. */
+class GatedStore extends MemoryStore {
+  #held: { started: () => void; released: Promise<void> } | undefined;
+  #release: () => void = () => {};
+  started: Promise<void> = Promise.resolve();
+  /** The next write waits for `release()`; `started` resolves when it begins. */
+  holdNext() {
+    let started!: () => void;
+    this.started = new Promise((done) => { started = done; });
+    this.#held = { started, released: new Promise((done) => { this.#release = done; }) };
+  }
+  release() { this.#release(); }
+  override async write(value: Uint8Array) {
+    const held = this.#held;
+    this.#held = undefined;
+    if (held) { held.started(); await held.released; }
+    return super.write(value);
+  }
+}
+
+test("Lock workspace vs sign-in changes: an unwritten change is abandoned, a write in flight answers busy, the app never reopens", async () => {
+  const NEXT = { username: "alice", password: "another long passphrase", confirmPassword: "another long passphrase" };
+  const store = new GatedStore();
+  const lock = await service(store);
+  const first = ((await lock.setupPassword(SETUP)) as { recoveryCode: string }).recoveryCode;
+  let reloads = 0;
+  const controller = createAppLockController({ service: lock, google: undefined, openExternal: async () => {}, showGate: () => { reloads += 1; } });
+  const unlockAgain = async () => {
+    assert.deepEqual(await lock.unlockPassword("alice", SETUP.password), { status: "unlocked" }, "the old password still unlocks");
+    assert.deepEqual(await lock.confirmPassword(SETUP.password), { status: "confirmed" });
+  };
+  await lock.confirmPassword(SETUP.password);
+
+  // Password change from the Settings confirmation window, locked before its write.
+  const changing = lock.setupPassword(NEXT);
+  assert.deepEqual(controller.lockNow(), { ok: true, value: { status: "locked" } });
+  assert.deepEqual(await changing, { status: "not-allowed" });
+  assert.equal(controller.open(), false, "the abandoned change does not reopen the app");
+  await unlockAgain();
+
+  // Switching to Google from Settings, locked before its write.
+  const switching = lock.completeGoogle("setup", { sub: "1", email: "a@example.com" }, lock.lockEpoch);
+  controller.lockNow();
+  assert.deepEqual(await switching, { status: "not-allowed" });
+  assert.equal(controller.open(), false);
+  assert.equal(lock.status().method, "password");
+  await unlockAgain();
+
+  // A new recovery code, locked before its write: the old code keeps working.
+  const regenerating = lock.regenerateRecovery();
+  controller.lockNow();
+  assert.deepEqual(await regenerating, { status: "not-allowed" });
+  assert.deepEqual(await lock.recover(first), { status: "recovered" }, "the user is never left without a working code");
+  const fresh = await service(store);
+  assert.deepEqual(await fresh.unlockPassword("alice", SETUP.password), { status: "unlocked" });
+  await fresh.confirmPassword(SETUP.password);
+
+  // A write already in flight: Lock workspace answers busy (nothing locked, no reload), then locks once it lands.
+  const freshController = createAppLockController({ service: fresh, google: undefined, openExternal: async () => {}, showGate: () => { reloads += 1; } });
+  const before = reloads;
+  store.holdNext();
+  const writing = fresh.regenerateRecovery();
+  await store.started;
+  assert.deepEqual(freshController.lockNow(), { ok: true, value: { status: "busy" } });
+  assert.equal(fresh.lock(), false);
+  assert.equal(reloads, before);
+  store.release();
+  const regenerated = await writing;
+  assert.equal(regenerated.status, "regenerated");
+  assert.deepEqual(freshController.lockNow(), { ok: true, value: { status: "locked" } });
+  assert.equal(freshController.open(), false);
+  assert.deepEqual(await fresh.recover((regenerated as { recoveryCode: string }).recoveryCode), { status: "recovered" }, "the code the window was shown works");
+
+  // Same for a password change whose write is in flight: busy, then the change completes unlocked as asked.
+  const third = await service(store);
+  await third.unlockPassword("alice", SETUP.password);
+  await third.confirmPassword(SETUP.password);
+  const thirdController = createAppLockController({ service: third, google: undefined, openExternal: async () => {} });
+  store.holdNext();
+  const saving = third.setupPassword(NEXT);
+  await store.started;
+  assert.deepEqual(thirdController.lockNow(), { ok: true, value: { status: "busy" } });
+  store.release();
+  assert.equal((await saving).status, "configured");
+  assert.deepEqual(thirdController.lockNow(), { ok: true, value: { status: "locked" } });
+  assert.equal(thirdController.open(), false);
+});
+
+test("Lock workspace: a throwing session lock still locks and reloads; a Google unlock locked after its token exchange stays locked", async () => {
+  const lock = await service(new MemoryStore());
+  await lock.setupPassword(SETUP);
+  let reloads = 0;
+  const throwing = createAppLockController({
+    service: lock, google: undefined, openExternal: async () => {},
+    lockSessions: () => { throw new Error("teardown failed"); },
+    showGate: () => { reloads += 1; },
+  });
+  assert.deepEqual(throwing.lockNow(), { ok: true, value: { status: "locked" } });
+  assert.equal(throwing.open(), false);
+  assert.equal(reloads, 1, "every window still reloads into the gate");
+
+  const google = fakeGoogle();
+  const port = await freePort();
+  const store = new GatedStore();
+  const googleLock = await service(store);
+  await googleLock.completeGoogle("setup", { sub: "123", email: "a@example.com" });
+  const controller = createAppLockController({
+    service: googleLock,
+    google: { client: { clientId: google.clientId, clientSecret: "s" }, endpoints: { authorization: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://t/token", jwks: "https://t/certs", issuers: ["https://accounts.google.com"] } },
+    port,
+    fetch: google.fetcher as typeof fetch,
+    openExternal: async (url) => { const state = google.authorize(url); void fetch(`http://127.0.0.1:${port}/oauth/callback?state=${state}&code=abc`); },
+  });
+  controller.lockNow();
+  // The token exchange completes and the verified sign-in is being recorded when Lock workspace runs again.
+  store.holdNext();
+  const signingIn = controller.google("unlock");
+  await store.started;
+  assert.deepEqual(controller.lockNow(), { ok: true, value: { status: "locked" } });
+  store.release();
+  const result = await signingIn;
+  assert.ok(result.ok && result.value.status === "failed" && result.value.code === "not-allowed", JSON.stringify(result));
+  assert.equal(controller.open(), false);
 });

@@ -4,7 +4,7 @@
 
 **Blocked by:** 09 — Shell v2
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] New validated lock-now command on the app-lock boundary; main runs the existing screen-lock/suspend session lock for the whole process, then returns the app-lock controller to locked
 - [ ] Every window shows the existing gate; feature IPC answers unauthorized until unlock

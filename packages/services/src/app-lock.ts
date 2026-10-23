@@ -88,6 +88,10 @@ export class AppLockService {
   #failures = 0;
   #nextAttemptAt = 0;
   #busy = false;
+  /** Counts manual relocks; an attempt that started before the latest one may not unlock or elevate. */
+  #locks = 0;
+  /** A write that replaces the recovery verifier is in flight; Lock workspace waits it out (`busy`). */
+  #replacing = false;
   constructor(private readonly options: {
     store: AppLockStore | undefined;
     /** Profile marker (a file next to the database); never holds a secret. */
@@ -99,6 +103,24 @@ export class AppLockService {
   #now() { return this.options.now?.() ?? Date.now(); }
   get #params(): ScryptParams { return this.options.params ?? SCRYPT_PARAMS; }
   get unlocked(): boolean { return this.#phase === "unlocked"; }
+  get lockEpoch(): number { return this.#locks; }
+  /** A sign-in is configured and not mid-recovery, so there is a gate to return to. */
+  get lockable(): boolean { return (this.#phase === "unlocked" || this.#phase === "locked") && !this.#recovering && !!this.#record && !this.#replacing; }
+  get replacing(): boolean { return this.#replacing; }
+
+  /**
+   * Lock workspace (SST-040, ADR 0004 amendment): back to the gate. Backoff is kept; the Settings confirmation window
+   * ends, and an unlock, confirmation or recovery still verifying when this runs cannot open or elevate the app. A sign-in
+   * change or new recovery code that has not started its write is abandoned (the old record and code stay valid); one
+   * whose write is in flight makes this refuse instead, so a saved code is never lost to a reloaded window.
+   */
+  lock(): boolean {
+    if (!this.lockable) return false;
+    this.#locks += 1;
+    this.#phase = "locked";
+    this.#elevatedUntil = 0;
+    return true;
+  }
 
   /**
    * Missing record + no marker: first launch (setup). Missing or corrupt record + marker: the lock was configured, so
@@ -177,17 +199,33 @@ export class AppLockService {
     await this.options.marker?.write(Buffer.from(JSON.stringify(marker), "utf8")).catch(() => undefined);
     this.#marker = undefined;
   }
-  async #configure(record: Omit<LockRecord, "v" | "recovery" | "createdAt">): Promise<string | undefined> {
+  /**
+   * Saves a record with a new recovery verifier unless a relock came first. Relocks are refused from the write until
+   * `apply` has run, so no lock can land between the save and the state change it implies.
+   */
+  async #replace(next: LockRecord, locks: number, apply: () => void = () => {}): Promise<"saved" | "locked" | "failed"> {
+    if (locks !== this.#locks) return "locked";
+    this.#replacing = true;
+    try {
+      if (!(await this.#save(next))) return "failed";
+      await this.#mark(next);
+      this.#record = next;
+      apply();
+      return "saved";
+    } finally { this.#replacing = false; }
+  }
+  async #configure(record: Omit<LockRecord, "v" | "recovery" | "createdAt">, locks: number):
+    Promise<{ status: "configured"; recoveryCode: string } | { status: "not-allowed" | "store-unavailable" }> {
     const code = newRecoveryCode();
     const next: LockRecord = { v: 1, ...record, recovery: await makeVerifier(code, this.#params), createdAt: this.#now() };
-    if (!(await this.#save(next))) return undefined;
-    await this.#mark(next);
-    this.#record = next;
-    this.#phase = "unlocked";
-    this.#recovering = false;
-    this.#elevatedUntil = 0;
-    this.#succeed();
-    return code;
+    const saved = await this.#replace(next, locks, () => {
+      this.#phase = "unlocked";
+      this.#recovering = false;
+      this.#elevatedUntil = 0;
+      this.#succeed();
+    });
+    if (saved !== "saved") return { status: saved === "locked" ? "not-allowed" : "store-unavailable" };
+    return { status: "configured", recoveryCode: code };
   }
 
   async setupPassword(input: { username: string; password: string; confirmPassword: string }):
@@ -196,13 +234,11 @@ export class AppLockService {
     const fields = passwordSetupErrors(input);
     if (fields) return { status: "invalid", fields };
     type Result = { status: "configured"; recoveryCode: string } | { status: "not-allowed" | "store-unavailable" };
-    return this.#exclusive<Result>({ status: "not-allowed" }, async () => {
-      const code = await this.#configure({
-        method: "password", username: input.username.trim(),
-        password: await makeVerifier(input.password, this.#params), google: null,
-      });
-      return code ? { status: "configured" as const, recoveryCode: code } : { status: "store-unavailable" as const };
-    });
+    const locks = this.#locks;
+    return this.#exclusive<Result>({ status: "not-allowed" }, async () => this.#configure({
+      method: "password", username: input.username.trim(),
+      password: await makeVerifier(input.password, this.#params), google: null,
+    }, locks));
   }
 
   async unlockPassword(username: string, password: string) {
@@ -210,11 +246,13 @@ export class AppLockService {
     if (this.#phase !== "locked" || this.#recovering || record?.method !== "password") return { status: "not-allowed" as const };
     const wait = this.#throttled();
     if (wait) return { status: "rejected" as const, retryAfterMs: wait };
+    const locks = this.#locks;
     return this.#exclusive({ status: "rejected" as const, retryAfterMs: 1000 }, async () => {
       // Both checks always run, so timing does not reveal which one failed.
       const nameOk = username.trim().normalize("NFC") === record.username!.normalize("NFC");
       const passwordOk = await verify(password, record.password!);
       if (!nameOk || !passwordOk) return this.#fail();
+      if (locks !== this.#locks) return { status: "not-allowed" as const };
       this.#succeed();
       this.#phase = "unlocked";
       return { status: "unlocked" as const };
@@ -226,8 +264,10 @@ export class AppLockService {
     if (this.#phase !== "unlocked" || record?.method !== "password") return { status: "not-allowed" as const };
     const wait = this.#throttled();
     if (wait) return { status: "rejected" as const, retryAfterMs: wait };
+    const locks = this.#locks;
     return this.#exclusive({ status: "rejected" as const, retryAfterMs: 1000 }, async () => {
       if (!(await verify(password, record.password!))) return this.#fail();
+      if (locks !== this.#locks) return { status: "not-allowed" as const };
       this.#succeed();
       this.#elevatedUntil = this.#now() + ELEVATED_MS;
       return { status: "confirmed" as const };
@@ -241,8 +281,10 @@ export class AppLockService {
     const wait = this.#throttled();
     if (wait) return { status: "rejected" as const, retryAfterMs: wait };
     const parsed = recoveryCodeSchema.safeParse(code);
+    const locks = this.#locks;
     return this.#exclusive({ status: "rejected" as const, retryAfterMs: 1000 }, async () => {
       if (!parsed.success || !(await verify(parsed.data, verifier))) return this.#fail();
+      if (locks !== this.#locks) return { status: "not-allowed" as const };
       this.#succeed();
       this.#recovering = true;
       return { status: "recovered" as const };
@@ -253,13 +295,11 @@ export class AppLockService {
     const record = this.#record;
     if (!this.#elevated() || !record) return { status: "not-allowed" as const };
     type Result = { status: "regenerated"; recoveryCode: string } | { status: "not-allowed" | "store-unavailable" };
+    const locks = this.#locks;
     return this.#exclusive<Result>({ status: "not-allowed" }, async () => {
       const code = newRecoveryCode();
-      const next = { ...record, recovery: await makeVerifier(code, this.#params) };
-      if (!(await this.#save(next))) return { status: "store-unavailable" as const };
-      await this.#mark(next);
-      this.#record = next;
-      this.#elevatedUntil = 0;
+      const saved = await this.#replace({ ...record, recovery: await makeVerifier(code, this.#params) }, locks, () => { this.#elevatedUntil = 0; });
+      if (saved !== "saved") return { status: saved === "locked" ? "not-allowed" as const : "store-unavailable" as const };
       return { status: "regenerated" as const, recoveryCode: code };
     });
   }
@@ -272,19 +312,19 @@ export class AppLockService {
     return this.#phase === "unlocked" && this.#record?.method === "google";
   }
   /** Called with a verified ID token's identity. Only the bound account unlocks or confirms. */
-  async completeGoogle(purpose: GooglePurpose, identity: GoogleIdentity):
+  async completeGoogle(purpose: GooglePurpose, identity: GoogleIdentity, locks = this.#locks):
     Promise<{ status: "configured"; recoveryCode: string } | { status: "unlocked" | "confirmed" } | { status: "wrong-account" | "not-allowed" | "store-unavailable" }> {
-    if (!this.googleAllowed(purpose)) return { status: "not-allowed" };
+    if (!this.googleAllowed(purpose) || locks !== this.#locks) return { status: "not-allowed" };
     const now = this.#now();
     if (purpose === "setup") {
-      const code = await this.#configure({ method: "google", username: null, password: null, google: { ...identity, lastSignInAt: now } });
-      return code ? { status: "configured", recoveryCode: code } : { status: "store-unavailable" };
+      return this.#configure({ method: "google", username: null, password: null, google: { ...identity, lastSignInAt: now } }, locks);
     }
     const record = this.#record!;
     if (record.google!.sub !== identity.sub) return { status: "wrong-account" };
     const next = { ...record, google: { sub: record.google!.sub, email: identity.email, lastSignInAt: now } };
     // The sign-in itself succeeded; failing to record its time only shortens the offline grace.
     if (await this.#save(next)) this.#record = next;
+    if (locks !== this.#locks) return { status: "not-allowed" };
     if (purpose === "unlock") {
       this.#phase = "unlocked";
       return { status: "unlocked" };
@@ -300,8 +340,8 @@ export class AppLockService {
     return age >= 0 && age < GOOGLE_OFFLINE_GRACE_DAYS * 86_400_000;
   }
   /** The caller has confirmed Google is unreachable. */
-  unlockOffline(): { status: "unlocked" } | { status: "failed"; code: "expired" | "not-allowed" } {
-    if (this.#phase !== "locked" || this.#record?.method !== "google") return { status: "failed", code: "not-allowed" };
+  unlockOffline(locks = this.#locks): { status: "unlocked" } | { status: "failed"; code: "expired" | "not-allowed" } {
+    if (this.#phase !== "locked" || this.#record?.method !== "google" || locks !== this.#locks) return { status: "failed", code: "not-allowed" };
     if (!this.graceAvailable()) return { status: "failed", code: "expired" };
     this.#phase = "unlocked";
     return { status: "unlocked" };

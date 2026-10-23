@@ -1,7 +1,7 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import {
   appLockRequestGuards, channels, failure,
-  type AppLockStatus, type AttemptResponse, type GoogleSignInResponse, type Owner, type RegenerateRecoveryResponse,
+  type AppLockStatus, type AttemptResponse, type GoogleSignInResponse, type LockNowResponse, type Owner, type RegenerateRecoveryResponse,
   type Result, type SetupPasswordResponse, type UnlockOfflineResponse,
 } from "@ssterm/contracts";
 import {
@@ -49,6 +49,10 @@ export function createAppLockController(options: {
   service: AppLockService | undefined;
   google: { client: GoogleClient; endpoints: GoogleEndpoints } | undefined;
   openExternal(url: string): Promise<void>;
+  /** The screen-lock/suspend session lock for the whole process (fences synchronously; teardown continues behind the gate). */
+  lockSessions?(): void;
+  /** Makes every window show the gate again (main reloads them). */
+  showGate?(): void;
   /** Test seam: the loopback port. */
   port?: number;
   fetch?: typeof fetch;
@@ -90,8 +94,9 @@ export function createAppLockController(options: {
     async unlockOffline(): Promise<Result<UnlockOfflineResponse>> {
       if (!service || !options.google) return ok({ status: "failed", code: "not-allowed" });
       if (!service.graceAvailable()) return ok(service.unlockOffline());
+      const locks = service.lockEpoch;
       if (await googleReachable(options.google.endpoints, options.fetch)) return ok({ status: "failed", code: "online" });
-      return ok(service.unlockOffline());
+      return ok(service.unlockOffline(locks));
     },
     /** System browser + loopback redirect; one sign-in at a time. Resolves when it completes, fails or is cancelled. */
     async google(purpose: GooglePurpose): Promise<Result<GoogleSignInResponse>> {
@@ -101,6 +106,7 @@ export function createAppLockController(options: {
       if (signIn) return failed("not-allowed", purpose);
       const controller = new AbortController();
       signIn = controller;
+      const locks = service.lockEpoch;
       try {
         const hint = status().googleEmail ?? undefined;
         const port = options.port ?? GOOGLE_LOOPBACK_PORT;
@@ -126,13 +132,30 @@ export function createAppLockController(options: {
         } catch (error) {
           return failed(error instanceof OAuthError ? error.code : "invalid-response", purpose);
         }
-        const result = await service.completeGoogle(purpose, identity);
+        const result = await service.completeGoogle(purpose, identity, locks);
         if (result.status === "configured") return ok({ status: "configured", recoveryCode: result.recoveryCode });
         if (result.status === "unlocked" || result.status === "confirmed") return ok({ status: result.status });
         return failed(result.status === "wrong-account" ? "wrong-account" : result.status === "not-allowed" ? "not-allowed" : "unavailable", purpose);
       } finally {
         if (signIn === controller) signIn = undefined;
       }
+    },
+    /**
+     * Lock workspace (SST-040). Session lock first, app lock in the same synchronous turn, so no IPC is served between
+     * them; whatever the session lock still tears down afterwards runs behind the closed gate.
+     */
+    lockNow(): Result<LockNowResponse> {
+      if (!service) return ok({ status: "not-allowed" });
+      // A new recovery code is being written; locking now would reload the window before it can show the code.
+      if (service.replacing) return ok({ status: "busy" });
+      if (!service.lockable) return ok({ status: "not-allowed" });
+      const wasOpen = service.unlocked;
+      try { options.lockSessions?.(); } catch { /* The reload below revokes every window's owner, which closes its resources too. */ }
+      service.lock();
+      signIn?.abort();
+      // Already locked: windows already show the gate, so a repeat does not wipe a half-typed unlock elsewhere.
+      if (wasOpen) try { options.showGate?.(); } catch { /* Main is closed either way; a window that missed the reload stays refused. */ }
+      return ok({ status: "locked" });
     },
     cancelGoogle(): Result<{ status: "cancelled" }> {
       signIn?.abort();
@@ -145,7 +168,7 @@ export type AppLockController = ReturnType<typeof createAppLockController>;
 
 export const appLockChannels = Object.freeze([
   channels.appLockState, channels.setupAppLockPassword, channels.unlockAppLock, channels.confirmAppLockPassword, channels.googleSignIn,
-  channels.cancelGoogleSignIn, channels.unlockAppLockOffline, channels.recoverAppLock, channels.regenerateRecoveryCode,
+  channels.cancelGoogleSignIn, channels.unlockAppLockOffline, channels.recoverAppLock, channels.regenerateRecoveryCode, channels.lockNow,
 ]);
 
 /** Served before unlock: owner-checked (not lock-gated) and zod-validated; secrets are never echoed or logged. */
@@ -178,5 +201,6 @@ export function registerAppLockHandlers(options: {
   handle(channels.unlockAppLockOffline, g.unlockOffline, (c) => c.unlockOffline());
   handle(channels.recoverAppLock, g.recover, (c, r) => c.recover(r.code));
   handle(channels.regenerateRecoveryCode, g.regenerateRecovery, (c) => c.regenerate());
+  handle(channels.lockNow, g.lockNow, (c) => c.lockNow());
   return () => { for (const channel of appLockChannels) options.ipc.removeHandler(channel); };
 }

@@ -123,6 +123,66 @@ test("password lock: zod-validated first setup, recovery code, locked relaunch w
   }
 });
 
+test("Lock workspace: nothing live → every window shows the gate, feature IPC unauthorized, unlock restores the workspace; hidden when the lock is off", async () => {
+  test.setTimeout(90_000);
+  const profile = await mkdtemp(join(tmpdir(), "ssterm-e2e-relock-"));
+  const plain = await mkdtemp(join(tmpdir(), "ssterm-e2e-relock-off-"));
+  let desktop: Desktop | undefined;
+  try {
+    desktop = await launchDesktop(profile, { env: LOCK });
+    const page = desktop.page;
+    await page.getByLabel("User name", { exact: true }).fill("alice");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create password" }).click();
+    await saveRecoveryCode(page);
+    await expect(page.getByTestId("hosts-page")).toBeVisible();
+    expect(await gated(page)).toBe("open");
+
+    const lockWorkspace = page.getByRole("button", { name: "Lock workspace" });
+    await expect(lockWorkspace).toBeVisible();
+    await lockWorkspace.click();
+    // Main reloads every window into the gate; this app opens one window, so check each one it has.
+    const windows = desktop.app.windows();
+    expect(await desktop.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(windows.length);
+    for (const window of windows) {
+      await expect(screen(window).getByRole("heading", { name: "Unlock ssterm" })).toBeVisible();
+      expect(await gated(window), "feature IPC is refused after Lock workspace").toBe("unauthorized");
+    }
+    await expect(page.getByTestId("hosts-page")).toHaveCount(0);
+    // Served behind the gate and idempotent: a repeat answers locked and leaves the gate in place.
+    expect(await page.evaluate(async () => {
+      const boot = await window.ssterm.bootstrap();
+      return boot.ok ? window.ssterm.lockNow({ owner: boot.value.owner }) : boot;
+    })).toEqual({ ok: true, value: { status: "locked" } });
+    await expect(page.getByLabel("User name", { exact: true })).toHaveValue("alice");
+
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Unlock" }).click();
+    await expect(page.getByTestId("hosts-page")).toBeVisible();
+    expect(await gated(page)).toBe("open");
+    await expect(lockWorkspace).toBeVisible();
+    expect(desktop.errors).toEqual([]);
+    await desktop.close();
+
+    // App lock off (test profile default): no action, and main refuses the command.
+    desktop = await launchDesktop(plain);
+    await expect(desktop.page.getByTestId("hosts-page")).toBeVisible();
+    await expect(desktop.page.getByRole("button", { name: "Settings", exact: true }).first()).toBeVisible();
+    await expect(desktop.page.getByRole("button", { name: "Lock workspace" })).toHaveCount(0);
+    expect(await desktop.page.evaluate(async () => {
+      const boot = await window.ssterm.bootstrap();
+      return boot.ok ? window.ssterm.lockNow({ owner: boot.value.owner }) : boot;
+    })).toEqual({ ok: true, value: { status: "not-allowed" } });
+    expect(await gated(desktop.page)).toBe("open");
+    expect(desktop.errors).toEqual([]);
+  } finally {
+    await desktop?.close();
+    await rm(profile, { recursive: true, force: true });
+    await rm(plain, { recursive: true, force: true });
+  }
+});
+
 /** A local stand-in for Google: authorization redirect, PKCE-checked token endpoint and RS256 JWKS. */
 async function fakeGoogle() {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });

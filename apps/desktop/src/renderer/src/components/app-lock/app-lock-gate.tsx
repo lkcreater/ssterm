@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckIcon, CopyIcon, KeyRoundIcon, LockKeyholeIcon, TriangleAlertIcon } from "lucide-react";
 import {
   passwordSetupErrors, recoveryCodeSchema,
@@ -183,6 +183,9 @@ export function RecoveryCodeView({ code, onContinue }: { code: string; onContinu
   );
 }
 
+/** Whether a sign-in guards this app (false when the lock is off in test profiles); Lock workspace shows only then. */
+export const AppLockEnabled = createContext(false);
+
 /**
  * The app lock (SST-039): nothing else renders, and main serves no feature IPC, until this window's process is unlocked.
  */
@@ -210,7 +213,7 @@ export function AppLockGate({ children }: { children: ReactNode }) {
         <RecoveryCodeView code={recoveryCode} onContinue={() => { setRecoveryCode(undefined); if (owner) void refresh(owner); }} />
       </Screen>
     );
-  if (status?.phase === "unlocked") return <>{children}</>;
+  if (status?.phase === "unlocked") return <AppLockEnabled.Provider value={status.method !== null}>{children}</AppLockEnabled.Provider>;
   if (failed || status?.phase === "unavailable")
     return (
       <Screen title="ssterm cannot check your sign-in" description="The sign-in record in the macOS Keychain could not be read. Unlock the Keychain or allow ssterm to use it, then try again.">

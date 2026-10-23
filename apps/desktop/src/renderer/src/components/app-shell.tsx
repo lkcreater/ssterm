@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircleIcon,
   CircleIcon,
@@ -8,6 +8,7 @@ import {
   KeyboardIcon,
   KeyRoundIcon,
   LayersIcon,
+  LockKeyholeIcon,
   PanelLeftIcon,
   PanelsTopLeftIcon,
   PlusIcon,
@@ -52,6 +53,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
 import { useDesktopState } from "@/hooks/use-desktop-state";
+import { AppLockEnabled } from "@/components/app-lock/app-lock-gate";
 import { useCredentials } from "@/hooks/use-credentials";
 import { CredentialPrompts } from "@/components/auth/credential-prompts";
 import { AwaitingTrust } from "@/components/connection/connection-status";
@@ -244,6 +246,7 @@ export function AppShell() {
   const sftp = useSftp(owner);
   const settings = useSettings(owner);
   const tunnelState = useTunnels(owner);
+  const lockEnabled = useContext(AppLockEnabled);
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
     storage?.status === "blocked" ? storageProblems[storage.code] : undefined;
@@ -313,6 +316,16 @@ export function AppShell() {
       hostId: host.id,
       message: connectMessages[code] ?? "The connection could not start. Try again.",
     });
+  }
+
+  /** Main closes live work in every window and reloads them into the gate; this document goes with them. */
+  async function lockWorkspace() {
+    const bridge = window.ssterm;
+    if (!owner || !bridge) return;
+    const result = await bridge.lockNow({ owner }).catch(() => undefined);
+    if (!result?.ok || result.value.status !== "locked")
+      toast.add({ title: "Couldn't lock the workspace", type: "error", description: result?.ok && result.value.status === "busy"
+        ? "A sign-in change is being saved. Try again in a moment." : "Try again." });
   }
 
   async function startLocal() {
@@ -616,7 +629,14 @@ export function AppShell() {
                       <span className="ml-auto type-caption text-muted-foreground" aria-hidden="true">⌘/</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  {/* Lock workspace (SST-040/12) joins here. */}
+                  {lockEnabled ? (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton disabled={!owner} onClick={() => void lockWorkspace()}>
+                        <LockKeyholeIcon />
+                        <span>Lock workspace</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ) : null}
                 </SidebarMenu>
                 {/* What the removed global status bar said about the app and its storage. */}
                 <p className="px-2 type-caption text-muted-foreground">
