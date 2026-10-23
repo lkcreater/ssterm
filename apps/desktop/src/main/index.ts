@@ -56,6 +56,7 @@ import { createCatalogController, observeCommits, registerCatalogHandlers, type 
 import { createIdentitiesController, registerIdentityHandlers, secretNamespace, type IdentitiesController } from "./identities";
 import { createSnippetsController, registerSnippetHandlers, type SnippetsController } from "./snippets";
 import { createTunnelController, registerTunnelHandlers, type TunnelController } from "./tunnels";
+import { createAgentTerminals, observeBoth, type AgentTerminals } from "./agent-mcp";
 import { appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers, summarizeLiveWork, type AppLockController } from "./app-lock";
 
 /** The Google OAuth client compiled in from SSTERM_GOOGLE_CLIENT_FILE at build time (null without one). */
@@ -150,6 +151,8 @@ let syncClient: SyncClient | undefined;
 let syncRepository: SyncRepository | undefined;
 let syncHandlers: ReturnType<typeof registerSyncHandlers> | undefined;
 let recorder: Recorder | undefined;
+// SST-041 ticket 02: the MCP endpoint and terminal executor (Read only); its socket exists only while a binding does.
+let agentTerminals: AgentTerminals | undefined;
 let removeRecordingHandlers: (() => void) | undefined;
 function storageProblem(code: unknown): StorageProblem {
   switch (code) {
@@ -685,6 +688,20 @@ if (ownsInstance) {
     recorder = capture;
     // Bounded scan and retention; no Keychain access. A failure leaves capture off.
     await capture.ready;
+    const testTimeout = Number(testUserData ? process.env.SSTERM_TEST_AGENT_TIMEOUT_MS : undefined);
+    const agents = createAgentTerminals({
+      registry: () => desktopSessions?.registry,
+      socketPath: join(app.getPath("userData"), "mcp", "ssterm.sock"),
+      version: app.getVersion(),
+      ...(Number.isSafeInteger(testTimeout) && testTimeout > 0 ? { timeoutMs: testTimeout } : {}),
+    });
+    agentTerminals = agents;
+    // Test seam: with a validated test profile only, E2E mints a conversation credential for a Ready SSH session.
+    if (testUserData && process.env.SSTERM_TEST_MCP === "on") {
+      (globalThis as { __sstermTestMcp?: unknown }).__sstermTestMcp = {
+        issue: (owner: { windowId: number; generation: number }, sessionId: string) => agents.issue(sessionOwnerId(owner), sessionId),
+      };
+    }
     if (repository) {
       const savedHostSessions = createSavedHostSessions({
         team: teamClient,
@@ -692,7 +709,7 @@ if (ownsInstance) {
         provider: secretProvider,
         transient: transientSecrets,
         power: powerMonitor,
-        observeTerminal: capture.observe,
+        observeTerminal: observeBoth(capture.observe, agents.observe),
         localAdapter: localTerminalAdapter(),
       });
       desktopSessions = savedHostSessions;
@@ -747,11 +764,13 @@ if (ownsInstance) {
           ok: false,
           error: { code: "unavailable", message: "Configuration is unavailable." },
         }),
-        observeTerminal: capture.observe,
+        observeTerminal: observeBoth(capture.observe, agents.observe),
       });
     }
     // After the registry ended every observer: drop decrypted history and abort plaintext exports.
     desktopSessions.onLock(() => recorder?.lock());
+    // A8: a lock drops every MCP connection and credential; a new binding is needed after unlock.
+    desktopSessions.onLock(() => agentTerminals?.lock());
     desktopSessions.onLock(() => { syncClient?.lock(); syncHandlers?.purge();teamClient?.lock(); teamGuard?.lock(); teamHandlers?.purge(); });
     await initializeSync();
     credentials = createCredentialsController({ registry: desktopSessions.registry });
@@ -767,6 +786,7 @@ if (ownsInstance) {
       // needs no saved catalog configuration or secure-store capability after screen unlock.
       checkLocalAccess: async () => true,
       recording: capture,
+      agent: agents,
     });
     removeTerminalHandlers = registerTerminalHandlers({
       ipc: ipcMain,
@@ -949,6 +969,7 @@ app.on("before-quit", (event) => {
   const syncClosed = Promise.race([Promise.resolve(syncClient?.dispose()).catch(() => undefined), new Promise<void>(done => setTimeout(done, 2_000))]);
   credentials?.dispose();
   knownHosts?.dispose();
+  agentTerminals?.dispose();
   terminals?.dispose();
   const remoteEditsClosed = Promise.resolve(remoteEdits?.dispose()).catch(() => undefined);
   transfers?.dispose();

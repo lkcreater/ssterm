@@ -110,6 +110,7 @@ export default defineConfig({
             "recording.spec.ts",
             "sync.spec.ts",
             "team.spec.ts",
+            "agent-mcp.spec.ts",
           ],
         },
         { name: "showcase", testMatch: "showcase.spec.ts" },

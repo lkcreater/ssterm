@@ -4,7 +4,7 @@
 
 **Blocked by:** 01, 03
 
-**Status:** ready-for-agent (implementation not yet authorized: A13)
+**Status:** ready-for-agent (authorized 2026-10-23)
 
 - [ ] `codex` is selectable only if its version passed 01. Otherwise Settings explains why it is unavailable.
 - [ ] Settings has a Custom CLI provider definition. The isolation check runs before first use and is re-run when the CLI version changes; a failing provider stays disabled.

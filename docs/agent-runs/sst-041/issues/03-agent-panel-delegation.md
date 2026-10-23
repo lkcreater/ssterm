@@ -4,7 +4,7 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent (implementation not yet authorized: A13)
+**Status:** ready-for-agent (authorized 2026-10-23)
 
 - [ ] Settings › AI Agent is off by default. Enabling it names the provider and lists exactly what is sent; only providers verified in 01 can be chosen.
 - [ ] The AI Agent button shows only on Ready SSH panes (not local or Team). The panel is non-modal and resizable, its header shows target/PROD, it stays bound across tab switches, and a provider banner is always visible.

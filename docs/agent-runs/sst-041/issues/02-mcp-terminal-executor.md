@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent (implementation not yet authorized: A13)
+**Status:** done
 
 - [ ] The MCP server runs in main with a per-conversation ephemeral credential; unauthenticated or stale calls are refused.
 - [ ] `run_command` types one line plus the nonce marker into the bound pane; completion and exit code come from the marker; a spoofed marker without the nonce is ignored.
@@ -14,3 +14,10 @@
 - [ ] The Read only allowlist classifier refuses chaining, redirects, subshells and heredocs (adversarial unit fixtures).
 - [ ] Generation fencing works: after a reconnect, a call for the old generation is refused.
 - [ ] E2E on the Docker OpenSSH fixture uses a test MCP client: bytes received, exit codes, refusals, input hold and timeout.
+
+**Known limits of the ready probe:** before every command ssterm types `printf '\033]ssterm;ready;<nonce>\007'` and types the command only if that marker comes back within 3 s (otherwise `not-at-prompt`; nothing else is sent). The probe line itself goes to whatever holds the terminal:
+
+- At a `sudo` password prompt it counts as one failed authentication. Ticket 05 must detect password prompts before probing.
+- A stdin reader such as `cat > file` writes the probe text into the file.
+- A nested POSIX shell (`ssh host2`, `sudo -i`) answers the probe, so the command runs in that shell, not on the bound host.
+- A half-typed user line is cleared (Ctrl+E Ctrl+U) because whether it is empty cannot be seen. Server-side aliases and functions are not visible to the Read only classifier.

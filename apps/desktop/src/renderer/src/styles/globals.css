@@ -1046,6 +1046,38 @@
 }
 /* Above xterm's own layers (helpers 5, decorations 6–7). */
 .live-terminal-search,
+/* SST-041: floats like search, so showing it never resizes the PTY under a running command. */
+.live-terminal-agent {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 8px;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+}
+.live-terminal-agent > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--primary);
+}
+.live-terminal-agent-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-terminal-agent-command {
+  font-family: var(--font-mono, monospace);
+}
 .live-terminal-feedback {
   position: absolute;
   right: 12px;

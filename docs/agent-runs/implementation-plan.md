@@ -1654,3 +1654,22 @@ Rules:
   - **Review:** APPROVED. M1–M4 fixed: inconclusive runs no longer pass, `@file` and stream-mode capture checks added, and each detector reports a distinct result. L1–L6 fixed.
   - **Follow-ups:** production requirements are recorded in the ADR 0009 "Spike findings" section and in ticket 03.
   - **Cost:** 29 provider calls in total, all with synthetic prompts.
+
+**SST-041 full authorization (2026-10-23, user: “เสร็จ 02 ทำต่อให้จบ”).**
+- After 02, continue through tickets 03–08, serially in the order 03, 04, 05, 06, 07, 08.
+- Same loop: implementer (Opus, effort high), then an independent review, then fixes, then a local commit. No push.
+- ADR 0009 becomes Accepted in ticket 08, when the gates pass.
+- The live provider calls in later tickets stay synthetic and minimal; E2E uses the fake agent CLI.
+- **SST-041/02 done (2026-10-23):**
+  - **MCP server in main:** a hand-written JSON-RPC server, with no SDK, over a 0700 dir and a 0600 Unix socket. 256-bit per-binding credentials are stored only as SHA-256. Each call re-checks owner, generation and Ready state, and lock, quit and generation end revoke the credentials.
+  - **Tools:** `run_command`, `read_output` and `cancel` on the bound session, Read only mode.
+  - **Executor:**
+    - A ready probe, then the command line wrapped in nonce start/done markers. It returns only the span between the markers, with a 64 KiB tail.
+    - Input is held while a command runs, with the error code `held`; Ctrl+C always bypasses the hold.
+    - Alternate-screen programs are refused. Deadlines: 3 s for the probe, 5 s for the start marker, a 10 min timeout.
+  - **Read-only classifier:** a per-command option allowlist with path checks (`..` and `dev` segments are refused).
+  - **Review:** first BLOCKED on H1/H2, because verb confusion through option values (docker, systemctl) and writing options (`ss -D`, `journalctl --cursor-file`, `date` operands) passed the classifier. Both were fixed and the re-review APPROVED. M1 (the device-path bypass), M2 and lows L1–L7 were fixed. The probe's known limits are recorded in tickets 02 and 05.
+  - **Checks:**
+    - typecheck pass, unit 797/798 (1 known skip), build pass.
+    - Full E2E 93/93 before the review fixes; the focused agent-mcp and terminal specs pass after them.
+    - One `npm test` run hung once with no output, and two reruns passed. The cause is unknown; watch for it.

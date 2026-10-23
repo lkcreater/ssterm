@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 03, 04, 05, 06, 07
 
-**Status:** ready-for-agent (implementation not yet authorized: A13)
+**Status:** ready-for-agent (authorized 2026-10-23)
 
 - [ ] ADR 0009 is marked Accepted. `docs/ai-scope.md` describes the actual data flow and endpoints. AGENTS.md network and AI rules are updated, and a new behaviour doc is written.
 - [ ] Privacy notes list every process and endpoint involved (the user's CLI provider; no ssterm network contact).

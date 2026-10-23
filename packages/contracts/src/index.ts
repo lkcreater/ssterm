@@ -52,6 +52,8 @@ export type ErrorCode =
   | "stale-owner"
   | "conflict"
   | "busy"
+  /** SST-041: user input to a pane while an agent command runs there. */
+  | "held"
   | "unavailable";
 export type Result<T> =
   | { ok: true; value: T }
@@ -295,6 +297,7 @@ const messages: Record<ErrorCode, string> = {
   "stale-owner": "The window has changed. Reload its state.",
   conflict: "The state changed. Refresh and try again.",
   busy: "The session is not accepting input. Try again.",
+  held: "Input is held while an agent command runs. Ctrl+C or Stop interrupts it.",
   unavailable: "The application is unavailable.",
 };
 export function failure<T = never>(code: ErrorCode): Result<T> {

@@ -42,6 +42,8 @@ export interface TerminalSession {
   error: TerminalErrorCode | null;
   /** SST-034: present only while this generation is captured (or capture was wanted and failed closed). */
   recording?: TerminalRecording;
+  /** SST-041: present only while an agent command runs in this generation; user input is held meanwhile. */
+  agent?: { command: string };
 }
 export interface TerminalState { owner: Owner; sequence: number; sessions: TerminalSession[] }
 export interface TerminalStateRequest { owner: Owner }
@@ -80,8 +82,10 @@ export function isTerminalSession(v: unknown): v is TerminalSession {
   if (v === null || typeof v !== "object") return false;
   const local = Object.hasOwn(v, "local");
   const recording = Object.hasOwn(v, "recording");
-  if (!exactObject(v, [...fields, ...(local ? ["local"] : []), ...(recording ? ["recording"] : [])])) return false;
+  const agent = Object.hasOwn(v, "agent");
+  if (!exactObject(v, [...fields, ...(local ? ["local"] : []), ...(recording ? ["recording"] : []), ...(agent ? ["agent"] : [])])) return false;
   if (recording && !isTerminalRecording(v.recording)) return false;
+  if (agent && !(exactObject(v.agent, ["command"]) && text(v.agent.command, 4_096) && !local)) return false;
   return identifier(v.sessionId) && positive(v.generation) &&
     (local ? v.hostId === null && v.target === null && exactObject(v.local, ["shell", "platform"]) &&
       text(v.local.shell, 256) && v.local.shell.startsWith("/") && v.local.platform === "darwin" : identifier(v.hostId)) &&

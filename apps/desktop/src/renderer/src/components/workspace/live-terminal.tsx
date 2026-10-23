@@ -16,6 +16,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import {
   BanIcon,
+  BotIcon,
   CircleDotIcon,
   CircleIcon,
   CircleOffIcon,
@@ -189,6 +190,9 @@ export function LiveTerminal({
   const [pending, setPending] = useState<PendingPaste>();
   const pasteSerial = useRef(0);
   const [suggestions, setSuggestions] = useState<Suggestions>();
+  // SST-041: while an agent command runs, typed input stays here (main holds it too); only Ctrl+C is sent.
+  const agentRunning = useRef(false);
+  agentRunning.current = ready && !!session.agent;
   // A pane that leaves Ready (lock, disconnect, failure) drops its suggestions at once.
   if (!ready && suggestions) setSuggestions(undefined);
 
@@ -363,12 +367,25 @@ export function LiveTerminal({
         const result = await bridge.writeTerminal(request).catch(() => undefined);
         bytes.fill(0);
         settle?.(!!result?.ok);
+        // Held by a running agent command (main's own check): dropped and said so, not a paused pane.
+        if (result && !result.ok && result.error.code === "held") notify(result.error.message);
         // A refusal for a generation that has since been replaced must not pause the new one.
-        if (!result?.ok && request.generation === current) pause();
+        else if (!result?.ok && request.generation === current) pause();
       }
       sending = false;
     };
     const send = (input: Uint8Array, settle?: (sent: boolean) => void) => {
+      if (agentRunning.current) {
+        // Only a lone Ctrl+C goes through, even when earlier input paused this pane: it is how the user takes over.
+        if (input.byteLength === 1 && input[0] === 0x03 && live && !cancelled) {
+          void bridge.writeTerminal({ ...identity(), bytes: input }).catch(() => undefined);
+          return;
+        }
+        input.fill(0);
+        settle?.(false);
+        notify("Input is held while the agent command runs. Ctrl+C or Stop interrupts it.");
+        return;
+      }
       if (cancelled || paused || !live || queued + input.byteLength > MAX_QUEUED_INPUT) {
         input.fill(0);
         settle?.(false);
@@ -659,6 +676,11 @@ export function LiveTerminal({
       () => notify("It could not be removed from command history."),
     );
   };
+  /** Stop is the same Ctrl+C the user may type: the one input main lets through while an agent command runs. */
+  const stopAgent = () => {
+    void window.ssterm?.writeTerminal({ owner: { windowId, generation: ownerGeneration }, sessionId, generation, bytes: Uint8Array.of(0x03) })
+      .then((result) => { if (!result.ok) notify("Stop was not delivered."); }, () => notify("Stop was not delivered."));
+  };
   const closeSearch = () => {
     controls.current?.search.clearDecorations();
     searchVisible.current = false;
@@ -738,6 +760,19 @@ export function LiveTerminal({
       {/* Search and feedback float over the frame: changing the layout would resize the PTY. */}
       <div className="live-terminal-frame">
         <div ref={host} className="live-terminal" />
+        {ready && session.agent ? (
+          <div className="live-terminal-agent" role="status" data-testid="agent-banner">
+            <BotIcon aria-hidden="true" />
+            <span className="live-terminal-agent-text">
+              Agent running: <code className="live-terminal-agent-command" title={session.agent.command}>{session.agent.command}</code>
+              <span className="text-muted-foreground"> · input held</span>
+            </span>
+            <Button size="sm" variant="outline" onClick={stopAgent}>
+              <BanIcon data-icon="inline-start" aria-hidden="true" />
+              Stop
+            </Button>
+          </div>
+        ) : null}
         {searchOpen ? (
           <TerminalSearchBar
             label={label}

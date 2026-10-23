@@ -91,6 +91,8 @@ const problems: Record<PaneError, string> = {
   "stale-owner": "This window is out of date; reopen it to continue.",
   conflict: "The session changed. Try again.",
   busy: "This Mac is still waiting on another folder. Try again in a moment.",
+  // Terminal-only (SST-041); Files never receives it.
+  held: "Files are unavailable right now. Try again.",
   unavailable: "Files are unavailable right now. Try again.",
 };
 const gotoProblems: Partial<Record<PaneError, string>> = {

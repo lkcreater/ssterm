@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 04
 
-**Status:** ready-for-agent (implementation not yet authorized: A13)
+**Status:** ready-for-agent (authorized 2026-10-23)
 
 - [ ] Off by default. The 0600 Unix socket lives in the profile and no TCP is opened. The `ssterm-mcp` stdio bridge is bundled, signed and packaged.
 - [ ] Pair new client issues a short-lived one-time token. The client exchanges it for a per-client credential kept in Keychain. The user approves the client name.

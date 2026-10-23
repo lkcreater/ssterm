@@ -11,6 +11,7 @@ import type { Recorder, SessionErrorCode, SessionRegistry, SessionResult, Sessio
 import type { TerminalStream } from "@ssterm/domain";
 import type { WindowBoundary } from "./boundary";
 import { sessionOwnerId } from "./session-runtime";
+import type { AgentTerminals } from "./agent-mcp";
 
 interface Registration<M> {
   owner: Owner;
@@ -199,15 +200,19 @@ export function createTerminalController(options: {
   checkLocalAccess?: () => Promise<boolean>;
   /** SST-034: projects each generation's recording badge and republishes when it changes. */
   recording?: Pick<Recorder, "status" | "onChange">;
+  /** SST-041: the agent banner per generation, and the input hold while an agent command runs. */
+  agent?: Pick<AgentTerminals, "status" | "input" | "onChange">;
 }) {
-  const view = (snapshot: SessionSnapshot): TerminalSession => {
+  const view = (snapshot: SessionSnapshot, ownerId: string): TerminalSession => {
     const recording = options.recording?.status(snapshot.id, snapshot.generation);
-    return recording ? { ...project(snapshot), recording } : project(snapshot);
+    const agent = options.agent?.status(ownerId, snapshot.id, snapshot.generation);
+    return { ...project(snapshot), ...(recording ? { recording } : {}), ...(agent ? { agent } : {}) };
   };
   const sessions = createKindSessions<TerminalSession, TerminalOutput>({ kind: "terminal", registry: options.registry, checkAccess: options.checkAccess,
     checkLocalAccess: options.checkLocalAccess,
     stateChannel: channels.terminalStateChanged, view, isState: isTerminalState });
   const unsubscribe = options.recording?.onChange((ownerId) => sessions.republish(ownerId));
+  const unsubscribeAgent = options.agent?.onChange((ownerId) => sessions.republish(ownerId));
   type Live = NonNullable<ReturnType<typeof sessions.registration>>;
   /** Runs `use` only on the exact owner/session/generation stream while it is live and Ready. */
   const withStream = (request: TerminalTarget, use: (stream: TerminalStream, registration: Live) => Result<TerminalActionResponse>): Result<TerminalActionResponse> => {
@@ -240,6 +245,9 @@ export function createTerminalController(options: {
     writeTerminal(request: WriteTerminalRequest): Result<TerminalActionResponse> {
       if (!isWriteTerminalRequest(request)) return failure("invalid-request");
       return withStream(request, (stream) => {
+        // A9: while an agent command runs, only a lone Ctrl+C reaches its shell.
+        if (options.agent && !options.agent.input(sessionOwnerId(request.owner), request.sessionId, request.generation, request.bytes))
+          return failure("held");
         const written = stream.write(request.bytes);
         return written === "ok" ? accepted : failure(written === "busy" ? "busy" : "conflict");
       });
@@ -289,6 +297,7 @@ export function createTerminalController(options: {
     revokeOwner: sessions.revokeOwner,
     dispose() {
       unsubscribe?.();
+      unsubscribeAgent?.();
       sessions.dispose();
     },
   };
