@@ -1,5 +1,7 @@
 # AI scope: privacy specification only (SST-034)
 
+> **2026-10-23:** a proposed AI terminal agent with an MCP endpoint is specified in [ADR 0009](adr/0009-ai-terminal-agent-and-mcp.md) (SST-041, status Proposed, implementation **not** authorized). Until it is authorized and delivered, everything below remains true of the shipped app.
+
 ssterm contains **no AI feature, no AI provider and no code that sends terminal data anywhere**. This document is the privacy and scope specification any future AI feature must satisfy before implementation is authorized. It is not a plan to build one.
 
 ## Current state

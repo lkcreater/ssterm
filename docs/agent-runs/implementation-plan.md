@@ -1537,3 +1537,106 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
   - **Docs:** v2 UI descriptions updated (workspace, catalog-ui, workspace-tools, sftp-browser, design-system(-implementation), mvp-gate note, auth-prompts, known-hosts, terminal-lifecycle); AGENTS.md state sentence; T054 and SST-040 marked done; [delivery](sst-040-delivery.md).
   - **Checks:** typecheck pass; unit 777/776 (1 known skip); build pass; full E2E 92/92; package pass; packaged 92/92; `git diff --check` clean.
 - **SST-040/15 final check (2026-10-23):** after the review fixes, the orchestrator reran the full development E2E: 92/92 (8.0 min), no leaked fixture containers. Packaged 92/92 was measured before those fixes (styling, titles, copy and test-side teardown only). SST-040 complete; nothing pushed.
+
+## AI terminal agent — grilling decisions (2026-10-23, proposed SST-041)
+
+Request (user, /grill-with-docs): AI Agent button on Terminals once a server is connected; Agent chat drives the local `claude` or `codex` CLI; a main "DevOps Engineer" agent delegates to sub agents that run commands in that session's terminal through an MCP server; MCP is a common feature other AI providers can connect to. This conflicts with [AI scope](../ai-scope.md) preconditions 1, 3, 4 and 6 and the AGENTS.md network rule; each conflict is resolved below as the user decides. Not yet authorized for implementation.
+
+**Decision A1 — execution approval (user: “เลือก ข > เพิ่ม mode > read only | auto mode | full allow”).** Plan-level approval (option ข) instead of per-command approval, plus a per-session mode selector: Read only, Auto, Full allow. Exact semantics of each mode and PROD behaviour: see A2.
+
+**Decision A2 — mode semantics (user: “ตามเสนอ แต่เพิ่ม config ใน PROD ให้สามารถใช้ full allow ได้ แต่ต้องไปตั้งค่าใน setting ก่อน”).**
+
+- **Read only:** only commands classified read-only run, without approval. Anything else is refused, and the agent tells the user to change mode.
+- **Auto** (default): the agent proposes a plan (goal plus commands). The user approves the plan once. In-plan and read-only commands then run; out-of-plan commands need a per-command approval card.
+- **Full allow:** everything runs without approval. It is an explicit per-session opt-in with a warning, and every new session starts in Auto.
+- **PROD:**
+  - Plan approval needs the extra PROD confirmation step.
+  - Full allow is unavailable on PROD unless the user first enables a Settings option, "Allow Full allow on PROD" (off by default). Even then it is still a per-session opt-in with the PROD warning.
+- **Read-only classification:** a strict allowlist, described in the UI as best effort. Redirects, `;`, `&&`, `||`, pipes into non-allowlisted commands, command substitution and subshells all count as not read-only.
+
+**Decision A3 — data leaving the Mac and consent (user: “ตามเสนอ”).**
+
+- **Consent:**
+  - The agent is off by default and enabled in Settings › AI Agent.
+  - The enable step names the provider (`claude` → Anthropic, `codex` → OpenAI), says exactly what is sent, and says the CLI account's own retention and training terms apply.
+  - A persistent banner on every agent session says that messages and command output go to that provider.
+- **What is sent:** the user's chat messages, the commands the agent runs, the output of those commands only, and the bound session's target (label, `user@host:port`, environment).
+- **What is never sent:** prior scrollback, user-typed terminal input, other sessions, the catalog, snippet bodies, and credentials, keys or passwords. The MCP layer cannot reach these by construction.
+- **Limits:**
+  - Output is capped at 64 KiB per command; the tail is kept and the cap is marked.
+  - There is no automatic redaction, and the UI says plainly that full command output is sent.
+
+**Decision A4 — password prompts (user: “ก”).** When command output matches a password or passphrase prompt pattern (`[sudo] password for`, `Password:`, `Enter passphrase`, …), ssterm:
+
+- pauses the agent;
+- shows a chat card "waiting for you to type the password in the terminal" and focuses the pane;
+- lets the user type there (typed input is never captured);
+- removes the user's typed input from the output returned to the agent.
+
+The agent never sees or enters passwords. An undetected prompt times out, and the agent gets only "timed out waiting for input".
+
+**Decision A5 — orchestration owned by ssterm (user: “ตามแนะนำ”).** The main agent is the user-facing CLI process. It gets only the MCP tools `delegate_task`, `get_task_status` and `cancel_task`, and no command tools. `delegate_task` makes ssterm spawn a separate sub agent CLI process with only the terminal tools for the bound session, such as `run_command` and `read_output`. The sub agent reports back; the main agent audits the result and summarizes it for the user. The same tool contract applies to `claude`, `codex` and any other MCP-capable provider. ssterm shows each task as a chat card and enforces mode, plan and PROD rules at one point. Cost: two CLI processes per task.
+
+**Decision A6 — local isolation of the CLI (user: “ตามแนะนำ”).** Each CLI runs with:
+
+- every built-in local tool disabled (shell, file read/write, web);
+- only the ssterm MCP tools (e.g. `--strict-mcp-config` plus allowed tools `mcp__ssterm__*`), with no user MCP servers, hooks, plugins or project instructions loaded;
+- an empty temporary working directory;
+- an allowlisted environment.
+
+A CLI version is supported only after a spike proves, with tests, that a request to read a local file or run a local shell is refused. Expected outcome: `claude` first; `codex` once its local shell is proven disabled.
+
+**Decision A7 — external MCP clients (user: “เลือก ข”).**
+
+- **External endpoint:** ssterm exposes a persistent local MCP endpoint that external apps (e.g. Claude Desktop, Cursor, IDEs) can connect to. It is off by default and needs explicit per-client pairing. The user chooses in ssterm which session a client is bound to.
+- **One MCP server:** ssterm-launched agents (A5) use the same server, with ephemeral per-conversation credentials.
+- **Same rules:** the mode, plan, PROD, password and data rules (A1–A4, A6) apply to every client.
+- **Open:** the security design (transport, pairing, binding, tool set, revocation) is decision A8.
+
+**Decision A8 — external endpoint security (user: “ตามแนะนำ”).**
+
+- **Transport:** a Unix domain socket in the ssterm profile (0600, same user). No TCP. A bundled `ssterm-mcp` stdio bridge serves stdio-only clients.
+- **Pairing:** "Pair new client" in Settings issues a short-lived one-time token. On first connect the client exchanges it for a per-client credential kept in Keychain. The user approves the client name in ssterm.
+- **Binding:** clients cannot list sessions or the catalog. A client's request for a terminal opens a drawer in ssterm where the user picks the session. The binding lasts until the session ends, the workspace locks, or the user revokes it.
+- **Revocation:** Settings lists paired clients with last use and a Revoke button. Lock workspace drops every connection and requires a new binding after unlock.
+- **Visibility:** a banner on the controlled terminal names the client and mode and has Stop.
+- **Tools:**
+  - External clients get terminal tools directly (option ข) under the A1–A4 rules: `propose_plan`, `run_command`, `read_output`, `cancel`.
+  - `propose_plan` creates the approval card. In Auto mode `run_command` checks each command against the approved plan.
+  - ssterm-launched main agents keep only the delegate tools (A5), and their sub agents use the same terminal tools.
+
+**Decision A9 — command execution (user: “ตามแนะนำ”).** `run_command` types into the visible pane's own shell, so the user sees it live and `cd`/env persist. It appends a nonce-tagged completion marker (`printf '\e]ssterm;done;<nonce>;%s\a' $?`). ssterm detects completion and the exit code from the marker and returns only the output between command and marker. This works on bash, zsh and sh with nothing installed on the server.
+
+Rules:
+- User keystrokes to that pane are held while an agent command runs. Ctrl+C and the A4 password entry are exceptions. A banner shows "Agent running: <command>" with Stop.
+- Full-screen and alternate-screen programs are refused, with advice to use non-interactive flags.
+- Per-command timeout: 10 minutes by default, set in Settings. On timeout ssterm sends Ctrl+C.
+- One line per command. Multi-line scripts go through a heredoc and are never classified read-only.
+- Output follows A3 (that command's span, 64 KiB, no user input).
+- The nonce is verified on every marker.
+
+**Decision A10 — agent panel placement (user: “ตามแนะนำ”).**
+
+- **Panel:** the Agent chat is a non-modal resizable right panel on the Terminals page, opened by the AI Agent button. It has no scrim and is bound to the session it was opened from. Its header shows target/PROD and stays on that session when tabs switch. Plan, PROD, Full allow and password cards are steps inside the panel, never stacked drawers.
+- **ADR:** records this as an exception to the ADR 0008 drawer contract.
+- **Defaults taken without a question:**
+  - SSH sessions only; local terminals are excluded by A6.
+  - Team-managed hosts are excluded in the first release.
+  - The AI Agent button appears only when the session is Ready.
+
+**Decision A11 — no conversation persistence (user: “ตามแนะนำ”).**
+- Conversations live only in memory while the panel and session exist. They are gone when the panel closes, the session ends, the workspace locks or the app quits.
+- CLIs run with `--no-session-persistence` (`claude`) and `--ephemeral` (`codex`), so no transcript is written to disk. The A6 spike verifies this.
+- Opt-in encrypted history (like SST-034 recordings) is a possible later ticket.
+- Provider-side retention is outside ssterm's control and is disclosed per A3.
+
+**Decision A12 — agent instructions and audit (user: “ตามแนะนำ”).**
+
+- **Instructions:** bundled and versioned.
+  - The main "DevOps Engineer" agent takes requests, asks when a request is ambiguous, delegates through `delegate_task`, audits, and summarizes. It never claims success without an exit code.
+  - The sub agent stays in scope, calls `propose_plan` first, uses non-interactive commands, and stops on surprises.
+- **Additional instructions:** users may append text in Settings but cannot replace the bundled instructions. All safety rules are enforced in the MCP layer, so instructions cannot bypass them.
+- **Audit:** `get_task_status` returns ssterm's own record of each task: commands actually run, exit codes, truncated output and refused commands. The main agent audits from that record, and the user can expand the same record on the task card.
+- **Concurrency:** one sub agent per session at a time, because the shell is shared. Further tasks queue.
+
+**Decision A13 — authorization (user: “ข”).** Spec only: ADR 0009, the SST-041 spec and its tickets are written; no implementation until the user says so. `docs/ai-scope.md` stays true for the shipped app (no AI feature exists).

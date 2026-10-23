@@ -473,6 +473,23 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 
 **Validation:** existing Electron E2E (development and packaged) updated for the shell and extended for drawers, Files picker and Lock workspace; app-lock unit tests for relock races; rendered contrast (text ≥4.5:1, ADR 0008 excepted roles measured as evidence); icon QA and package artifact check. Four phases, one local commit each, no push.
 
+### SST-041 — AI terminal agent and MCP endpoint
+
+**Status:** `SPECIFIED` (implementation not authorized; decision A13). Specified in [spec](../agent-runs/sst-041-spec.md), [ADR 0009](../adr/0009-ai-terminal-agent-and-mcp.md) (Proposed), [tickets](../agent-runs/sst-041/README.md) and [decisions A1–A13](../agent-runs/implementation-plan.md#ai-terminal-agent--grilling-decisions-2026-10-23-proposed-sst-041).
+
+**Acceptance:**
+- An AI Agent button appears on Ready SSH sessions and opens a non-modal chat panel that drives the local `claude` (later `codex` or custom) CLI.
+- The main DevOps Engineer agent only delegates; sub agents act through ssterm MCP tools that run commands visibly in the pane.
+- Modes are Read only, Auto (plan approval) and Full allow, with PROD gates.
+- Password prompts are handed to the user.
+- Data is consented and minimized, nothing is persisted, and the CLI's local tools are proven disabled.
+- External MCP clients pair, are bound by the user and follow the same rules.
+
+**Validation:**
+- The CLI isolation spike.
+- Policy, marker, auth and IPC unit tests.
+- E2E with a fake agent CLI on the Docker OpenSSH fixture, run in development and packaged builds.
+
 ## Definition of done ร่วม
 
 เมื่อ ticket เริ่มหลัง confirm: acceptance criteria ผ่าน, error/cancel paths ที่เกี่ยวข้องตรวจแล้ว, evidence/ADR/spec references อัปเดต, tests ที่ตรวจพฤติกรรมจริงผ่าน, ไม่มี secret ใน committed artifacts/logs และ reviewable diff พร้อม known limitations ห้ามปิด ticket เพียงเพราะมี mock UI หรือ adapter stub
