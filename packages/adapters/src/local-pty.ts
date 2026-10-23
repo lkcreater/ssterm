@@ -247,7 +247,9 @@ function createChannel(native: NativePty, context: LocalSessionContext, outputWi
     if (!disposed && output && exit && buffered === 0 && !ended) { ended = true; context.ended(exit); }
   };
   const flow = () => {
-    if (disposed || !output || unacked >= outputWindow || buffered > 0) native.pause();
+    // After dispose the master stays resumed (see dispose): pausing it again would block exiting children on macOS.
+    if (disposed) return;
+    if (!output || unacked >= outputWindow || buffered > 0) native.pause();
     else native.resume();
   };
   const pump = () => {
@@ -332,7 +334,9 @@ function createChannel(native: NativePty, context: LocalSessionContext, outputWi
     if (disposed) return;
     disposed = true; output = undefined; chunks.length = 0; buffered = 0;
     clearInterval(statusPoll);
-    data.dispose(); exited.dispose(); native.pause();
+    // Keep reading and discard: an exiting owned process blocks in the tty close (ps state E) until unread output
+    // drains, so a paused master would leave cleanup unconfirmable. Nothing reaches a listener after this point.
+    data.dispose(); exited.dispose(); native.resume();
     for (const entry of inputs) if (!writing || entry !== inputs[0]) entry.bytes.fill(0);
     if (!writing) { inputs.length = 0; queuedInput = 0; inputIdle?.(); }
     void (async () => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test as nodeTest, type TestContext } from "node:test";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,11 @@ import type { TerminalChannel, TerminalEnd } from "@ssterm/domain";
 import type { LocalSessionContext, SessionErrorCode, SessionResource } from "@ssterm/services";
 import { createLocalPtyAdapter, localPtyEnvironment, type LocalPtyOptions } from "../../packages/adapters/src/local-pty.ts";
 
+// Unconfirmed owned-process cleanup deliberately leaves `drained` pending (the permit stays retained), and the
+// owned tree can keep this file's event loop alive. Bound every test and the cleanup hook so such a failure is
+// reported instead of blocking `npm test` indefinitely.
+const TEST_TIMEOUT = 60_000;
+const test = (name: string, fn: (t: TestContext) => void | Promise<void>) => nodeTest(name, { timeout: TEST_TIMEOUT }, fn);
 const script = fileURLToPath(new URL("../fixtures/local-pty/terminal.cjs", import.meta.url));
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const exec = promisify(execFile);
@@ -28,7 +33,7 @@ async function until(condition: () => boolean, message: string) {
   const deadline = Date.now() + 10_000;
   while (!condition()) { if (Date.now() >= deadline) assert.fail(message); await delay(10); }
 }
-async function fixture(t: { after(fn: () => Promise<unknown>): unknown }, mode: string, options: LocalPtyOptions = {}) {
+async function fixture(t: { after(fn: () => Promise<unknown>, options?: { timeout?: number }): unknown }, mode: string, options: LocalPtyOptions = {}) {
   const home = await mkdtemp(join(tmpdir(), "ssterm-local-pty-"));
   const abort = new AbortController();
   const resources: SessionResource[] = [];
@@ -46,7 +51,7 @@ async function fixture(t: { after(fn: () => Promise<unknown>): unknown }, mode: 
     abort.abort(); resources.forEach((resource) => resource.dispose());
     await Promise.all(resources.map((resource) => resource.drained));
     await rm(home, { recursive: true, force: true });
-  });
+  }, { timeout: TEST_TIMEOUT });
   const adapter = createLocalPtyAdapter({ shell: process.execPath, args: [script, mode, join(home, "children.json")], home, cwd: home, env: { PATH: "/usr/bin:/bin", LANG: "en_US.UTF-8" }, ...options });
   await adapter.start(context);
   return { home, errors, get channel() { assert(channel); return channel; }, get ended() { return ended; }, metadata: adapter.metadata };
@@ -220,5 +225,20 @@ test("local PTY cancellation waits for actual in-flight native input before rele
   assert.equal(f.channel.write(Buffer.from("later")), "closed");
   await f.channel.drained;
   assert.equal(f.ended, undefined);
+  assert.deepEqual(f.errors, []);
+});
+
+test("local PTY disposal drains unread output so exiting owned processes are not stuck closing the terminal", async (t) => {
+  // An unacknowledged window pauses reading; the echoed input then sits in the PTY output queue. macOS blocks an
+  // exiting process in the tty close until that queue drains (ps state E), so cleanup could never be confirmed.
+  const f = await fixture(t, "echo", { outputWindow: 1 });
+  let ready = false;
+  f.channel.open((bytes) => { ready ||= Buffer.from(bytes).toString().includes("R"); });
+  await until(() => ready, "echo not ready");
+  for (let i = 0; i < 8; i++) assert.equal(f.channel.write(Buffer.alloc(512, 0x62)), "ok");
+  await delay(300);
+  f.channel.dispose();
+  const settled = await Promise.race([f.channel.drained.then(() => "drained"), delay(20_000).then(() => "pending")]);
+  assert.equal(settled, "drained", "owned cleanup was not confirmed");
   assert.deepEqual(f.errors, []);
 });
