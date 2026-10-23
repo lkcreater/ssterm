@@ -42,6 +42,8 @@ npm run test:packaged
 
 `package:mac` สร้าง unsigned app ที่ `artifacts/package/SSTerm-darwin-arm64/SSTerm.app`; test reports/screenshots อยู่ `artifacts/test-results/` Tests ใช้ temporary app profiles, Keychain เฉพาะ namespace `dev.ssterm.test.*` และ SSH fixture จริงของโปรเจกต์บน loopback; ไม่อ่าน Termius หรือใช้ production/user credentials/hosts
 
+AI agent (SST-041) ปิดไว้เป็นค่าเริ่มต้น และทำงานผ่าน CLI ของผู้ใช้เอง (`claude`); ssterm ไม่ติดต่อ AI provider เอง ดูข้อมูลที่ส่งออกและ privacy notes ที่ [AI agent](docs/ai-agent.md) และ [AI scope](docs/ai-scope.md)
+
 [Desktop shell / evidence](docs/desktop-shell.md) · [เอกสารโครงการ](docs/README.md) · [SSH backend spike](spikes/ssh-compat/README.md)
 
 [Local storage / migration evidence](docs/local-storage.md) · [Storage driver ADR](docs/adr/0002-local-metadata-storage.md)

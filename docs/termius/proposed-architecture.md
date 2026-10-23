@@ -153,7 +153,7 @@ Command/event design ที่ต้องปิดรายละเอีย�
 
 ## Later boundaries
 
-Cloud/team ทำเป็น service protocol ใหม่แยก local vault; encrypted envelopes, key lifecycle, migration, conflict/tombstones, device identity และ revoke เป็น gate ก่อน implementation ของ sync Logs/AI/broadcast ต้องมี target/retention semantics ต่างหาก (logs/history: [recording](../recording.md); AI เป็น privacy spec เท่านั้น: [ai-scope](../ai-scope.md)) Local PTY, Mosh/FIDO, proxy/chaining, remote/dynamic tunnels และ cross-platform เป็น optional adapters/capabilities ไม่ให้กลายเป็น dependency ของ SSH MVP
+Cloud/team ทำเป็น service protocol ใหม่แยก local vault; encrypted envelopes, key lifecycle, migration, conflict/tombstones, device identity และ revoke เป็น gate ก่อน implementation ของ sync Logs/AI/broadcast ต้องมี target/retention semantics ต่างหาก (logs/history: [recording](../recording.md); AI: privacy spec [ai-scope](../ai-scope.md) และ opt-in [AI agent](../ai-agent.md) ของ SST-041 ผ่าน CLI ของผู้ใช้) Local PTY, Mosh/FIDO, proxy/chaining, remote/dynamic tunnels และ cross-platform เป็น optional adapters/capabilities ไม่ให้กลายเป็น dependency ของ SSH MVP
 
 SST-007 implements the HostCatalog/config resolver contracts in [domain/services catalog Modules](../catalog.md), including immutable config capture, explicit search scope and revision-fenced destructive previews. No catalog renderer command is added.
 

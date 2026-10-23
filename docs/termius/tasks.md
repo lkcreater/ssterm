@@ -86,7 +86,7 @@
 
 - [x] **T053 / SST-039:** local app lock — password or Google (loopback OAuth), recovery code, main-side IPC gate, Settings
 - [x] **T054 / SST-040:** UI v2 Charcoal — tokens/icon, right-edge drawers, shell, Files picker, manual Lock workspace ([spec](../agent-runs/sst-040-spec.md), [delivery](../agent-runs/sst-040-delivery.md))
-- [ ] **T055 / SST-041:** AI terminal agent and MCP endpoint, specified only; implementation not authorized ([spec](../agent-runs/sst-041-spec.md), [ADR 0009](../adr/0009-ai-terminal-agent-and-mcp.md))
+- [x] **T055 / SST-041:** AI terminal agent and MCP endpoint — opt-in agent through the user's verified CLI, modes/plans/PROD, password handoff, external MCP clients ([spec](../agent-runs/sst-041-spec.md), [ADR 0009](../adr/0009-ai-terminal-agent-and-mcp.md), [delivery](../agent-runs/sst-041-delivery.md))
 
 ## Later scope — authorized separately from MVP
 

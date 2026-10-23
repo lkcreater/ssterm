@@ -1,6 +1,6 @@
 # Session logs, command history and suggestions (SST-034)
 
-Opt-in, local and encrypted. Nothing is sent anywhere; ssterm has no AI feature ([AI scope](ai-scope.md)). Schema stays 4: nothing is written to `catalog.sqlite`.
+Opt-in, local and encrypted. Nothing is sent anywhere; the opt-in [AI agent](ai-agent.md) (SST-041) cannot read recordings or history ([AI scope](ai-scope.md)). Schema stays 4: nothing is written to `catalog.sqlite`.
 
 ## Behavior
 

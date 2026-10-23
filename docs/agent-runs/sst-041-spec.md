@@ -1,7 +1,7 @@
 # SST-041 spec: AI terminal agent and MCP endpoint
 
-**Status:** specified 2026-10-23. Implementation is not authorized (decision A13).
-**Decisions:** A1–A13 in the [implementation plan](implementation-plan.md#ai-terminal-agent--grilling-decisions-2026-10-23-proposed-sst-041). **ADR:** [ADR 0009](../adr/0009-ai-terminal-agent-and-mcp.md) (Proposed). **Tickets:** [SST-041 breakdown](sst-041/README.md).
+**Status:** specified 2026-10-23, then authorized and delivered the same day ([delivery](sst-041-delivery.md)).
+**Decisions:** A1–A13 in the [implementation plan](implementation-plan.md#ai-terminal-agent--grilling-decisions-2026-10-23-proposed-sst-041). **ADR:** [ADR 0009](../adr/0009-ai-terminal-agent-and-mcp.md) (Accepted). **Tickets:** [SST-041 breakdown](sst-041/README.md).
 
 ## Problem Statement
 

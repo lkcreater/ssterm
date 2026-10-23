@@ -1,6 +1,6 @@
 # SST-041 tickets
 
-Tickets from the [spec](../sst-041-spec.md) and [ADR 0009](../../adr/0009-ai-terminal-agent-and-mcp.md). **Implementation has not been authorized** (decision A13). Once it is, take any ticket whose blockers are done. Ticket 01 gates every provider.
+Tickets from the [spec](../sst-041-spec.md) and [ADR 0009](../../adr/0009-ai-terminal-agent-and-mcp.md). All tickets are done (authorized 2026-10-23; see the [delivery](../sst-041-delivery.md)). Ticket 01 gates every provider.
 
 | # | Ticket | Blocked by |
 |---|---|---|

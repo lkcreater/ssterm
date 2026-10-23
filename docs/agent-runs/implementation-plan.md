@@ -1790,3 +1790,69 @@ Rules:
     - typecheck, build and unit 860/861 (1 known skip) pass.
     - The orchestrator's own full development E2E: 99/99.
     - Packaged agent-external and package-artifact: 5/5.
+
+**SST-043 authorization: agent panel language and rich chat (2026-10-23).** User, after using the panel on a real server: “ใน panel agent ทำไมการตอบมี 2 ภาษา … ถามภาษาไทย ตอบทั้งไทย และมี en ด้านล่าง -> ปรับให้ตอบตามภาษาของ user / ปรับการแสดงผล table view แบบ html ใน conversation”.
+
+Cause: the main agent answers in the user's language. The task card under it shows the task goal and the "Sub agent report (unverified)" in English, because the delegation and sub-agent instructions are English and nothing asks for the user's language.
+
+Scope:
+- **Language:**
+  - The bundled instructions tell the main agent to always answer in the language of the user's latest message.
+  - The main agent writes `delegate_task` goals in English (safest for tool use) but asks the sub agent for its report in the user's language.
+  - The sub-agent instructions carry the same rule.
+  - The task card shows the sub agent report collapsed inside the Record, so the conversation does not show two answers.
+- **Rendering:** chat messages and reports are rendered as safe Markdown in the panel: GFM tables as real HTML tables (styled, horizontally scrollable), bold/italic, inline code, code blocks, lists and headings.
+  - No raw HTML and no images.
+  - Links are shown as text, never clickable, and never auto-fetched.
+  - Content is untrusted agent output, so it is never injected as HTML.
+- **Order:** runs after SST-041/08 finishes its gates (both touch the renderer), then the usual loop; local commit, no push.
+- **SST-043 scope update.** User: “ปรับ ui ใน conversation ให้แสดงเป็น bubble message ของ AI มี icon ai ด้านบน buble / task card ปรับให้แสดง บรรทัดเดียว ให้มีปุ่ม explan เพื่อดูรายละเอียดของ task card ใน bubble / Markdown … ใช้ lib react-markdown”.
+  - **Chat:** AI messages are bubbles with an AI icon above each bubble. User messages stay right-aligned bubbles.
+  - **Task cards:** live inside the AI bubble as a one-line summary (status, goal, step count) with an Expand button. Expanding shows the record and the collapsed sub-agent report.
+  - **Markdown:** rendered with `react-markdown` plus `remark-gfm`, which tables need. Both are pinned exactly to versions at least two weeks old and added to third-party notices.
+  - **Safe config:**
+    - no raw HTML (no `rehype-raw`; `skipHtml`);
+    - images disallowed;
+    - links rendered as non-clickable text via `urlTransform`/components;
+    - code is not executed or highlighted with remote assets.
+- **SST-041/08 done (2026-10-23): docs, privacy notes and release gates** ([delivery](sst-041-delivery.md)).
+  - **Docs:**
+    - ADR 0009 is Accepted, with Decision and Consequences reconciled with what was built (residual risks listed).
+    - `ai-scope.md` now describes the shipped data flow and how each precondition is met.
+    - New [AI agent](../ai-agent.md) behaviour doc, with privacy notes listing every process and endpoint.
+    - AGENTS.md network/AI rules, test seams and baseline updated, plus a README line.
+  - **local-pty hang root cause:** `dispose()` paused the PTY master before stopping the owned processes. Echoed output left unread blocked the exiting processes in the macOS tty close (state `E`), so the ownership stop never confirmed and `drained` stayed pending.
+    - Fix: keep reading and discard after dispose.
+    - Added a deterministic regression test, red for 20 s before the fix and green in about 0.7 s after it.
+    - Bounded per-test and hook timeouts (60 s) in `local-pty.test.ts`.
+    - After the fix, 12/12 full suites passed.
+  - **Gates:**
+    - typecheck pass; unit 862 total / 861 passed / 1 skipped; build pass.
+    - Full E2E 98/99: one foreign keystroke in `app-lock.spec.ts:285`, and that spec passed 4/4 on rerun.
+    - package:mac pass; packaged 97/97.
+    - Spike: `npm test` 10/10. Capture-only check: claude pass, codex fails (user-instructions) and stays disabled. No provider call.
+- **SST-043 scope update 2.** User: “ปรับ input chat เป็น textarea 3 row > สามารถกด shift + enter เพื่อขึ้นบรรทัดใหม่ได้” plus a screenshot of Settings › AI Agent.
+  - **Composer:** a 3-row textarea. Enter sends, Shift+Enter inserts a newline, and the IME composition guard stays.
+  - **Bug:** in the provider status rows, the label column ("claude (Anthropic)", "codex (OpenAI)") collapses to one character wide, so the text wraps letter by letter. The status and reasons are right-aligned, so the reason bullets look broken.
+  - **Fix:** a stacked or two-column layout with a minimum label width, left-aligned reasons, and a check at 960×640 and 1280×800.
+- **SST-043 scope update 3.** User: “จากรูป agent run command เสร็จแต่ไม่ตอบเพิ่มปุ่ม stop”.
+  - **Report:** on a real server the sub agent's command (`which docker podman …`) completed: output was shown and the prompt returned. The panel then stayed on "Agent is working…" with no reply.
+  - **Required:**
+    - Diagnose why a turn can hang after a task completes. Candidates:
+      - the executor never saw the done marker;
+      - the task was not settled;
+      - the main CLI is blocked in `get_task_status` wait;
+      - the main CLI died without a `result` event;
+      - an Opus xhigh turn is simply slow with no progress shown.
+    - Fix every real cause found.
+    - Add a turn watchdog: surface "the agent process exited" or "no response for N s", with no infinite spinner.
+    - Add a **Stop** button while the agent is working. It interrupts the current main-agent turn (stream-json interrupt if supported, otherwise stops the process and keeps the conversation usable or clearly ended), cancels any running sub-agent task (Ctrl+C to its command), and records it.
+- **SST-041/08 done (2026-10-23):**
+  - **Docs:** ADR 0009 Accepted; AI scope rewritten; `docs/ai-agent.md` added; AGENTS.md network/seams/baseline updated; delivery record written.
+  - **local-pty fix:** a real shipping bug was fixed as a separate commit. `dispose()` paused the PTY master, and macOS children then blocked on close in state `E`, hanging cleanup and the unit suite. The fix resumes on dispose, `flow()` now no-ops after dispose, and there is a regression test.
+  - **Review:** APPROVED. Fixed: M1, the network-claim wording (tests observe renderer requests and main listeners only); L1, stale AI lines; L2, the `flow()` guard; L3, rollback wording and crash leftovers; L4, the data table now notes that the server's own files are readable via `cat`.
+  - **Gates:**
+    - unit 861/862 (1 known skip).
+    - Full E2E 98/99: one app-lock failure from a foreign keystroke, which passed 4/4 alone.
+    - Package build pass; full packaged suite 97/97.
+    - Capture-mode isolation: claude pass, codex fail as before.

@@ -419,7 +419,7 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 
 ### SST-034 — Logs / history / autocomplete / AI scope
 
-**Status: DONE (automated).** Delivered according to the authorized local opt-in choice; AI remains a privacy specification only. [Behavior](../recording.md), [delivery and final review](../agent-runs/sst-034-delivery.md). All three reported recorder criticals and the additional privacy/lifecycle findings are resolved; final packaged gate 80/80.
+**Status: DONE (automated).** Delivered according to the authorized local opt-in choice; AI was a privacy specification only at that point (SST-041 later added the opt-in agent). [Behavior](../recording.md), [delivery and final review](../agent-runs/sst-034-delivery.md). All three reported recorder criticals and the additional privacy/lifecycle findings are resolved; final packaged gate 80/80.
 
 **Evidence:** W01. **Outcome:** separate privacy/UX spec ก่อน feature code.
 
@@ -475,7 +475,7 @@ Follow the [recorded scope choices and dependency order](../agent-runs/implement
 
 ### SST-041 — AI terminal agent and MCP endpoint
 
-**Status:** `SPECIFIED` (implementation not authorized; decision A13). Specified in [spec](../agent-runs/sst-041-spec.md), [ADR 0009](../adr/0009-ai-terminal-agent-and-mcp.md) (Proposed), [tickets](../agent-runs/sst-041/README.md) and [decisions A1–A13](../agent-runs/implementation-plan.md#ai-terminal-agent--grilling-decisions-2026-10-23-proposed-sst-041).
+**Status:** `DONE` through automated gates (tickets 01–08, 2026-10-23) — T055; [delivery](../agent-runs/sst-041-delivery.md), [behavior and privacy notes](../ai-agent.md), [external MCP clients](../agent-external-clients.md), [spec](../agent-runs/sst-041-spec.md), [ADR 0009](../adr/0009-ai-terminal-agent-and-mcp.md) (Accepted), [tickets](../agent-runs/sst-041/README.md), [decisions A1–A14](../agent-runs/implementation-plan.md#ai-terminal-agent--grilling-decisions-2026-10-23-proposed-sst-041). codex stays disabled; a live multi-turn stream-json run with the real claude, real external clients and Developer ID signing remain manual/pending.
 
 **Acceptance:**
 - An AI Agent button appears on Ready SSH sessions and opens a non-modal chat panel that drives the local `claude` (later `codex` or custom) CLI.
