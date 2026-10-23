@@ -1,8 +1,8 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import {
   appLockRequestGuards, channels, failure,
-  type AppLockStatus, type AttemptResponse, type GoogleSignInResponse, type LockNowResponse, type Owner, type RegenerateRecoveryResponse,
-  type Result, type SetupPasswordResponse, type UnlockOfflineResponse,
+  type AppLockStatus, type AttemptResponse, type GoogleSignInResponse, type LiveWork, type LockNowResponse, type Owner, type RegenerateRecoveryResponse,
+  type Result, type SetupPasswordResponse, type TerminalSession, type UnlockOfflineResponse,
 } from "@ssterm/contracts";
 import {
   beginAuthorization, completeAuthorization, googleReachable, OAuthError, redirectUri, GOOGLE_CALLBACK_PATH, GOOGLE_ENDPOINTS, GOOGLE_LOOPBACK_PORT,
@@ -53,6 +53,8 @@ export function createAppLockController(options: {
   lockSessions?(): void;
   /** Makes every window show the gate again (main reloads them). */
   showGate?(): void;
+  /** What the session lock would close in every window (`summarizeLiveWork` over main's state). */
+  liveWork?(): LiveWork;
   /** Test seam: the loopback port. */
   port?: number;
   fetch?: typeof fetch;
@@ -157,6 +159,11 @@ export function createAppLockController(options: {
       if (wasOpen) try { options.showGate?.(); } catch { /* Main is closed either way; a window that missed the reload stays refused. */ }
       return ok({ status: "locked" });
     },
+    /** Lock workspace asks first (SST-040/13). Behind the gate it would only describe work the lock already closed. */
+    liveWork(): Result<LiveWork> {
+      if (service && !service.unlocked) return failure("unauthorized");
+      return ok(options.liveWork?.() ?? { terminals: [], tunnels: [], transfers: 0, remoteEdits: 0 });
+    },
     cancelGoogle(): Result<{ status: "cancelled" }> {
       signIn?.abort();
       return ok({ status: "cancelled" });
@@ -166,9 +173,34 @@ export function createAppLockController(options: {
 }
 export type AppLockController = ReturnType<typeof createAppLockController>;
 
+/**
+ * Lock workspace's live-work summary over every window's owner, by the close/quit rules: terminals connecting or
+ * ready, tunnels starting or running, main's pending transfer count, and pending remote edits (process-wide).
+ */
+export function summarizeLiveWork(owners: readonly Owner[], read: {
+  terminals(owner: Owner): readonly TerminalSession[];
+  tunnels(owner: Owner): readonly { ruleId: string; state: string }[];
+  transfers(owner: Owner): number;
+  remoteEdits(): number;
+}): LiveWork {
+  return {
+    // Display fields only: other windows' session IDs, generations and recording state stay in main.
+    terminals: owners.flatMap((owner) => read.terminals(owner).flatMap(({ phase, local, target }) =>
+      phase !== "ready" && phase !== "connecting" ? [] : [local ? { phase, local: { ...local }, target: null } : {
+        phase, target: target ? { label: target.label, environment: target.environment, endpointHost: target.endpointHost,
+          endpointPort: target.endpointPort, username: target.username } : null,
+      }])),
+    tunnels: owners.flatMap((owner) => read.tunnels(owner).flatMap(({ ruleId, state }) =>
+      state === "starting" || state === "running" ? [{ ruleId, phase: state }] : [])),
+    transfers: owners.reduce((count, owner) => count + read.transfers(owner), 0),
+    remoteEdits: read.remoteEdits(),
+  };
+}
+
 export const appLockChannels = Object.freeze([
   channels.appLockState, channels.setupAppLockPassword, channels.unlockAppLock, channels.confirmAppLockPassword, channels.googleSignIn,
   channels.cancelGoogleSignIn, channels.unlockAppLockOffline, channels.recoverAppLock, channels.regenerateRecoveryCode, channels.lockNow,
+  channels.liveWork,
 ]);
 
 /** Served before unlock: owner-checked (not lock-gated) and zod-validated; secrets are never echoed or logged. */
@@ -202,5 +234,6 @@ export function registerAppLockHandlers(options: {
   handle(channels.recoverAppLock, g.recover, (c, r) => c.recover(r.code));
   handle(channels.regenerateRecoveryCode, g.regenerateRecovery, (c) => c.regenerate());
   handle(channels.lockNow, g.lockNow, (c) => c.lockNow());
+  handle(channels.liveWork, g.liveWork, (c) => c.liveWork());
   return () => { for (const channel of appLockChannels) options.ipc.removeHandler(channel); };
 }

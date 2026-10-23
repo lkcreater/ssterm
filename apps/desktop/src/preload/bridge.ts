@@ -41,8 +41,8 @@ import {
   type OpenSnippetRequest, type SaveSnippetRequest, type DeleteSnippetRequest,
   isTunnelState, isTunnelStateRequest, isTunnelRuleRequest, isStartTunnelResponse, isStopTunnelResponse,
   appLockRequestGuards, isAppLockStatus, isSetupPasswordResponse, isAttemptResponse, isGoogleSignInResponse, isUnlockOfflineResponse,
-  isRegenerateRecoveryResponse, isCancelGoogleResponse, isLockNowResponse,
-  type AppLockStateRequest, type LockNowRequest, type SetupPasswordRequest, type UnlockPasswordRequest, type ConfirmPasswordRequest,
+  isRegenerateRecoveryResponse, isCancelGoogleResponse, isLockNowResponse, isLiveWork,
+  type AppLockStateRequest, type LockNowRequest, type LiveWorkRequest, type SetupPasswordRequest, type UnlockPasswordRequest, type ConfirmPasswordRequest,
   type GoogleSignInRequest, type CancelGoogleRequest, type UnlockOfflineRequest, type RecoverRequest, type RegenerateRecoveryRequest,
   type TunnelState, type TunnelStateRequest, type TunnelRuleRequest,
   isTrustState,
@@ -665,6 +665,10 @@ export function createDesktopBridge(transport: BridgeTransport): {
     lockNow(request: LockNowRequest) {
       if (!appLockRequestGuards.lockNow(request)) return Promise.resolve(failure("invalid-request"));
       return invoke(channels.lockNow, [{ owner: { ...request.owner } }], isLockNowResponse);
+    },
+    liveWork(request: LiveWorkRequest) {
+      if (!appLockRequestGuards.liveWork(request)) return Promise.resolve(failure("invalid-request"));
+      return invoke(channels.liveWork, [{ owner: { ...request.owner } }], isLiveWork);
     },
     async tunnelState(request: TunnelStateRequest) {
       if (!isTunnelStateRequest(request)) return failure("invalid-request");

@@ -8,7 +8,10 @@ import type { IPty } from "node-pty";
 import type { TerminalChannel, TerminalEnd, TerminalWrite } from "@ssterm/domain";
 import type { LocalSessionAdapter, LocalSessionContext } from "@ssterm/services";
 
-/** Main-only construction seam. No option is accepted by the renderer or read from test environment flags. */
+/**
+ * Main-only construction seam; no option is accepted by the renderer. Main reads one test-profile-only flag into it:
+ * `SSTERM_TEST_LOCAL_HOME` sets `home` (and so cwd) inside a validated test userData; nothing else comes from the environment.
+ */
 export interface LocalPtyOptions {
   shell?: string;
   args?: readonly string[];

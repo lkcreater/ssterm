@@ -3,13 +3,13 @@ import { test } from "node:test";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:net";
 import {
-  appLockRequestGuards, channels, isAppLockStatus, isGoogleSignInResponse, isLockNowResponse, passwordSetupErrors, recoveryCodeSchema, RECOVERY_CODE_PATTERN,
+  appLockRequestGuards, channels, isAppLockStatus, isGoogleSignInResponse, isLiveWork, isLockNowResponse, liveWorkCount, type Owner, type TerminalSession, passwordSetupErrors, recoveryCodeSchema, RECOVERY_CODE_PATTERN,
 } from "../../packages/contracts/src/index.ts";
 import { AppLockService, type AppLockStore } from "../../packages/services/src/app-lock.ts";
 import { beginAuthorization, completeAuthorization, OAuthError, verifyIdToken, GOOGLE_REDIRECT_URI } from "../../packages/services/src/google-oauth.ts";
 import { waitForOAuthCallback } from "../../packages/adapters/src/oauth-loopback.ts";
 import { WindowBoundary } from "../../apps/desktop/src/main/boundary.ts";
-import { appLockChannels, appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers } from "../../apps/desktop/src/main/app-lock.ts";
+import { appLockChannels, appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers, summarizeLiveWork } from "../../apps/desktop/src/main/app-lock.ts";
 
 const FAST = { N: 1024, r: 8, p: 1 };
 class MemoryStore implements AppLockStore {
@@ -599,4 +599,97 @@ test("Lock workspace: a throwing session lock still locks and reloads; a Google 
   const result = await signingIn;
   assert.ok(result.ok && result.value.status === "failed" && result.value.code === "not-allowed", JSON.stringify(result));
   assert.equal(controller.open(), false);
+});
+
+const RULE_A = "11111111-1111-4111-8111-111111111111";
+const RULE_B = "22222222-2222-4222-8222-222222222222";
+const RULE_C = "33333333-3333-4333-8333-333333333333";
+function session(id: string, phase: TerminalSession["phase"], local = false): TerminalSession {
+  return {
+    sessionId: id, generation: 1, phase, end: null, error: null,
+    ...(local ? { hostId: null, local: { shell: "/bin/zsh", platform: "darwin" as const }, target: null }
+      : { hostId: "h1", target: { source: "team" as const, label: id, environment: "PROD" as const, endpointHost: "10.0.0.1", endpointPort: 22, username: "ops" } }),
+    recording: { mode: "on" } as never,
+  };
+}
+
+test("Lock workspace live work: every window's terminals, tunnels, transfers and remote edits by the close/quit rules", () => {
+  const one: Owner = { windowId: 1, generation: 1 };
+  const two: Owner = { windowId: 2, generation: 3 };
+  const terminals = new Map<number, TerminalSession[]>([
+    [1, [session("ssh-ready", "ready"), session("ssh-connecting", "connecting"), session("ssh-failed", "failed"), session("ssh-closed", "closed")]],
+    [2, [session("local-ready", "ready", true)]],
+  ]);
+  const tunnels = new Map<number, { ruleId: string; state: string }[]>([
+    [1, [{ ruleId: RULE_A, state: "running" }, { ruleId: RULE_C, state: "stopping" }]],
+    [2, [{ ruleId: RULE_B, state: "starting" }, { ruleId: RULE_C, state: "failed" }]],
+  ]);
+  let edits = 2;
+  const read = {
+    terminals: (owner: Owner) => terminals.get(owner.windowId) ?? [],
+    tunnels: (owner: Owner) => tunnels.get(owner.windowId) ?? [],
+    transfers: (owner: Owner) => (owner.windowId === 1 ? 2 : 1),
+    remoteEdits: () => edits,
+  };
+  const work = summarizeLiveWork([one, two], read);
+  assert.deepEqual(work.terminals, [
+    { phase: "ready", target: { label: "ssh-ready", environment: "PROD", endpointHost: "10.0.0.1", endpointPort: 22, username: "ops" } },
+    { phase: "connecting", target: { label: "ssh-connecting", environment: "PROD", endpointHost: "10.0.0.1", endpointPort: 22, username: "ops" } },
+    { phase: "ready", local: { shell: "/bin/zsh", platform: "darwin" }, target: null },
+  ], "connecting and ready terminals in every window, display fields only (no IDs, generations, provenance or recording); failed and closed ones are not live");
+  assert.deepEqual(work.tunnels, [{ ruleId: RULE_A, phase: "running" }, { ruleId: RULE_B, phase: "starting" }], "stopping, failed and stopped tunnels are not live");
+  assert.equal(work.transfers, 3, "pending transfers from both windows");
+  assert.equal(work.remoteEdits, 2);
+  assert.equal(liveWorkCount(work), 3 + 2 + 3 + 2);
+  assert.ok(isLiveWork(work), "the summary passes the bridge's response guard");
+  edits = 0;
+  const idle = summarizeLiveWork([], read);
+  assert.deepEqual(idle, { terminals: [], tunnels: [], transfers: 0, remoteEdits: 0 });
+  assert.equal(liveWorkCount(idle), 0);
+  assert.equal(isLiveWork({ ...work, extra: 1 }), false, "strict response");
+  assert.equal(isLiveWork({ ...work, transfers: -1 }), false);
+  assert.equal(isLiveWork({ ...work, tunnels: [{ ruleId: "not-an-id", phase: "running" }] }), false);
+  assert.equal(isLiveWork({ ...work, terminals: [session("x", "ready")] }), false, "whole sessions are refused");
+  assert.equal(isLiveWork({ ...work, terminals: [{ ...work.terminals[0], phase: "failed" }] }), false);
+  assert.equal(isLiveWork({ ...work, terminals: [{ ...work.terminals[2], target: work.terminals[0]!.target }] }), false, "local has no target");
+});
+
+test("Lock workspace live-work IPC: owner-checked, strict payload, answered only while unlocked, never locks", async () => {
+  const lock = await service(new MemoryStore());
+  await lock.setupPassword(SETUP);
+  let sessionLocks = 0;
+  const work = { terminals: summarizeLiveWork([{ windowId: 1, generation: 1 }], { terminals: () => [session("s1", "ready")], tunnels: () => [], transfers: () => 0, remoteEdits: () => 0 }).terminals, tunnels: [{ ruleId: RULE_A, phase: "running" as const }], transfers: 1, remoteEdits: 0 };
+  const controller = createAppLockController({
+    service: lock, google: undefined, openExternal: async () => {}, lockSessions: () => { sessionLocks += 1; }, liveWork: () => work,
+  });
+  const window = gatedWindow(controller);
+  const handlers = new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>();
+  const remove = registerAppLockHandlers({
+    ipc: { handle: (channel: string, run: never) => { handlers.set(channel, run); }, removeHandler: (channel: string) => { handlers.delete(channel); } } as never,
+    boundary: window.boundary,
+    controller: () => controller,
+  });
+  assert.ok(appLockChannels.includes(channels.liveWork));
+  assert.equal(appLockRequestGuards.liveWork({ owner: window.owner }), true);
+  const invoke = (event: unknown, ...args: unknown[]) => handlers.get(channels.liveWork)!(event, ...args);
+  const code = (result: unknown) => (result as { ok: boolean; error?: { code: string } }).error?.code;
+  const foreign = { sender: { id: 8, mainFrame: window.mainFrame, isDestroyed: () => false }, senderFrame: window.mainFrame };
+  assert.equal(code(await invoke(foreign, { owner: window.owner })), "unauthorized", "an unregistered sender");
+  assert.equal(code(await invoke({ ...window.event, senderFrame: { url: "http://127.0.0.1:5174/" } }, { owner: window.owner })), "unauthorized", "a subframe");
+  assert.equal(code(await invoke(window.event, { owner: { windowId: 2, generation: 1 } })), "unauthorized", "another window's owner");
+  assert.equal(code(await invoke(window.event, { owner: { windowId: 1, generation: 9 } })), "stale-owner");
+  assert.equal(code(await invoke(window.event, { owner: window.owner, all: true })), "invalid-request");
+  assert.equal(code(await invoke(window.event, { owner: window.owner }, 1)), "invalid-request");
+  assert.equal(code(await invoke(window.event)), "invalid-request");
+  assert.deepEqual(await invoke(window.event, { owner: window.owner }), { ok: true, value: work });
+  assert.equal(sessionLocks, 0, "asking locks nothing");
+  assert.equal(lock.unlocked, true);
+  controller.lockNow();
+  assert.equal(code(await invoke(window.event, { owner: window.owner })), "unauthorized", "refused behind the gate");
+  assert.equal(code(controller.liveWork()), "unauthorized");
+  remove();
+  assert.equal(handlers.size, 0);
+
+  const off = createAppLockController({ service: undefined, google: undefined, openExternal: async () => {} });
+  assert.deepEqual(off.liveWork(), { ok: true, value: { terminals: [], tunnels: [], transfers: 0, remoteEdits: 0 } }, "lock off: nothing to gate");
 });

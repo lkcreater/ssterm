@@ -1,10 +1,15 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { Page } from "@playwright/test";
-import { test, expect, launchDesktop, type Desktop } from "./fixtures";
+import { test, expect, changeCatalog, launchDesktop, type Desktop } from "./fixtures";
+import { pane } from "./support/transfer-fixture";
 
 // Passwords and recovery codes are owned fixture values; keep traces off anyway.
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -180,6 +185,201 @@ test("Lock workspace: nothing live → every window shows the gate, feature IPC 
     await desktop?.close();
     await rm(profile, { recursive: true, force: true });
     await rm(plain, { recursive: true, force: true });
+  }
+});
+
+const runFile = promisify(execFile);
+const { startFixture, portIsOpen } = createRequire(import.meta.url)("../../spikes/ssh-compat/src/fixture.cjs");
+async function freePort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((done) => probe.listen(0, "127.0.0.1", done));
+  const { port } = probe.address() as net.AddressInfo;
+  await new Promise<void>((done) => probe.close(() => done()));
+  return port;
+}
+const liveWork = (page: Page) => page.evaluate(async () => {
+  const boot = await window.ssterm.bootstrap();
+  if (!boot.ok) return "bootstrap";
+  const work = await window.ssterm.liveWork({ owner: boot.value.owner });
+  return work.ok ? { terminals: work.value.terminals.map((t) => (t.local ? "local" : t.target?.label)), tunnels: work.value.tunnels.length,
+    transfers: work.value.transfers, remoteEdits: work.value.remoteEdits } : work.error.code;
+});
+
+// SST-040/13: with live work, Lock workspace asks first in a drawer that lists it; Cancel and Esc keep it running.
+test("Lock workspace with live work: SSH and local terminals, a tunnel and a transfer are listed, kept on Cancel/Esc, closed on Lock and close 4", async ({}, testInfo) => {
+  test.setTimeout(300_000);
+  const profile = await mkdtemp(join(tmpdir(), "ssterm-e2e-relock-live-"));
+  // Local terminals start in this owned home (an empty .zshrc), never the developer's shell startup files.
+  const home = join(profile, "home");
+  await mkdir(home);
+  await writeFile(join(home, ".zshrc"), "PS1='lock-e2e%# '\n");
+  const lab = await startFixture();
+  const server = "เซิร์ฟเวอร์ ล็อก";
+  const count = async (pattern: string) => {
+    try { return Number((await runFile("docker", ["exec", lab.container, "pgrep", "-c", "-f", pattern])).stdout.trim()); }
+    catch (error) { if ((error as { code?: number }).code === 1) return 0; throw error; }
+  };
+  let desktop: Desktop | undefined;
+  try {
+    desktop = await launchDesktop(profile, { env: { ...LOCK, SSTERM_TEST_LOCAL_HOME: home } });
+    const { app, page } = desktop;
+    await page.getByLabel("User name", { exact: true }).fill("alice");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create password" }).click();
+    await saveRecoveryCode(page);
+    await expect(page.getByTestId("hosts-page")).toBeVisible();
+
+    // One PROD server with a saved password (read from a file in main, never over the test wire) and one tunnel rule.
+    const remoteRoot = "/home/fixture/lock";
+    await runFile("docker", ["exec", "-u", "fixture", lab.container, "python3", "-c",
+      `import os\nos.makedirs(${JSON.stringify(remoteRoot)})\nopen(${JSON.stringify(`${remoteRoot}/existing.txt`)},'wb').write(b'server')`]);
+    const secret = join(lab.directory, "password");
+    await writeFile(secret, lab.password, { mode: 0o600 });
+    const port = await freePort();
+    const [identityId] = await changeCatalog(app, [
+      { type: "create-identity", data: { label: "Lock lab", username: lab.username, method: "password" } },
+      { type: "create-host", data: { label: server, address: lab.host, environment: "PROD", port: { mode: "value", port: lab.port }, auth: { mode: "value", identityId: "$0" } } },
+      { type: "create-tunnel-rule", data: { label: "เว็บ lock", hostId: "$1", bindPort: port, destinationHost: "127.0.0.1", destinationPort: 8080 } },
+    ]);
+    await page.reload();
+    await expect(page.getByTestId("hosts-page")).toContainText(server);
+    expect(await app.evaluate(async ({ BrowserWindow }, { file, identityId }) => {
+      const value = process.getBuiltinModule("node:fs").readFileSync(file, "utf8");
+      return BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScript(`(async () => {
+        const boot = await window.ssterm.bootstrap();
+        const saved = await window.ssterm.setIdentityPassword({ owner: boot.value.owner, identityId: ${JSON.stringify(identityId)},
+          expectedRevision: 1, value: new TextEncoder().encode(${JSON.stringify(value)}) });
+        return saved.ok ? saved.value.status : saved.error.code; })()`);
+    }, { file: secret, identityId })).toBe("saved");
+
+    // Nothing live yet: the summary is empty (that path locks at once; covered by the nothing-live test).
+    expect(await liveWork(page)).toEqual({ terminals: [], tunnels: 0, transfers: 0, remoteEdits: 0 });
+
+    // 1. SSH terminal (trust once; the saved password connects).
+    const hosts = page.getByTestId("hosts-page");
+    await hosts.getByRole("button", { name: `Connect ${server}`, exact: true }).click();
+    await page.getByTestId("host-trust-dialog").getByRole("button", { name: "Remember", exact: true }).click();
+    const ssh = page.locator("section[data-terminal-kind=ssh]");
+    await expect(ssh).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+    // 2. Local terminal in the owned home.
+    await page.getByRole("button", { name: /^Terminals/u }).click();
+    await page.getByRole("button", { name: "New local terminal", exact: true }).first().click();
+    const local = page.locator("section[data-terminal-kind=local]");
+    await expect(local).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+    await expect(local.locator(".xterm-rows")).toContainText("lock-e2e%", { timeout: 20_000 });
+    // 3. Tunnel.
+    await page.getByRole("button", { name: "Port forwarding", exact: false }).click();
+    const rule = page.getByTestId("tunnels-page").locator("li[data-rule-id]").filter({ hasText: "เว็บ lock" });
+    await rule.getByRole("button", { name: "Start เว็บ lock" }).click();
+    await expect(rule.locator(".tunnel-status")).toContainText("Running", { timeout: 30_000 });
+    expect(await portIsOpen(port)).toBe(true);
+    // 4. A transfer that stays pending: an upload waiting on a conflict decision.
+    await page.getByRole("button", { name: /^Servers/u }).click();
+    await hosts.getByRole("button", { name: `Actions for ${server}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Open files", exact: true }).click();
+    const remote = pane(page, "remote");
+    await expect(remote.section).toHaveAttribute("data-phase", "ready", { timeout: 30_000 });
+    const folder = join(profile, "lock-local");
+    await mkdir(folder);
+    await writeFile(join(folder, "existing.txt"), "local");
+    await pane(page, "local").goto(await realpath(folder));
+    await remote.goto(remoteRoot);
+    await pane(page, "local").select(["existing.txt"]);
+    await page.getByRole("button", { name: "Upload selected files", exact: true }).click();
+    const job = page.getByTestId("transfer-panel").getByTestId("transfer-job");
+    await expect(job).toHaveAttribute("data-state", "conflict", { timeout: 20_000 });
+    expect(await liveWork(page)).toEqual({ terminals: [server, "local"], tunnels: 1, transfers: 1, remoteEdits: 0 });
+    // The local terminal's guardian (a child of main) and its zsh, checked again after the lock.
+    const children = async (parent: number, pattern?: string) => {
+      try { return (await runFile("pgrep", ["-P", String(parent), ...(pattern ? ["-f", pattern] : [])])).stdout.trim().split("\n").map(Number); }
+      catch (error) { if ((error as { code?: number }).code === 1) return []; throw error; }
+    };
+    const guardians = await children(await app.evaluate(() => process.pid), "ssterm-local-guardian");
+    expect(guardians, "one local terminal").toHaveLength(1);
+    const shells = await children(guardians[0]!);
+    expect(shells.length, "its interactive zsh").toBeGreaterThan(0);
+    const running = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+    const lockWorkspace = page.getByRole("button", { name: "Lock workspace" });
+    const drawer = page.getByTestId("lock-workspace-drawer");
+    const alive = async () => {
+      await expect(drawer).toHaveCount(0);
+      await expect(screen(page)).toHaveCount(0);
+      await expect(ssh).toHaveAttribute("data-phase", "ready");
+      await expect(local).toHaveAttribute("data-phase", "ready");
+      await expect(job).toHaveAttribute("data-state", "conflict");
+      expect(await portIsOpen(port), "the tunnel still listens").toBe(true);
+      expect(await liveWork(page)).toEqual({ terminals: [server, "local"], tunnels: 1, transfers: 1, remoteEdits: 0 });
+      expect(await gated(page)).toBe("open");
+    };
+    const ask = async () => {
+      await lockWorkspace.click();
+      await expect(drawer).toBeVisible();
+      await expect(drawer).toHaveAttribute("role", "alertdialog");
+      await expect(drawer.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    };
+
+    // The drawer lists what will close, with the target and PROD label; Esc keeps everything.
+    await ask();
+    await expect(drawer).toContainText("Lock workspace?");
+    const terminalsList = drawer.getByTestId("lock-workspace-terminals");
+    await expect(terminalsList.getByRole("listitem")).toHaveCount(2);
+    await expect(terminalsList).toContainText(server);
+    await expect(terminalsList).toContainText(`${lab.username}@${lab.host}:${lab.port}`);
+    await expect(terminalsList).toContainText("PROD");
+    await expect(terminalsList).toContainText("This Mac");
+    await expect(terminalsList).toContainText("LOCAL");
+    await expect(drawer.getByTestId("lock-workspace-tunnels")).toContainText("เว็บ lock");
+    await expect(drawer.getByTestId("lock-workspace-tunnels")).toContainText(`127.0.0.1:${port}`);
+    await expect(drawer).toContainText("1 pending transfer will be cancelled.");
+    const confirm = drawer.getByRole("button", { name: "Lock and close 4", exact: true });
+    await expect(confirm).toBeVisible();
+    // Explicit evidence: the drawer shows targets and counts only (the saved password never reaches the UI).
+    await expect.poll(() => drawer.evaluate((element) => element.getAnimations({ subtree: true }).length)).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath("lock-workspace-drawer.png") });
+    await page.keyboard.press("Escape");
+    await alive();
+    // Cancel keeps everything too.
+    await ask();
+    await drawer.getByRole("button", { name: "Cancel", exact: true }).click();
+    await alive();
+
+    // Lock and close 4: everything closes and the gate returns.
+    await ask();
+    await confirm.click();
+    await expect(screen(page).getByRole("heading", { name: "Unlock ssterm" })).toBeVisible();
+    expect(await gated(page)).toBe("unauthorized");
+    expect(await liveWork(page), "not answered behind the gate").toBe("unauthorized");
+    await expect.poll(() => portIsOpen(port), { message: "the tunnel listener closed", timeout: 15_000 }).toBe(false);
+    await expect.poll(() => count("sshd: fixture@"), { message: "terminal, tunnel and SFTP connections closed", timeout: 20_000 }).toBe(0);
+    await expect.poll(() => [...guardians, ...shells].filter(running), { message: "the local zsh and its guardian ended", timeout: 20_000 }).toEqual([]);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Unlock" }).click();
+    await expect(page.getByTestId("hosts-page")).toBeVisible();
+    expect(await liveWork(page), "nothing survived the lock").toEqual({ terminals: [], tunnels: 0, transfers: 0, remoteEdits: 0 });
+    await page.getByRole("button", { name: /^Terminals/u }).click();
+    await expect(page.locator("section[data-terminal-kind]")).toHaveCount(0);
+
+    // If main cannot say what is live, Lock workspace still asks rather than locking silently.
+    await app.evaluate(({ ipcMain }) => ipcMain.removeHandler("ssterm:app-lock-live-work"));
+    await ask();
+    await expect(drawer).toContainText("couldn't check for live work");
+    await expect(drawer.getByRole("button", { name: "Lock and close all", exact: true })).toBeVisible();
+    await drawer.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(drawer).toHaveCount(0);
+    expect(await gated(page)).toBe("open");
+    // An OS screen lock while the drawer is open closes it (that lock already closed any live work) and shows no gate.
+    await ask();
+    await app.evaluate(({ powerMonitor }) => { powerMonitor.emit("lock-screen"); });
+    await expect(drawer).toHaveCount(0);
+    await expect(screen(page)).toHaveCount(0);
+    expect(await gated(page)).toBe("open");
+    expect(desktop.errors).toEqual([]);
+  } finally {
+    await desktop?.close();
+    await lab.dispose();
+    await rm(profile, { recursive: true, force: true });
   }
 });
 

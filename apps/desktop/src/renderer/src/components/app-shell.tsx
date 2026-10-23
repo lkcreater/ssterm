@@ -22,7 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { usePanelRef } from "react-resizable-panels";
-import type { CatalogHost, ErrorCode, StorageProblem } from "@ssterm/contracts";
+import { liveWorkCount, type CatalogHost, type ErrorCode, type LiveWork, type StorageProblem } from "@ssterm/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
@@ -54,6 +54,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/components/ui/toast";
 import { useDesktopState } from "@/hooks/use-desktop-state";
 import { AppLockEnabled } from "@/components/app-lock/app-lock-gate";
+import { LockWorkspaceDrawer } from "@/components/app-lock/lock-workspace-drawer";
 import { useCredentials } from "@/hooks/use-credentials";
 import { CredentialPrompts } from "@/components/auth/credential-prompts";
 import { AwaitingTrust } from "@/components/connection/connection-status";
@@ -247,6 +248,10 @@ export function AppShell() {
   const settings = useSettings(owner);
   const tunnelState = useTunnels(owner);
   const lockEnabled = useContext(AppLockEnabled);
+  // Lock workspace's confirmation (SST-040/13): keyed per open; `work` undefined when main could not say.
+  const [lockConfirm, setLockConfirm] = useState<{ key: number; work: LiveWork | undefined }>();
+  const lockKey = useRef(0);
+  const lockAsking = useRef(false);
   const storage = desktop.status === "ready" ? desktop.data.storage : undefined;
   const problem =
     storage?.status === "blocked" ? storageProblems[storage.code] : undefined;
@@ -316,6 +321,24 @@ export function AppShell() {
       hostId: host.id,
       message: connectMessages[code] ?? "The connection could not start. Try again.",
     });
+  }
+
+  /**
+   * Asks main what the lock would close in every window: nothing → lock at once; otherwise (or when main cannot say)
+   * confirm in a drawer first. Lock itself closes whatever is live then, including work started after the question.
+   */
+  async function requestLock() {
+    const bridge = window.ssterm;
+    if (!owner || !bridge || lockAsking.current || lockConfirm) return;
+    lockAsking.current = true;
+    try {
+      const result = await bridge.liveWork({ owner }).catch(() => undefined);
+      const work = result?.ok ? result.value : undefined;
+      if (work && liveWorkCount(work) === 0) await lockWorkspace();
+      else setLockConfirm({ key: ++lockKey.current, work });
+    } finally {
+      lockAsking.current = false;
+    }
   }
 
   /** Main closes live work in every window and reloads them into the gate; this document goes with them. */
@@ -631,7 +654,7 @@ export function AppShell() {
                   </SidebarMenuItem>
                   {lockEnabled ? (
                     <SidebarMenuItem>
-                      <SidebarMenuButton disabled={!owner} onClick={() => void lockWorkspace()}>
+                      <SidebarMenuButton disabled={!owner} onClick={() => void requestLock()}>
                         <LockKeyholeIcon />
                         <span>Lock workspace</span>
                       </SidebarMenuButton>
@@ -874,6 +897,15 @@ export function AppShell() {
           terminals={sessions.length}
           owner={owner}
           onOpenRecordings={() => setPage("recordings")}
+        />
+      ) : null}
+      {lockConfirm ? (
+        <LockWorkspaceDrawer
+          key={lockConfirm.key}
+          work={lockConfirm.work}
+          catalog={state}
+          onConfirm={() => void lockWorkspace()}
+          onClose={() => setLockConfirm((current) => (current?.key === lockConfirm.key ? undefined : current))}
         />
       ) : null}
       {overlay === "shortcuts" ? (

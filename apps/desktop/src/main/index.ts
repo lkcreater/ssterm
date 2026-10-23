@@ -56,7 +56,7 @@ import { createCatalogController, observeCommits, registerCatalogHandlers, type 
 import { createIdentitiesController, registerIdentityHandlers, secretNamespace, type IdentitiesController } from "./identities";
 import { createSnippetsController, registerSnippetHandlers, type SnippetsController } from "./snippets";
 import { createTunnelController, registerTunnelHandlers, type TunnelController } from "./tunnels";
-import { appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers, type AppLockController } from "./app-lock";
+import { appLockEnabled, createAppLockController, googleConfiguration, registerAppLockHandlers, summarizeLiveWork, type AppLockController } from "./app-lock";
 
 /** The Google OAuth client compiled in from SSTERM_GOOGLE_CLIENT_FILE at build time (null without one). */
 declare const __SSTERM_GOOGLE_CLIENT__: unknown;
@@ -78,6 +78,19 @@ if (testUserData) {
   // Fixed data folder (~/Library/Application Support/ssterm), independent of the bundle's display name, so storage
   // and the single-instance lock never move if productName changes or the disk is case-sensitive.
   app.setPath("userData", join(app.getPath("appData"), "ssterm"));
+}
+
+/**
+ * Local terminals start the user's login zsh in their home. A test profile may name an owned home inside it
+ * (`SSTERM_TEST_LOCAL_HOME`), so E2E never runs the developer's own shell startup files.
+ */
+function localTerminalAdapter() {
+  const home = testUserData && process.env.SSTERM_TEST_LOCAL_HOME;
+  if (!home) return createLocalPtyAdapter();
+  const actual = realpathSync(home);
+  const inside = relative(realpathSync(testUserData), actual);
+  if (!inside || inside.startsWith("..") || isAbsolute(inside)) throw new Error("Test local home must be inside the test userData");
+  return createLocalPtyAdapter({ home: actual });
 }
 
 app.setName("ssterm");
@@ -451,6 +464,22 @@ async function initializeAppLock(): Promise<void> {
     showGate: () => {
       for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.reload();
     },
+    // Asked before confirming (SST-040/13): every window, by the same rules as the close/quit sheets.
+    liveWork: () => summarizeLiveWork(
+      BrowserWindow.getAllWindows().flatMap((window) => {
+        const owner = !window.isDestroyed() && boundary.ownerOf(window.webContents);
+        return owner ? [owner] : [];
+      }),
+      {
+        terminals: (owner) => {
+          const state = terminals?.terminalState(owner);
+          return state?.ok ? state.value.sessions : [];
+        },
+        tunnels: (owner) => tunnels?.snapshot(sessionOwnerId(owner)) ?? [],
+        transfers: (owner) => transfers?.pendingCount(owner) ?? 0,
+        remoteEdits: () => remoteEdits?.pendingCount() ?? 0,
+      },
+    ),
   });
   boundary.setAccessGate(() => appLock?.open() ?? false);
   removeAppLockHandlers = registerAppLockHandlers({ ipc: ipcMain, boundary, controller: () => appLock });
@@ -662,6 +691,7 @@ if (ownsInstance) {
         transient: transientSecrets,
         power: powerMonitor,
         observeTerminal: capture.observe,
+        localAdapter: localTerminalAdapter(),
       });
       desktopSessions = savedHostSessions;
       teamGuard = savedHostSessions.teamGuard;
@@ -710,7 +740,7 @@ if (ownsInstance) {
       desktopSessions = createDesktopSessions({
         transient: transientSecrets,
         power: powerMonitor,
-        localAdapter: createLocalPtyAdapter(),
+        localAdapter: localTerminalAdapter(),
         resolve: () => ({
           ok: false,
           error: { code: "unavailable", message: "Configuration is unavailable." },

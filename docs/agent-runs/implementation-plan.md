@@ -1504,3 +1504,16 @@ The user asked “ต้อง revise ui ทั้งระบบใหม่เ
     - Fix: changes not yet written are abandoned, and Lock workspace answers `busy` while a Keychain write is in flight (ADR 0004 note).
     - Lows: a throwing session lock now still reloads, and the race tests now interleave.
   - **Checks:** typecheck pass, unit 773/774 (1 known skip), build pass. Full E2E was 90/90 before the fixes; after them app-lock/desktop/settings pass 11/11.
+- **SST-040/13 done (2026-10-23):**
+  - **New query:** `ssterm:app-lock-live-work` (strict {owner}, owner-checked, refused while locked). Main counts live work across all windows: terminals (connecting/ready, display fields only), starting/running tunnels, pending transfers and pending remote edits.
+  - **Lock workspace behavior:**
+    - Locks at once when nothing is live.
+    - Otherwise shows an alert drawer listing the targets with "Lock and close N".
+    - If the query fails, a drawer says it couldn't check, so the lock is never silent.
+    - An OS lock closes the drawer.
+  - **New test seam:** `SSTERM_TEST_LOCAL_HOME`, honoured only with a test profile and documented in ADR 0005 and local-terminal.md.
+  - **Review:** APPROVED. Fixed M1 (docs/ADR consistency), L1 (fewer fields in the reply), L2 (keys) and L3 (zsh-exit and OS-lock E2E).
+  - **Checks:**
+    - Passing: typecheck, unit 775/776 (1 known skip), build.
+    - Full E2E 90/91 before the fixes. `workspace.spec:580` failed once and passed alone; no excerpt was kept.
+    - After the fixes: app-lock, desktop and local-terminal 11/11.

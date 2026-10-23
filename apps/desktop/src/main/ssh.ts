@@ -29,6 +29,8 @@ export function createSavedHostSessions(options: {
   team?: ManagedTeamSessionClient;
   /** SST-034 capture tap (the recorder's `observe`). */
   observeTerminal?: Parameters<typeof createDesktopSessions>[0]["observeTerminal"];
+  /** Defaults to the user's login zsh; test profiles may pass one with an owned home. */
+  localAdapter?: Parameters<typeof createDesktopSessions>[0]["localAdapter"];
 }) {
   const terminal = terminalBounds(options.terminal);
   if (terminal.inputBacklog < MAX_TERMINAL_WRITE) throw new RangeError("invalid-terminal-bounds");
@@ -40,7 +42,7 @@ export function createSavedHostSessions(options: {
     power: options.power,
     limits: options.limits,
     observeTerminal: options.observeTerminal,
-    localAdapter: createLocalPtyAdapter(),
+    localAdapter: options.localAdapter ?? createLocalPtyAdapter(),
     resolve: (hostId, context) => {
       // A known managed binding/tombstone never falls through, including denial and provider failures.
       if (teamGuard?.hasBinding(hostId)) return teamGuard.resolve(hostId, context);

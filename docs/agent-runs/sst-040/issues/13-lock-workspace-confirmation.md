@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Drawer primitive with Server and Group editors; 12 — Lock workspace: immediate lock
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Main reports a live-resource summary (SSH/local terminals, tunnels, transfers, remote edits)
 - [ ] Non-empty summary opens a confirmation drawer listing them with a red Lock and close N action; empty summary locks immediately

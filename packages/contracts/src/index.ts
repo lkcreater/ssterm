@@ -32,7 +32,7 @@ export * from "./tunnels.ts";
 import type {
   AppLockStatus, AppLockStateRequest, SetupPasswordRequest, SetupPasswordResponse, UnlockPasswordRequest, AttemptResponse,
   ConfirmPasswordRequest, GoogleSignInRequest, GoogleSignInResponse, CancelGoogleRequest, UnlockOfflineRequest,
-  UnlockOfflineResponse, RecoverRequest, RegenerateRecoveryRequest, RegenerateRecoveryResponse, LockNowRequest, LockNowResponse,
+  UnlockOfflineResponse, RecoverRequest, RegenerateRecoveryRequest, RegenerateRecoveryResponse, LockNowRequest, LockNowResponse, LiveWorkRequest, LiveWork,
 } from "./app-lock.ts";
 export * from "./app-lock.ts";
 import type { TerminalSettings, SettingsRequest, UpdateSettingsRequest } from "./settings.ts";
@@ -172,6 +172,8 @@ export interface DesktopAPI {
   regenerateRecoveryCode(request: RegenerateRecoveryRequest): Promise<Result<RegenerateRecoveryResponse>>;
   /** Lock workspace: closes live work in every window and shows the gate; the calling document reloads. */
   lockNow(request: LockNowRequest): Promise<Result<LockNowResponse>>;
+  /** What Lock workspace would close in every window; answered only while unlocked. */
+  liveWork(request: LiveWorkRequest): Promise<Result<LiveWork>>;
   tunnelState(request: TunnelStateRequest): Promise<Result<TunnelState>>;
   onTunnelState(callback: (state: TunnelState) => void): () => void;
   startTunnel(request: TunnelRuleRequest): Promise<Result<StartTunnelResponse>>;
@@ -272,6 +274,7 @@ export const channels = Object.freeze({
   recoverAppLock: "ssterm:app-lock-recover",
   regenerateRecoveryCode: "ssterm:app-lock-regenerate",
   lockNow: "ssterm:app-lock-lock-now",
+  liveWork: "ssterm:app-lock-live-work",
   tunnelState: "ssterm:tunnel-state",
   tunnelStateChanged: "ssterm:tunnel-state-changed",
   startTunnel: "ssterm:start-tunnel",

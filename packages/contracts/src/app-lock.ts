@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { TerminalSession } from "./terminals.ts";
+import { isCatalogId } from "./catalog.ts";
 
 /** Local app lock (SST-039, ADR 0004). Shared by the renderer forms and main's re-validation. */
 export const USERNAME_MIN = 3;
@@ -67,6 +69,8 @@ export const appLockRequestSchemas = {
   regenerateRecovery: z.strictObject({ owner }),
   /** Lock workspace (SST-040): session lock for the whole process, then back to the gate. */
   lockNow: z.strictObject({ owner }),
+  /** Lock workspace (SST-040/13): what the session lock would close, asked before confirming. */
+  liveWork: z.strictObject({ owner }),
 } as const;
 export type AppLockStateRequest = z.infer<typeof appLockRequestSchemas.state>;
 export type SetupPasswordRequest = z.infer<typeof appLockRequestSchemas.setupPassword>;
@@ -78,6 +82,7 @@ export type UnlockOfflineRequest = z.infer<typeof appLockRequestSchemas.unlockOf
 export type RecoverRequest = z.infer<typeof appLockRequestSchemas.recover>;
 export type RegenerateRecoveryRequest = z.infer<typeof appLockRequestSchemas.regenerateRecovery>;
 export type LockNowRequest = z.infer<typeof appLockRequestSchemas.lockNow>;
+export type LiveWorkRequest = z.infer<typeof appLockRequestSchemas.liveWork>;
 
 export type SetupPasswordResponse =
   | { status: "configured"; recoveryCode: string }
@@ -100,6 +105,25 @@ export type RegenerateRecoveryResponse = { status: "regenerated"; recoveryCode: 
  * `busy`: a sign-in change or new recovery code is being saved (briefly); nothing was locked, try again.
  */
 export type LockNowResponse = { status: "locked" | "not-allowed" | "busy" };
+/**
+ * Everything Lock workspace would close, across every window, by main's close/quit rules: terminals (SSH and local)
+ * that are connecting or ready, tunnels starting or running, pending transfers and pending remote edits. A snapshot:
+ * whatever starts after it is closed by the lock all the same.
+ */
+/** Display fields only: no session IDs, generations, errors or recording state of other windows. */
+export interface LiveTerminal {
+  phase: "connecting" | "ready";
+  /** Present exactly for local terminals (target null). */
+  local?: { shell: string; platform: "darwin" };
+  target: Omit<NonNullable<TerminalSession["target"]>, "source"> | null;
+}
+export interface LiveWork {
+  terminals: LiveTerminal[];
+  tunnels: { ruleId: string; phase: "starting" | "running" }[];
+  transfers: number;
+  remoteEdits: number;
+}
+export const liveWorkCount = (work: LiveWork): number => work.terminals.length + work.tunnels.length + work.transfers + work.remoteEdits;
 
 const recoveryCode = z.string().regex(RECOVERY_CODE_PATTERN);
 const fields = z.strictObject({ username: z.string().max(200).optional(), password: z.string().max(200).optional(), confirmPassword: z.string().max(200).optional() });
@@ -114,6 +138,7 @@ const statusSchema = z.strictObject({
   retryAfterMs: z.number().int().nonnegative().max(60_000),
 });
 const retry = z.number().int().nonnegative().max(60_000);
+const liveTerminalPhase = z.enum(["connecting", "ready"]);
 const responseSchemas = {
   status: statusSchema,
   setup: z.union([
@@ -144,6 +169,21 @@ const responseSchemas = {
   ]),
   ok: z.strictObject({ status: z.literal("cancelled") }),
   lockNow: z.strictObject({ status: z.enum(["locked", "not-allowed", "busy"]) }),
+  liveWork: z.strictObject({
+    terminals: z.array(z.union([
+      z.strictObject({ phase: liveTerminalPhase, local: z.strictObject({ shell: z.string().startsWith("/").max(256).refine((v) => !CONTROL.test(v)), platform: z.literal("darwin") }), target: z.null() }),
+      z.strictObject({ phase: liveTerminalPhase, target: z.strictObject({
+        label: z.string().min(1).max(400).refine((v) => !CONTROL.test(v)),
+        environment: z.enum(["DEV", "STAGING", "PROD"]).nullable(),
+        endpointHost: z.string().min(1).max(253).refine((v) => !CONTROL.test(v)),
+        endpointPort: z.number().int().min(1).max(65_535),
+        username: z.string().min(1).max(1024).refine((v) => !CONTROL.test(v)).nullable(),
+      }).nullable() }),
+    ])).max(1024),
+    tunnels: z.array(z.strictObject({ ruleId: z.custom<string>((v) => isCatalogId(v)), phase: z.enum(["starting", "running"]) })).max(1024),
+    transfers: z.number().int().nonnegative().safe(),
+    remoteEdits: z.number().int().nonnegative().safe(),
+  }),
 };
 const guard = <T>(schema: z.ZodType<T>) => (value: unknown): value is T => schema.safeParse(value).success;
 export const isAppLockStatus = guard<AppLockStatus>(statusSchema);
@@ -154,6 +194,7 @@ export const isUnlockOfflineResponse = guard<UnlockOfflineResponse>(responseSche
 export const isRegenerateRecoveryResponse = guard<RegenerateRecoveryResponse>(responseSchemas.regenerate as z.ZodType<RegenerateRecoveryResponse>);
 export const isCancelGoogleResponse = guard<{ status: "cancelled" }>(responseSchemas.ok);
 export const isLockNowResponse = guard<LockNowResponse>(responseSchemas.lockNow);
+export const isLiveWork = guard<LiveWork>(responseSchemas.liveWork as z.ZodType<LiveWork>);
 export const appLockRequestGuards = {
   state: guard<AppLockStateRequest>(appLockRequestSchemas.state),
   setupPassword: guard<SetupPasswordRequest>(appLockRequestSchemas.setupPassword),
@@ -165,6 +206,7 @@ export const appLockRequestGuards = {
   recover: guard<RecoverRequest>(appLockRequestSchemas.recover),
   regenerateRecovery: guard<RegenerateRecoveryRequest>(appLockRequestSchemas.regenerateRecovery),
   lockNow: guard<LockNowRequest>(appLockRequestSchemas.lockNow),
+  liveWork: guard<LiveWorkRequest>(appLockRequestSchemas.liveWork),
 };
 /** Field messages for the setup form (renderer) and main's re-validation. */
 export function passwordSetupErrors(value: { username: string; password: string; confirmPassword: string }): AppLockFieldErrors | null {
